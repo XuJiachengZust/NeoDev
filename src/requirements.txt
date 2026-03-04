@@ -1,0 +1,25 @@
+# Service API (src/service)
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Test
+pytest>=7.0.0
+psycopg2-binary>=2.9.0
+
+# Tree-sitter (Phase 3+); pip package name is tree-sitter
+tree-sitter>=0.20.0
+tree-sitter-python>=0.20.0
+tree-sitter-java>=0.23.0
+tree-sitter-lua>=0.4.0
+
+# Neo4j (Phase 6+)
+neo4j>=5.0.0
+
+# DeepAgents (langchain/langgraph agent harness)
+langchain>=0.3.0
+langchain-core>=0.3.0
+langgraph>=0.2.0
+langchain-anthropic>=0.2.0
+pyyaml>=6.0
+typing-extensions>=4.0.0
+wcmatch>=8.0

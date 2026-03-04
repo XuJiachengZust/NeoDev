@@ -1,0 +1,301 @@
+/* 间距系统：4 8 16 24 32 px */
+.app-shell {
+  min-height: 100vh;
+  width: 100%;
+}
+
+.app-topbar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-brand {
+  font-size: var(--text-h3);
+  font-weight: var(--font-weight-title);
+  color: var(--color-text);
+}
+
+.app-main-wrap {
+  width: 100%;
+  display: flex;
+  align-items: stretch;
+}
+
+.app-main {
+  flex: 1;
+  max-width: none;
+  margin: 0;
+  padding: 24px 20px 40px;
+  min-width: 0;
+}
+
+/* 右侧 Agent 样式保留（当前布局未启用） */
+.app-agent-wrap {
+  width: 25%;
+  min-width: 280px;
+  background: var(--color-bg);
+  border-left: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  transition: width 0.2s, min-width 0.2s;
+}
+
+.app-agent-wrap.collapsed {
+  width: 56px;
+  min-width: 56px;
+}
+
+.app-agent-toggle {
+  flex-shrink: 0;
+  height: 48px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.app-agent-toggle:hover {
+  color: var(--color-primary);
+}
+
+.app-agent-panel {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  min-height: 200px;
+}
+
+/* 卡片 */
+.card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 16px 24px;
+  box-shadow: var(--shadow-card);
+}
+
+.card h2 {
+  margin: 0 0 16px;
+  font-size: var(--text-h2);
+  font-weight: var(--font-weight-title);
+  color: var(--color-text);
+}
+
+.card h3 {
+  margin: 0 0 12px;
+  font-size: var(--text-h3);
+  font-weight: var(--font-weight-title);
+  color: var(--color-text);
+}
+
+.card-subtitle {
+  margin: 16px 0 8px;
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+/* 表单 */
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.form-row label {
+  font-size: var(--text-caption);
+  color: var(--color-text-muted);
+}
+
+/* 发光输入框 */
+.glow-input,
+.form-row input,
+.form-row select,
+.input-select {
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--text-body);
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.glow-input::placeholder,
+.form-row input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.glow-input:focus,
+.form-row input:focus,
+.form-row select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus);
+}
+
+.form-row input:disabled,
+.form-row select:disabled {
+  background: rgba(74, 74, 85, 0.2);
+  color: var(--color-disabled);
+  cursor: not-allowed;
+}
+
+.input-select {
+  min-width: 12rem;
+}
+
+/* 流光按钮（主 CTA） */
+.flow-button,
+button.primary {
+  padding: 10px 20px;
+  border-radius: var(--radius-button);
+  border: none;
+  background: var(--color-primary);
+  color: var(--color-bg);
+  font-size: var(--text-body);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.flow-button:hover:not(:disabled),
+button.primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  box-shadow: 0 0 12px rgba(0, 240, 255, 0.4);
+}
+
+.flow-button:disabled,
+button:disabled {
+  background: var(--color-disabled);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
+  padding: 8px 16px;
+  border-radius: var(--radius-button);
+  font-size: var(--text-body);
+  cursor: pointer;
+}
+
+button.secondary:hover {
+  border-color: var(--color-primary);
+  background: rgba(0, 240, 255, 0.06);
+}
+
+/* 结果与提示 */
+.result {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  font-size: var(--text-body);
+  word-break: break-all;
+  color: var(--color-text);
+}
+
+.result.error {
+  background: rgba(255, 0, 85, 0.1);
+  border-color: var(--color-alert);
+  color: var(--color-alert);
+}
+
+.hint {
+  font-size: var(--text-caption);
+  color: var(--color-text-muted);
+}
+
+.stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.stat {
+  padding: 8px 12px;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  font-size: var(--text-caption);
+  color: var(--color-text);
+}
+
+/* Agent 内容区样式 */
+.agent-message {
+  font-size: var(--text-body);
+  line-height: 1.6;
+  color: var(--color-text);
+}
+
+.agent-message.insight {
+  color: var(--color-ai);
+}
+
+.agent-message.alert {
+  color: var(--color-alert);
+}
+
+.agent-placeholder {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+}
+
+/* 驾驶舱内 Tab */
+.cockpit-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 8px;
+}
+
+.cockpit-tab {
+  padding: 8px 16px;
+  border-radius: var(--radius-input);
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: var(--text-body);
+  transition: color 0.15s, background 0.15s;
+}
+
+.cockpit-tab:hover {
+  color: var(--color-primary-hover);
+  background: rgba(0, 240, 255, 0.06);
+}
+
+.cockpit-tab.active {
+  color: var(--color-primary);
+  background: rgba(0, 240, 255, 0.08);
+}
+
+/* 页面标题 */
+.page-title {
+  margin: 0 0 24px;
+  font-size: var(--text-h1);
+  font-weight: var(--font-weight-title);
+  color: var(--color-text);
+}
+
+.page-subtitle {
+  margin: 0 0 24px;
+  font-size: var(--text-body);
+  color: var(--color-text-muted);
+}

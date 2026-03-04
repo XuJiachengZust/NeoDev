@@ -1,0 +1,13 @@
+# NeoDev 项目 Conda 环境
+# 使用方式: conda env create -f environment.yml
+# 激活: conda activate neodev
+
+name: neodev
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+    - -r src/requirements.txt

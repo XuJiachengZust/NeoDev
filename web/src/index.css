@@ -1,0 +1,53 @@
+/* Design Tokens - 页面原型设计 V1 */
+:root {
+  /* 色彩 */
+  --color-bg: #0D0D12;
+  --color-primary: #00F0FF;
+  --color-primary-hover: #33F5FF;
+  --color-ai: #B026FF;
+  --color-alert: #FF0055;
+  --color-border: #2A2A33;
+  --color-text-muted: #8A8A9A;
+  --color-text: #E8E8F0;
+  --color-disabled: #4A4A55;
+  --color-card-glow: rgba(0, 240, 255, 0.1);
+
+  /* 字体 */
+  --font-sans: "Inter", "PingFang SC", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+  --text-h1: 24px;
+  --text-h2: 18px;
+  --text-h3: 16px;
+  --text-body: 14px;
+  --text-caption: 12px;
+  --line-height: 1.5;
+  --font-weight-title: 600;
+  --font-weight-body: 400;
+
+  /* 圆角与阴影 */
+  --radius-card: 8px;
+  --radius-input: 6px;
+  --radius-button: 6px;
+  --radius-pill: 999px;
+  --shadow-card: 0 0 0 1px var(--color-border), 0 0 12px var(--color-card-glow);
+  --shadow-focus: 0 0 0 1px var(--color-primary), 0 0 8px var(--color-card-glow);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  font-weight: var(--font-weight-body);
+  line-height: var(--line-height);
+  background: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
+}
+
+code, .mono {
+  font-family: var(--font-mono);
+}
