@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createVersion, listBranches, listVersions, updateProject } from "../../api/client";
+import { createVersion, listProjectBranches, listVersions, updateProject } from "../../api/client";
 import { FlowButton } from "../../components/FlowButton";
 import { useProjectPageContext } from "./ProjectLayoutPage";
 
@@ -11,7 +11,7 @@ function isRepoUrl(path: string): boolean {
 export function ProjectRepoPage() {
   const { projectId, project, reloadProject } = useProjectPageContext();
   const [repoPathInput, setRepoPathInput] = useState(project.repo_path || "");
-  const [repoUsername, setRepoUsername] = useState("");
+  const [repoUsername, setRepoUsername] = useState(project.repo_username ?? "");
   const [repoPassword, setRepoPassword] = useState("");
   const [savingRepo, setSavingRepo] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -23,7 +23,12 @@ export function ProjectRepoPage() {
     setError(null);
     setSuccess(null);
     try {
-      await updateProject(projectId, { repo_path: repoPathInput.trim() });
+      const payload: Parameters<typeof updateProject>[1] = { repo_path: repoPathInput.trim() };
+      if (isRepoUrl(repoPathInput)) {
+        payload.repo_username = repoUsername.trim() || null;
+        payload.repo_password = repoPassword || null;
+      }
+      await updateProject(projectId, payload);
       await reloadProject();
       setSuccess("仓库配置已保存");
     } catch (e) {
@@ -39,14 +44,16 @@ export function ProjectRepoPage() {
     setError(null);
     setSuccess(null);
     try {
-      const opts = isRepoUrl(repoPathInput)
-        ? {
-            repo_url: repoPathInput,
-            username: repoUsername.trim() || undefined,
-            password: repoPassword || undefined,
-          }
-        : { path: repoPathInput };
-      const { branches } = await listBranches(opts);
+      const payload: Parameters<typeof updateProject>[1] = {
+        repo_path: repoPathInput.trim(),
+      };
+      if (isRepoUrl(repoPathInput)) {
+        payload.repo_username = repoUsername.trim() || null;
+        payload.repo_password = repoPassword || null;
+      }
+      await updateProject(projectId, payload);
+
+      const branches = await listProjectBranches(projectId);
       const existing = new Set(
         (await listVersions(projectId)).map((v) => v.branch).filter((b): b is string => !!b)
       );

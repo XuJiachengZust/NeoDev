@@ -31,13 +31,20 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ## 影响面分析表（Phase 2 迁移）
 
-首次**新库**启动时，除 `init-pgvector.sql` 外还会执行 `docker/migrations/001_impact_analysis_tables.sql`（挂载为 `002_impact_analysis_tables.sql`），创建 projects / versions / requirements / commits / requirement_commits / impact_analyses / impact_analysis_commits 共 7 张表。
+首次**新库**启动时，会按顺序执行以下迁移：
+- `docker/migrations/001_impact_analysis_tables.sql`
+- `docker/migrations/002_versions_branch_nullable.sql`
+- `docker/migrations/003_git_branches.sql`
+
+其中 `003_git_branches.sql` 会创建 `git_branches` 表，并从 `versions.branch` 自动回填已有分支。
 
 若库已存在（例如之前仅启用过 pgvector），需**手动执行**迁移：
 
 ```powershell
 # 若已安装 psql（或在容器内执行）
 psql -h localhost -U postgres -d neodev -f docker/migrations/001_impact_analysis_tables.sql
+psql -h localhost -U postgres -d neodev -f docker/migrations/002_versions_branch_nullable.sql
+psql -h localhost -U postgres -d neodev -f docker/migrations/003_git_branches.sql
 ```
 
 或使用 Python 连接后执行该 SQL 文件内容。跑 `tests/test_impact_analysis_schema.py` 时，若检测到无 `projects` 表会自动执行该迁移（需 PG 已启动）。

@@ -50,6 +50,45 @@ def list_by_version_id(conn, project_id: int, version_id: int) -> list[dict]:
     return list_by_project_id(conn, project_id, version_id=version_id)
 
 
+def list_by_version_id_filtered(
+    conn,
+    project_id: int,
+    version_id: int,
+    *,
+    message: str | None = None,
+    committed_at_from: str | None = None,
+    committed_at_to: str | None = None,
+    id: int | None = None,
+    sha: str | None = None,
+) -> list[dict]:
+    """List commits for a version with optional filters (message substring, time range, id, sha prefix)."""
+    conditions = ["project_id = %s", "version_id = %s"]
+    params: list[Any] = [project_id, version_id]
+    if message is not None and message.strip() != "":
+        conditions.append("message ILIKE %s")
+        params.append(f"%{message.strip()}%")
+    if committed_at_from is not None and committed_at_from.strip() != "":
+        conditions.append("committed_at >= %s")
+        params.append(committed_at_from.strip())
+    if committed_at_to is not None and committed_at_to.strip() != "":
+        conditions.append("committed_at <= %s")
+        params.append(committed_at_to.strip())
+    if id is not None:
+        conditions.append("id = %s")
+        params.append(id)
+    if sha is not None and sha.strip() != "":
+        conditions.append("commit_sha LIKE %s")
+        params.append(sha.strip() + "%")
+    where = " AND ".join(conditions)
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""SELECT id, project_id, version_id, commit_sha, message, author, committed_at
+             FROM commits WHERE {where} ORDER BY id""",
+            tuple(params),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
 def upsert_commits(
     conn,
     project_id: int,

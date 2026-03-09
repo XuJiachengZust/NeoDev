@@ -36,6 +36,8 @@ def list_remote_branches(
             ["git", "ls-remote", "--heads", url],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             env=_GIT_ENV,
         )
@@ -72,6 +74,8 @@ def list_local_branches(repo_path: str) -> list[str]:
             cwd=root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             env=_GIT_ENV,
         )
@@ -97,6 +101,8 @@ def resolve_repo_root(path: str) -> str | None:
             cwd=path,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             env=_GIT_ENV,
         )
@@ -138,10 +144,12 @@ def ensure_repo_from_url(
     if branch:
         cmd = ["git", "clone", "-b", branch, url, target_path]
     try:
-        subprocess.run(
+        result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
             check=True,
             env=_GIT_ENV,
@@ -150,7 +158,19 @@ def ensure_repo_from_url(
         raise RuntimeError(f"git clone failed: {e.stderr or e}") from e
     except subprocess.TimeoutExpired as e:
         raise RuntimeError("git clone timed out") from e
+
     root = resolve_repo_root(target_path)
-    if root is None:
-        raise RuntimeError(f"Clone succeeded but repo root could not be resolved: {target_path}")
-    return root
+    if root is not None:
+        return root
+
+    # Fallback: on Windows, resolve_repo_root may fail due to path style
+    # differences between git output and OS; verify .git exists as sanity check.
+    git_dir = Path(target_path) / ".git"
+    if git_dir.is_dir() or git_dir.is_file():
+        return str(Path(target_path).resolve())
+
+    clone_detail = (result.stderr or result.stdout or "").strip()
+    raise RuntimeError(
+        f"Clone finished but repo root could not be resolved: {target_path}. "
+        f"git output: {clone_detail}"
+    )

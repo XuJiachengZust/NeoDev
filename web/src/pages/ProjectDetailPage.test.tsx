@@ -44,17 +44,17 @@ describe("ProjectDetailPage", () => {
     const user = userEvent.setup();
     renderPage("1");
     await waitFor(() => screen.getByTestId("project-detail-version-submit"));
-    const branchInput = screen.getByPlaceholderText("分支名，如 main");
+    const branchInput = screen.getByPlaceholderText("绑定分支（可选）");
     await user.type(branchInput, "develop");
     await user.click(screen.getByTestId("project-detail-version-submit"));
     await waitFor(() => {
-      expect(screen.getByPlaceholderText("分支名，如 main")).toHaveValue("");
+      expect(screen.getByPlaceholderText("绑定分支（可选）")).toHaveValue("");
     });
   });
 
   it("sync commits button exists", async () => {
     renderPage("1");
     await waitFor(() => screen.getByTestId("project-detail-sync"));
-    expect(screen.getByTestId("project-detail-sync")).toHaveTextContent("同步提交");
+    expect(screen.getByTestId("project-detail-sync")).toHaveTextContent("同步全部");
   });
 });

@@ -22,6 +22,7 @@ export function OnboardPage() {
       const body: ProjectCreate = {
         name: name.trim(),
         repo_path: repoPath.trim() || "",
+        repo_password: token.trim() || undefined,
       };
       const project = await createProject(body);
       setSuccess(true);

@@ -32,42 +32,65 @@ def _props_for_neo4j(properties: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in properties.items() if v is not None}
 
 
-def delete_branch(driver, branch: str, database: str | None = None) -> None:
-    """Remove all nodes and relationships for the given branch (full branch subgraph replace)."""
+def delete_branch(
+    driver, branch: str, project_id: int = 0, database: str | None = None
+) -> None:
+    """Remove all nodes and relationships for the given branch (and project_id when given)."""
     with driver.session(database=database) as session:
-        session.run("MATCH (n) WHERE n.branch = $branch DETACH DELETE n", branch=branch)
+        if project_id == 0:
+            session.run(
+                "MATCH (n) WHERE n.branch = $branch AND (n.project_id = 0 OR n.project_id IS NULL) DETACH DELETE n",
+                branch=branch,
+            )
+        else:
+            session.run(
+                "MATCH (n) WHERE n.branch = $branch AND n.project_id = $project_id DETACH DELETE n",
+                branch=branch,
+                project_id=project_id,
+            )
 
 
 def delete_nodes_by_file_paths(
     driver,
     branch: str,
     file_paths: list[str],
+    project_id: int = 0,
     database: str | None = None,
 ) -> None:
     """
-    Remove nodes (and their relationships) for the given branch whose filePath is in file_paths.
+    Remove nodes (and their relationships) for the given branch and project_id whose filePath is in file_paths.
     Used for incremental update: only re-scanned paths are removed then rewritten.
     """
     if not file_paths:
         return
     with driver.session(database=database) as session:
-        session.run(
-            "MATCH (n) WHERE n.branch = $branch AND n.filePath IN $paths DETACH DELETE n",
-            branch=branch,
-            paths=file_paths,
-        )
+        if project_id == 0:
+            session.run(
+                "MATCH (n) WHERE n.branch = $branch AND n.filePath IN $paths AND (n.project_id = 0 OR n.project_id IS NULL) DETACH DELETE n",
+                branch=branch,
+                paths=file_paths,
+            )
+        else:
+            session.run(
+                "MATCH (n) WHERE n.branch = $branch AND n.filePath IN $paths AND n.project_id = $project_id DETACH DELETE n",
+                branch=branch,
+                paths=file_paths,
+                project_id=project_id,
+            )
 
 
 def write_graph(
     graph,
     driver,
     branch: str,
+    project_id: int = 0,
     batch_size: int = 5000,
     rel_batch_size: int = 2000,
     database: str | None = None,
 ) -> tuple[int, int]:
     """
-    MERGE all nodes by (id, branch), then MERGE all relationships (endpoints matched by id+branch).
+    MERGE all nodes by (id, branch), set project_id on each node.
+    Create relationships only when both endpoints already exist (matched by id+branch).
     Returns (nodes_written, relationships_written).
     """
     nodes_written = 0
@@ -84,6 +107,7 @@ def write_graph(
                     props = _props_for_neo4j(n.get("properties", {}))
                     props["id"] = n["id"]
                     props["branch"] = branch
+                    props["project_id"] = project_id
                     tx.run(
                         f"MERGE (n:{label} {{id: $id, branch: $branch}}) SET n += $props",
                         id=n["id"],
@@ -102,12 +126,13 @@ def write_graph(
                 for r in batch:
                     rel_type = r["type"]
                     rid = r.get("id") or f"{r['sourceId']}-{r['targetId']}"
-                    tx.run(
+                    result = tx.run(
                         f"""
-                        MERGE (a {{id: $sourceId, branch: $branch}})
-                        MERGE (b {{id: $targetId, branch: $branch}})
+                        MATCH (a {{id: $sourceId, branch: $branch}})
+                        MATCH (b {{id: $targetId, branch: $branch}})
                         MERGE (a)-[r:{rel_type} {{id: $relId}}]->(b)
                         SET r.confidence = $confidence, r.reason = $reason
+                        RETURN 1 AS written
                         """,
                         sourceId=r["sourceId"],
                         targetId=r["targetId"],
@@ -116,7 +141,8 @@ def write_graph(
                         confidence=r.get("confidence", 1.0),
                         reason=r.get("reason", ""),
                     )
-                    rels_written += 1
+                    if result.single():
+                        rels_written += 1
 
             session.execute_write(work_rel)
 

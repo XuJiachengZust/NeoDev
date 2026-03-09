@@ -51,6 +51,18 @@ LUA_QUERIES = """
 (function_declaration
   (identifier) @name) @definition.function
 
+; function table.field() end
+(function_declaration
+  name: (dot_index_expression
+    table: (identifier) @module.name
+    field: (identifier) @name) @function.full) @definition.function
+
+; function obj:method() end
+(function_declaration
+  name: (method_index_expression
+    table: (identifier) @module.name
+    method: (identifier) @name) @function.full) @definition.function
+
 ; require("module") -> import
 (function_call
   (identifier) @import.require

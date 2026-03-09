@@ -18,24 +18,17 @@ def create_project(
     watch_enabled: bool = False,
     neo4j_database: str | None = None,
     neo4j_identifier: str | None = None,
+    repo_username: str | None = None,
+    repo_password: str | None = None,
 ) -> dict:
     return repo.create(
-        conn, name, repo_path, watch_enabled, neo4j_database, neo4j_identifier
+        conn, name, repo_path, watch_enabled, neo4j_database, neo4j_identifier,
+        repo_username=repo_username, repo_password=repo_password,
     )
 
 
-def update_project(
-    conn,
-    project_id: int,
-    name: str | None = None,
-    repo_path: str | None = None,
-    watch_enabled: bool | None = None,
-    neo4j_database: str | None = None,
-    neo4j_identifier: str | None = None,
-) -> dict | None:
-    return repo.update(
-        conn, project_id, name, repo_path, watch_enabled, neo4j_database, neo4j_identifier
-    )
+def update_project(conn, project_id: int, **kwargs) -> dict | None:
+    return repo.update(conn, project_id, **kwargs)
 
 
 def delete_project(conn, project_id: int) -> bool:

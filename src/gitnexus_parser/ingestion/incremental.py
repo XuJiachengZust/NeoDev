@@ -19,6 +19,8 @@ def get_head_commit(repo_path: str) -> Optional[str]:
             cwd=repo,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
         )
         if r.returncode != 0:
@@ -48,6 +50,8 @@ def get_changed_paths(
             cwd=repo,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
         if r.returncode != 0:

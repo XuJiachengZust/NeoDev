@@ -2,6 +2,7 @@
 
 from psycopg2 import IntegrityError
 
+from service.repositories import branch_repository as branch_repo
 from service.repositories import project_repository as project_repo
 from service.repositories import version_repository as version_repo
 
@@ -20,6 +21,8 @@ def create_version(
         return None, "not_found"
     if branch is not None and not branch.strip():
         branch = None
+    if branch:
+        branch_repo.upsert_many(conn, project_id, [branch])
     try:
         row = version_repo.create(conn, project_id, branch, version_name)
         return row, None

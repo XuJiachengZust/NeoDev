@@ -16,6 +16,8 @@ services:
       # 首次启动后自动创建 vector 扩展（可选，也可在连接后手动 CREATE EXTENSION vector）
       - ./docker/init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql:ro
       - ./docker/migrations/001_impact_analysis_tables.sql:/docker-entrypoint-initdb.d/002_impact_analysis_tables.sql:ro
+      - ./docker/migrations/002_versions_branch_nullable.sql:/docker-entrypoint-initdb.d/003_versions_branch_nullable.sql:ro
+      - ./docker/migrations/003_git_branches.sql:/docker-entrypoint-initdb.d/004_git_branches.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s

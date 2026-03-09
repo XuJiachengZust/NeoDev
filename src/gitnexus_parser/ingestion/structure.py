@@ -13,12 +13,14 @@ def process_structure(
     graph: "KnowledgeGraph",
     paths: List[str],
     branch: str | None = None,
+    project_id: int | None = None,
 ) -> None:
     """
     For each path, create Folder nodes for each path segment and a File node for the last.
     Add CONTAINS relationships. Paths use forward slashes.
     Aligned with structure-processor.ts.
     When branch is set, each node's properties include branch for Neo4j branch dimension.
+    When project_id is set, each node's properties include project_id for PG project association.
     """
     for path in paths:
         parts = path.split("/")
@@ -32,6 +34,8 @@ def process_structure(
             props: dict = {"name": part, "filePath": current_path}
             if branch is not None:
                 props["branch"] = branch
+            if project_id is not None:
+                props["project_id"] = project_id
             node: GraphNode = {
                 "id": node_id,
                 "label": label,

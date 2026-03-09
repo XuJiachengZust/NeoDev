@@ -8,7 +8,8 @@ import {
   deleteVersion,
   getWatchStatus,
   syncCommits,
-  listBranches,
+  syncCommitsForVersion,
+  listProjectBranches,
   listCommitsByVersion,
   listRequirements,
   createRequirement,
@@ -53,6 +54,7 @@ export function ProjectDetailPage() {
   const [scanning, setScanning] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncingVersionId, setSyncingVersionId] = useState<number | null>(null);
   const [impactLoading, setImpactLoading] = useState(false);
   const [bindReqId, setBindReqId] = useState<number | null>(null);
   const [bindLoading, setBindLoading] = useState(false);
@@ -138,14 +140,16 @@ export function ProjectDetailPage() {
     setScanning(true);
     setError(null);
     try {
-      const opts = isRepoUrl(repoPathInput)
-        ? {
-            repo_url: repoPathInput,
-            username: repoUsername.trim() || undefined,
-            password: repoPassword || undefined,
-          }
-        : { path: repoPathInput };
-      const { branches } = await listBranches(opts);
+      const payload: Parameters<typeof updateProject>[1] = {
+        repo_path: repoPathInput.trim(),
+      };
+      if (isRepoUrl(repoPathInput)) {
+        payload.repo_username = repoUsername.trim() || null;
+        payload.repo_password = repoPassword || null;
+      }
+      await updateProject(projectId, payload);
+
+      const branches = await listProjectBranches(projectId);
       const existing = new Set(versions.map((v) => v.branch).filter((b): b is string => !!b));
       for (const branch of branches) {
         if (existing.has(branch)) continue;
@@ -208,6 +212,24 @@ export function ProjectDetailPage() {
       setError(e instanceof Error ? e.message : "同步失败");
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleSyncVersion = async (versionId: number) => {
+    if (!Number.isFinite(projectId)) return;
+    setSyncingVersionId(versionId);
+    setError(null);
+    try {
+      await syncCommitsForVersion(projectId, versionId);
+      await load();
+      if (selectedVersionId === versionId) {
+        const list = await listCommitsByVersion(projectId, selectedVersionId);
+        setCommits(list);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "同步失败");
+    } finally {
+      setSyncingVersionId(null);
     }
   };
 
@@ -347,7 +369,7 @@ export function ProjectDetailPage() {
             扫描仓库
           </FlowButton>
           <button type="button" onClick={handleSync} disabled={syncing || versions.length === 0} className="secondary" data-testid="project-detail-sync">
-            {syncing ? "同步中..." : "同步提交"}
+            {syncing ? "同步中..." : "同步全部"}
           </button>
         </div>
         {watchStatus && versions.length > 0 && (
@@ -408,6 +430,15 @@ export function ProjectDetailPage() {
                   {versionDisplayName(v)}
                   {v.branch ? <span className="hint">绑定分支: {v.branch}</span> : null}
                   {v.last_parsed_commit != null && <span>最后解析: {v.last_parsed_commit.slice(0, 7)}</span>}
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => handleSyncVersion(v.id)}
+                    disabled={syncingVersionId !== null}
+                    data-testid={`version-sync-${v.id}`}
+                  >
+                    {syncingVersionId === v.id ? "同步中..." : "同步提交"}
+                  </button>
                   {deleteConfirmId === v.id ? (
                     <>
                       <span>确认删除？</span>

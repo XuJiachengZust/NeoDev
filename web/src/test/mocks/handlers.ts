@@ -114,6 +114,13 @@ export const handlers = [
     if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project or version not found" }, { status: 404 });
     return HttpResponse.json([commitFixture]);
   }),
+  http.get(`${API_BASE}/projects/:project_id/versions/:version_id/nodes`, ({ params }) => {
+    if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project or version not found" }, { status: 404 });
+    return HttpResponse.json([
+      { id: "file:src/main.py", label: "File", name: "main.py" },
+      { id: "folder:src", label: "Folder", name: "src" },
+    ]);
+  }),
 
   http.post(`${API_BASE}/projects/:project_id/impact-analyses`, async ({ request, params }) => {
     if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project not found" }, { status: 404 });
@@ -137,9 +144,57 @@ export const handlers = [
     if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project not found" }, { status: 404 });
     return HttpResponse.json(watchStatusFixture);
   }),
+  http.get(`${API_BASE}/projects/:project_id/branches`, ({ params }) => {
+    if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project not found" }, { status: 404 });
+    return HttpResponse.json(["main", "develop"]);
+  }),
+  http.get(`${API_BASE}/projects/:project_id/preprocess/status`, ({ params, request }) => {
+    if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project not found" }, { status: 404 });
+    const url = new URL(request.url);
+    const branch = url.searchParams.get("branch");
+    if (branch) {
+      return HttpResponse.json({
+        project_id: 1,
+        branch,
+        status: "completed",
+        started_at: "2024-01-01T10:00:00Z",
+        finished_at: "2024-01-01T10:05:00Z",
+        error_message: null,
+        extra: { saved: 10, skipped: 0 },
+      });
+    }
+    return HttpResponse.json({ items: [] });
+  }),
+  http.post(`${API_BASE}/projects/:project_id/preprocess`, ({ params }) => {
+    if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project not found" }, { status: 404 });
+    return HttpResponse.json({
+      status: "completed",
+      project_id: 1,
+      branch: "main",
+      message: "任务已完成",
+      extra: { saved: 0, skipped: 0 },
+    });
+  }),
   http.post(`${API_BASE}/projects/:project_id/sync-commits`, ({ params }) => {
     if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project not found" }, { status: 404 });
-    return HttpResponse.json({ synced: true });
+    return HttpResponse.json({
+      project_id: 1,
+      versions_synced: 1,
+      commits_synced: 0,
+      graph_actions: [],
+      graph_errors: null,
+    });
+  }),
+  http.post(`${API_BASE}/projects/:project_id/versions/:version_id/sync-commits`, ({ params }) => {
+    if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project or version not found" }, { status: 404 });
+    return HttpResponse.json({
+      project_id: 1,
+      version_id: Number(params.version_id),
+      branch: "main",
+      commits_synced: 0,
+      graph_action: "full",
+      graph_errors: undefined,
+    });
   }),
 
   http.post("/api/repos/branches", async () => {

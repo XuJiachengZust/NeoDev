@@ -42,7 +42,11 @@ class TestSyncCommitsForProject:
             {"commit_sha": "a" * 40, "message": "m1", "author": "a1", "committed_at": None},
             {"commit_sha": "b" * 40, "message": "m2", "author": "a2", "committed_at": None},
         ]
-        with patch("service.services.sync_service.git_ops.list_commits", return_value=mock_commits):
+        with (
+            patch("service.services.sync_service._resolve_local_repo", return_value="/tmp/repo"),
+            patch("service.services.sync_service.git_ops.fetch_repo"),
+            patch("service.services.sync_service.git_ops.list_commits", return_value=mock_commits),
+        ):
             result = sync_service.sync_commits_for_project(pg_conn, pid)
 
         assert result is not None

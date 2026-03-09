@@ -21,6 +21,7 @@ RelationshipType = Literal[
 
 class NodeProperties(TypedDict, total=False):
     branch: str
+    project_id: Optional[int]
     name: str
     filePath: str
     content: Optional[str]

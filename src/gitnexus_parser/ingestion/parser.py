@@ -86,6 +86,14 @@ class ExtractedHeritage:
 
 
 @dataclass
+class ExtractedModuleMember:
+    filePath: str
+    moduleName: str
+    moduleNodeId: str
+    functionNodeId: str
+
+
+@dataclass
 class ParseResult:
     nodes: list[ParsedNode] = field(default_factory=list)
     relationships: list[ParsedRelationship] = field(default_factory=list)
@@ -93,6 +101,7 @@ class ParseResult:
     imports: list[ExtractedImport] = field(default_factory=list)
     calls: list[ExtractedCall] = field(default_factory=list)
     heritage: list[ExtractedHeritage] = field(default_factory=list)
+    moduleMembers: list[ExtractedModuleMember] = field(default_factory=list)
     fileCount: int = 0
 
 
@@ -473,6 +482,7 @@ def _parse_lua_file(
     except Exception:
         return
     file_id = generate_id("File", file_path)
+    module_node_ids: set[str] = set()
     for match in matches:
         try:
             pattern_idx, captures = match
@@ -509,7 +519,8 @@ def _parse_lua_file(
         name_node = capture_map.get("name")
         if not name_node:
             continue
-        node_name = _node_text(name_node, source_bytes)
+        full_name_node = capture_map.get("function.full")
+        node_name = _node_text(full_name_node, source_bytes) if full_name_node else _node_text(name_node, source_bytes)
         node_id = generate_id(node_label, f"{file_path}:{node_name}")
         start_line = name_node.start_point[0] + 1
         end_line = name_node.end_point[0] + 1
@@ -539,6 +550,53 @@ def _parse_lua_file(
                 type="DEFINES",
                 confidence=1.0,
                 reason="",
+            )
+        )
+        module_name_node = capture_map.get("module.name")
+        if node_label != "Function" or not module_name_node:
+            continue
+        module_name = _node_text(module_name_node, source_bytes).strip()
+        if not module_name:
+            continue
+        module_id = generate_id("Module", f"{file_path}:{module_name}")
+        if module_id not in module_node_ids:
+            module_node_ids.add(module_id)
+            module_start_line = module_name_node.start_point[0] + 1
+            module_end_line = module_name_node.end_point[0] + 1
+            result.nodes.append(
+                ParsedNode(
+                    id=module_id,
+                    label="Module",
+                    properties={
+                        "name": module_name,
+                        "filePath": file_path,
+                        "startLine": module_start_line,
+                        "endLine": module_end_line,
+                        "language": language,
+                        "isExported": True,
+                    },
+                )
+            )
+            result.symbols.append(
+                ParsedSymbol(filePath=file_path, name=module_name, nodeId=module_id, type="Module")
+            )
+            module_rel_id = generate_id("DEFINES", f"{file_id}->{module_id}")
+            result.relationships.append(
+                ParsedRelationship(
+                    id=module_rel_id,
+                    sourceId=file_id,
+                    targetId=module_id,
+                    type="DEFINES",
+                    confidence=1.0,
+                    reason="",
+                )
+            )
+        result.moduleMembers.append(
+            ExtractedModuleMember(
+                filePath=file_path,
+                moduleName=module_name,
+                moduleNodeId=module_id,
+                functionNodeId=node_id,
             )
         )
 

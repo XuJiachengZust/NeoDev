@@ -48,7 +48,7 @@ def delete(conn, version_id: int) -> bool:
 
 
 def update_last_parsed_commit(
-    conn, version_id: int, commit_sha: str
+    conn, version_id: int, commit_sha: str | None
 ) -> dict | None:
     """Update last_parsed_commit for a version (Phase 4). Returns updated row or None."""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:

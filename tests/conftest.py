@@ -17,25 +17,22 @@ def _get_test_repo_path() -> str:
 
 
 def _run_migration_if_needed(conn) -> None:
-    """Run 001_impact_analysis_tables.sql if projects table does not exist."""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'projects'"
-        )
-        if cur.fetchone() is not None:
-            return
-    migration_path = Path(__file__).resolve().parent.parent / "docker" / "migrations" / "001_impact_analysis_tables.sql"
-    if not migration_path.is_file():
+    """Apply all SQL migrations in docker/migrations (idempotent)."""
+    migration_dir = Path(__file__).resolve().parent.parent / "docker" / "migrations"
+    if not migration_dir.is_dir():
         return
-    sql = migration_path.read_text(encoding="utf-8")
     conn.rollback()
-    with conn.cursor() as cur:
-        for stmt in sql.split(";"):
-            stmt = stmt.strip()
-            # Drop leading comment lines so "-- comment\nCREATE TABLE ..." is executed
-            stmt = "\n".join(line for line in stmt.split("\n") if not line.strip().startswith("--")).strip()
-            if stmt:
-                cur.execute(stmt)
+    for migration_path in sorted(migration_dir.glob("*.sql")):
+        sql = migration_path.read_text(encoding="utf-8")
+        with conn.cursor() as cur:
+            for stmt in sql.split(";"):
+                stmt = stmt.strip()
+                # Drop leading comment lines so "-- comment\nCREATE TABLE ..." is executed
+                stmt = "\n".join(
+                    line for line in stmt.split("\n") if not line.strip().startswith("--")
+                ).strip()
+                if stmt:
+                    cur.execute(stmt)
     conn.commit()
 
 

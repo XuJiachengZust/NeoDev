@@ -6,6 +6,7 @@ from service.routers import (
     commits,
     impact,
     parse,
+    preprocess,
     projects,
     repos,
     requirements,
@@ -23,4 +24,5 @@ router.include_router(requirements.router, prefix="/projects", tags=["requiremen
 router.include_router(commits.router, prefix="/projects", tags=["commits"])
 router.include_router(impact.router, prefix="/projects", tags=["impact"])
 router.include_router(sync.router, prefix="/projects", tags=["sync"])
+router.include_router(preprocess.router, prefix="/projects", tags=["preprocess"])
 router.include_router(projects.router, prefix="/projects", tags=["projects"])

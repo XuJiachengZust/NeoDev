@@ -1,6 +1,7 @@
 """API tests for sync-commits and watch-status (Phase 4)."""
 
 import pytest
+from unittest.mock import patch
 
 
 def _make_project(client, repo_path: str = "/tmp/p"):
@@ -13,7 +14,10 @@ class TestSyncApi:
     def test_sync_commits_returns_200_with_summary(self, client_with_db):
         pid = _make_project(client_with_db)
         client_with_db.post(f"/api/projects/{pid}/versions", json={"branch": "main"})
-        r = client_with_db.post(f"/api/projects/{pid}/sync-commits")
+        with patch("service.services.sync_service._resolve_local_repo", return_value="/tmp/p"), patch(
+            "service.services.sync_service.git_ops.fetch_repo"
+        ):
+            r = client_with_db.post(f"/api/projects/{pid}/sync-commits")
         assert r.status_code == 200
         data = r.json()
         assert data["project_id"] == pid
@@ -24,6 +28,29 @@ class TestSyncApi:
         r = client_with_db.post("/api/projects/999999/sync-commits")
         assert r.status_code == 404
         assert r.json()["detail"] == "Project not found"
+
+    def test_sync_commits_for_version_returns_200_with_summary(self, client_with_db):
+        pid = _make_project(client_with_db)
+        rv = client_with_db.post(f"/api/projects/{pid}/versions", json={"branch": "main"})
+        assert rv.status_code == 201
+        vid = rv.json()["id"]
+        with patch("service.services.sync_service._resolve_local_repo", return_value="/tmp/p"), patch(
+            "service.services.sync_service.git_ops.fetch_repo"
+        ):
+            r = client_with_db.post(f"/api/projects/{pid}/versions/{vid}/sync-commits")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["project_id"] == pid
+        assert data["version_id"] == vid
+        assert data["branch"] == "main"
+        assert "commits_synced" in data
+        assert "graph_action" in data
+
+    def test_sync_commits_for_version_not_found_returns_404(self, client_with_db):
+        pid = _make_project(client_with_db)
+        r = client_with_db.post(f"/api/projects/{pid}/versions/999999/sync-commits")
+        assert r.status_code == 404
+        assert "not found" in r.json()["detail"].lower()
 
     def test_watch_status_returns_versions_with_last_parsed(self, client_with_db):
         pid = _make_project(client_with_db)
