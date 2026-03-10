@@ -440,3 +440,477 @@ export function runParse(
     body,
   });
 }
+
+// --- Product API ---
+
+export interface Product {
+  id: number;
+  name: string;
+  code?: string | null;
+  description?: string | null;
+  owner?: string | null;
+  status: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProductCreate {
+  name: string;
+  code?: string | null;
+  description?: string | null;
+  owner?: string | null;
+}
+
+export interface ProductUpdate {
+  name?: string;
+  code?: string | null;
+  description?: string | null;
+  owner?: string | null;
+  status?: string;
+}
+
+export interface ProductVersion {
+  id: number;
+  product_id: number;
+  version_name: string;
+  description?: string | null;
+  status: string;
+  release_date?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProductVersionCreate {
+  version_name: string;
+  description?: string | null;
+  status?: string;
+  release_date?: string | null;
+}
+
+export interface ProductVersionUpdate {
+  version_name?: string;
+  description?: string | null;
+  status?: string;
+  release_date?: string | null;
+}
+
+export interface VersionBranch {
+  id: number;
+  product_version_id: number;
+  project_id: number;
+  branch: string;
+  project_name?: string;
+}
+
+export interface ProductRequirement {
+  id: number;
+  product_id: number;
+  parent_id: number | null;
+  level: "epic" | "story" | "task";
+  title: string;
+  description?: string | null;
+  external_id?: string | null;
+  status: string;
+  priority: string;
+  assignee?: string | null;
+  version_id?: number | null;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProductRequirementCreate {
+  title: string;
+  level?: string;
+  parent_id?: number | null;
+  description?: string | null;
+  external_id?: string | null;
+  status?: string;
+  priority?: string;
+  assignee?: string | null;
+  version_id: number;
+  sort_order?: number;
+}
+
+export interface ProductRequirementUpdate {
+  title?: string;
+  level?: string;
+  parent_id?: number | null;
+  description?: string | null;
+  external_id?: string | null;
+  status?: string;
+  priority?: string;
+  assignee?: string | null;
+  version_id?: number | null;
+  sort_order?: number;
+}
+
+export interface ProductBug {
+  id: number;
+  product_id: number;
+  title: string;
+  description?: string | null;
+  external_id?: string | null;
+  severity: string;
+  status: string;
+  priority: string;
+  assignee?: string | null;
+  reporter?: string | null;
+  version_id?: number | null;
+  fix_version_id?: number | null;
+  requirement_id?: number | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProductBugCreate {
+  title: string;
+  description?: string | null;
+  external_id?: string | null;
+  severity?: string;
+  status?: string;
+  priority?: string;
+  assignee?: string | null;
+  reporter?: string | null;
+  version_id: number;
+  fix_version_id?: number | null;
+  requirement_id?: number | null;
+}
+
+export interface ProductBugUpdate {
+  title?: string;
+  description?: string | null;
+  severity?: string;
+  status?: string;
+  priority?: string;
+  assignee?: string | null;
+  reporter?: string | null;
+  version_id?: number | null;
+  fix_version_id?: number | null;
+  requirement_id?: number | null;
+}
+
+// Product CRUD
+export function listProducts(status?: string): Promise<Product[]> {
+  const q = status ? `?status=${encodeURIComponent(status)}` : "";
+  return request<Product[]>(`/api/products${q}`);
+}
+
+export function createProduct(body: ProductCreate): Promise<Product> {
+  return request<Product>("/api/products", { method: "POST", body });
+}
+
+export function getProduct(productId: number): Promise<Product> {
+  return request<Product>(`/api/products/${productId}`);
+}
+
+export function updateProduct(productId: number, body: ProductUpdate): Promise<Product> {
+  return request<Product>(`/api/products/${productId}`, { method: "PATCH", body });
+}
+
+export function deleteProduct(productId: number): Promise<void> {
+  return request<void>(`/api/products/${productId}`, { method: "DELETE" });
+}
+
+// Product-Project binding
+export interface ProjectCreateInProduct {
+  name: string;
+  repo_path: string;
+  repo_username?: string | null;
+  repo_password?: string | null;
+}
+
+export function createProjectInProduct(productId: number, body: ProjectCreateInProduct): Promise<Project> {
+  return request<Project>(`/api/products/${productId}/projects/create`, { method: "POST", body });
+}
+
+export function listProductProjects(productId: number): Promise<Project[]> {
+  return request<Project[]>(`/api/products/${productId}/projects`);
+}
+
+export function bindProductProject(productId: number, projectId: number): Promise<void> {
+  return request<void>(`/api/products/${productId}/projects`, {
+    method: "POST",
+    body: { project_id: projectId },
+  });
+}
+
+export function unbindProductProject(productId: number, projectId: number): Promise<void> {
+  return request<void>(`/api/products/${productId}/projects/${projectId}`, { method: "DELETE" });
+}
+
+// Product Versions
+export function listProductVersions(productId: number, status?: string): Promise<ProductVersion[]> {
+  const q = status ? `?status=${encodeURIComponent(status)}` : "";
+  return request<ProductVersion[]>(`/api/products/${productId}/versions${q}`);
+}
+
+export function createProductVersion(productId: number, body: ProductVersionCreate): Promise<ProductVersion> {
+  return request<ProductVersion>(`/api/products/${productId}/versions`, { method: "POST", body });
+}
+
+export function getProductVersion(productId: number, versionId: number): Promise<ProductVersion> {
+  return request<ProductVersion>(`/api/products/${productId}/versions/${versionId}`);
+}
+
+export function updateProductVersion(productId: number, versionId: number, body: ProductVersionUpdate): Promise<ProductVersion> {
+  return request<ProductVersion>(`/api/products/${productId}/versions/${versionId}`, { method: "PATCH", body });
+}
+
+export function deleteProductVersion(productId: number, versionId: number): Promise<void> {
+  return request<void>(`/api/products/${productId}/versions/${versionId}`, { method: "DELETE" });
+}
+
+// Version branch mapping
+export function listVersionBranches(productId: number, versionId: number): Promise<VersionBranch[]> {
+  return request<VersionBranch[]>(`/api/products/${productId}/versions/${versionId}/branches`);
+}
+
+export function setVersionBranch(productId: number, versionId: number, projectId: number, branch: string): Promise<VersionBranch> {
+  return request<VersionBranch>(`/api/products/${productId}/versions/${versionId}/branches`, {
+    method: "POST",
+    body: { project_id: projectId, branch },
+  });
+}
+
+// Product Requirements
+export function listProductRequirements(
+  productId: number,
+  params?: { level?: string; parent_id?: number; status?: string; version_id?: number }
+): Promise<ProductRequirement[]> {
+  const search = new URLSearchParams();
+  if (params?.level) search.set("level", params.level);
+  if (params?.parent_id != null) search.set("parent_id", String(params.parent_id));
+  if (params?.status) search.set("status", params.status);
+  if (params?.version_id != null) search.set("version_id", String(params.version_id));
+  const q = search.toString();
+  return request<ProductRequirement[]>(`/api/products/${productId}/requirements${q ? `?${q}` : ""}`);
+}
+
+export function listProductRequirementsTree(productId: number, versionId?: number): Promise<ProductRequirement[]> {
+  const q = versionId != null ? `?version_id=${versionId}` : "";
+  return request<ProductRequirement[]>(`/api/products/${productId}/requirements/tree${q}`);
+}
+
+export function createProductRequirement(productId: number, body: ProductRequirementCreate): Promise<ProductRequirement> {
+  return request<ProductRequirement>(`/api/products/${productId}/requirements`, { method: "POST", body });
+}
+
+export function updateProductRequirement(productId: number, reqId: number, body: ProductRequirementUpdate): Promise<ProductRequirement> {
+  return request<ProductRequirement>(`/api/products/${productId}/requirements/${reqId}`, { method: "PATCH", body });
+}
+
+export function deleteProductRequirement(productId: number, reqId: number): Promise<void> {
+  return request<void>(`/api/products/${productId}/requirements/${reqId}`, { method: "DELETE" });
+}
+
+export function listRequirementCommits(productId: number, reqId: number): Promise<Commit[]> {
+  return request<Commit[]>(`/api/products/${productId}/requirements/${reqId}/commits`);
+}
+
+export function bindRequirementCommitsProduct(productId: number, reqId: number, commitIds: number[]): Promise<void> {
+  return request<void>(`/api/products/${productId}/requirements/${reqId}/commits`, {
+    method: "POST",
+    body: { commit_ids: commitIds },
+  });
+}
+
+// Product Bugs
+export function listProductBugs(
+  productId: number,
+  params?: { status?: string; severity?: string; version_id?: number }
+): Promise<ProductBug[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (params?.severity) search.set("severity", params.severity);
+  if (params?.version_id != null) search.set("version_id", String(params.version_id));
+  const q = search.toString();
+  return request<ProductBug[]>(`/api/products/${productId}/bugs${q ? `?${q}` : ""}`);
+}
+
+export function createProductBug(productId: number, body: ProductBugCreate): Promise<ProductBug> {
+  return request<ProductBug>(`/api/products/${productId}/bugs`, { method: "POST", body });
+}
+
+export function updateProductBug(productId: number, bugId: number, body: ProductBugUpdate): Promise<ProductBug> {
+  return request<ProductBug>(`/api/products/${productId}/bugs/${bugId}`, { method: "PATCH", body });
+}
+
+export function deleteProductBug(productId: number, bugId: number): Promise<void> {
+  return request<void>(`/api/products/${productId}/bugs/${bugId}`, { method: "DELETE" });
+}
+
+export function listBugCommits(productId: number, bugId: number): Promise<Commit[]> {
+  return request<Commit[]>(`/api/products/${productId}/bugs/${bugId}/commits`);
+}
+
+export function bindBugCommits(productId: number, bugId: number, commitIds: number[]): Promise<void> {
+  return request<void>(`/api/products/${productId}/bugs/${bugId}/commits`, {
+    method: "POST",
+    body: { commit_ids: commitIds },
+  });
+}
+
+// --- AI Agent API ---
+
+export interface AgentMessage {
+  id?: number;
+  conversation_id?: number;
+  role: "user" | "assistant" | "tool" | "system";
+  content: string;
+  tool_calls?: unknown[] | null;
+  tool_call_id?: string | null;
+  token_in?: number | null;
+  token_out?: number | null;
+  latency_ms?: number | null;
+  model?: string | null;
+  created_at?: string;
+}
+
+export interface AgentConversation {
+  conversation_id: number;
+  thread_id: string;
+  agent_profile: string;
+  route_context_key: string;
+  product_id?: number | null;
+}
+
+export interface SSEEvent {
+  event: "token" | "tool_start" | "tool_end" | "done" | "error";
+  data: unknown;
+}
+
+export function resolveAgentSession(
+  sessionId: string,
+  routeContextKey: string,
+  projectId?: number | null,
+  productId?: number | null,
+): Promise<AgentConversation> {
+  return request<AgentConversation>("/api/agent/sessions/resolve", {
+    method: "POST",
+    body: {
+      session_id: sessionId,
+      route_context_key: routeContextKey,
+      project_id: projectId ?? undefined,
+      product_id: productId ?? undefined,
+    },
+  });
+}
+
+export function getAgentMessages(
+  conversationId: number,
+  limit: number = 50,
+  offset: number = 0
+): Promise<{ messages: AgentMessage[]; conversation_id: number }> {
+  const params = new URLSearchParams();
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
+  return request<{ messages: AgentMessage[]; conversation_id: number }>(
+    `/api/agent/conversations/${conversationId}/messages?${params.toString()}`
+  );
+}
+
+export function sendAgentMessage(
+  conversationId: number,
+  message: string
+): Promise<{ role: string; content: string; message_id: number }> {
+  return request<{ role: string; content: string; message_id: number }>(
+    "/api/agent/chat",
+    {
+      method: "POST",
+      body: { conversation_id: conversationId, message, stream: false },
+    }
+  );
+}
+
+/**
+ * SSE 流式 Agent 对话。通过回调逐步推送事件。
+ * 返回 AbortController 用于取消。
+ */
+export function streamAgentChat(
+  conversationId: number,
+  message: string,
+  callbacks: {
+    onToken?: (text: string) => void;
+    onToolEvent?: (event: SSEEvent) => void;
+    onDone?: (data: { content: string; token_in?: number; token_out?: number }) => void;
+    onError?: (error: string) => void;
+  }
+): AbortController {
+  const controller = new AbortController();
+
+  (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/agent/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          message,
+          stream: true,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        callbacks.onError?.((data as { detail?: string }).detail ?? res.statusText);
+        return;
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        callbacks.onError?.("No response body");
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr) continue;
+
+          try {
+            const event: SSEEvent = JSON.parse(jsonStr);
+
+            switch (event.event) {
+              case "token":
+                callbacks.onToken?.(event.data as string);
+                break;
+              case "tool_start":
+              case "tool_end":
+                callbacks.onToolEvent?.(event);
+                break;
+              case "done":
+                callbacks.onDone?.(
+                  event.data as { content: string; token_in?: number; token_out?: number }
+                );
+                break;
+              case "error":
+                callbacks.onError?.((event.data as { message: string }).message);
+                break;
+            }
+          } catch {
+            // 忽略无法解析的行
+          }
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        callbacks.onError?.((err as Error).message);
+      }
+    }
+  })();
+
+  return controller;
+}

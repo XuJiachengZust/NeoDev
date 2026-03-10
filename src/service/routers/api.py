@@ -3,10 +3,15 @@
 from fastapi import APIRouter
 
 from service.routers import (
+    agent,
     commits,
     impact,
     parse,
     preprocess,
+    product_bugs,
+    product_requirements,
+    product_versions,
+    products,
     projects,
     repos,
     requirements,
@@ -26,3 +31,9 @@ router.include_router(impact.router, prefix="/projects", tags=["impact"])
 router.include_router(sync.router, prefix="/projects", tags=["sync"])
 router.include_router(preprocess.router, prefix="/projects", tags=["preprocess"])
 router.include_router(projects.router, prefix="/projects", tags=["projects"])
+router.include_router(agent.router, prefix="/agent", tags=["agent"])
+# 产品化路由
+router.include_router(product_versions.router, prefix="/products", tags=["product-versions"])
+router.include_router(product_requirements.router, prefix="/products", tags=["product-requirements"])
+router.include_router(product_bugs.router, prefix="/products", tags=["product-bugs"])
+router.include_router(products.router, prefix="/products", tags=["products"])
