@@ -97,15 +97,16 @@ def create_project(
     repo_path: str,
     repo_username: str | None = None,
     repo_password: str | None = None,
+    repo_url: str | None = None,
 ) -> dict:
     """在产品下直接创建项目。"""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
-            """INSERT INTO projects (name, repo_path, repo_username, repo_password, product_id)
-               VALUES (%s, %s, %s, %s, %s)
-               RETURNING id, name, repo_path, created_at, watch_enabled, product_id,
+            """INSERT INTO projects (name, repo_path, repo_url, repo_username, repo_password, product_id)
+               VALUES (%s, %s, %s, %s, %s, %s)
+               RETURNING id, name, repo_path, repo_url, created_at, watch_enabled, product_id,
                          repo_username, repo_password""",
-            (name, repo_path, repo_username, repo_password, product_id),
+            (name, repo_path, repo_url, repo_username, repo_password, product_id),
         )
         return dict(cur.fetchone())
 

@@ -32,6 +32,7 @@ export interface Project {
   id: number;
   name: string;
   repo_path: string;
+  repo_url?: string | null;
   created_at?: string;
   watch_enabled?: boolean;
   neo4j_database?: string | null;
@@ -692,6 +693,20 @@ export function listProductRequirementsTree(productId: number, versionId?: numbe
   return request<ProductRequirement[]>(`/api/products/${productId}/requirements/tree${q}`);
 }
 
+export interface ProductRequirementWithCounts extends ProductRequirement {
+  commit_count: number;
+}
+
+export function listProductRequirementsTreeWithCounts(
+  productId: number,
+  versionId?: number
+): Promise<ProductRequirementWithCounts[]> {
+  const q = versionId != null ? `?version_id=${versionId}` : "";
+  return request<ProductRequirementWithCounts[]>(
+    `/api/products/${productId}/requirements/tree_counts${q}`
+  );
+}
+
 export function createProductRequirement(productId: number, body: ProductRequirementCreate): Promise<ProductRequirement> {
   return request<ProductRequirement>(`/api/products/${productId}/requirements`, { method: "POST", body });
 }
@@ -711,6 +726,13 @@ export function listRequirementCommits(productId: number, reqId: number): Promis
 export function bindRequirementCommitsProduct(productId: number, reqId: number, commitIds: number[]): Promise<void> {
   return request<void>(`/api/products/${productId}/requirements/${reqId}/commits`, {
     method: "POST",
+    body: { commit_ids: commitIds },
+  });
+}
+
+export function unbindRequirementCommitsProduct(productId: number, reqId: number, commitIds: number[]): Promise<void> {
+  return request<void>(`/api/products/${productId}/requirements/${reqId}/commits`, {
+    method: "DELETE",
     body: { commit_ids: commitIds },
   });
 }

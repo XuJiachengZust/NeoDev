@@ -37,6 +37,7 @@ def list_projects(db=Depends(get_db)):
 
 @router.post("/", status_code=201, response_model=dict)
 def create_project(body: ProjectCreate, db=Depends(get_db)):
+    repo_url = body.repo_path if _is_remote_url(body.repo_path) else None
     return service.create_project(
         db,
         name=body.name,
@@ -46,6 +47,7 @@ def create_project(body: ProjectCreate, db=Depends(get_db)):
         neo4j_identifier=body.neo4j_identifier,
         repo_username=body.repo_username,
         repo_password=body.repo_password,
+        repo_url=repo_url,
     )
 
 
@@ -71,9 +73,17 @@ def list_project_branches(project_id: int, db=Depends(get_db)):
     return branches or []
 
 
+def _is_remote_url(path: str) -> bool:
+    p = (path or "").strip()
+    return p.startswith("http://") or p.startswith("https://") or p.startswith("git@")
+
+
 @router.patch("/{project_id}", response_model=dict)
 def update_project(project_id: int, body: ProjectUpdate, db=Depends(get_db)):
     data = body.model_dump(exclude_unset=True)
+    # 当 repo_path 是远程 URL 时，同步保存到 repo_url
+    if "repo_path" in data and _is_remote_url(data["repo_path"]):
+        data["repo_url"] = data["repo_path"]
     out = service.update_project(db, project_id, **data)
     if out is None:
         raise HTTPException(status_code=404, detail="Project not found")

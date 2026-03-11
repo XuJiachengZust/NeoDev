@@ -65,7 +65,7 @@ def resolve_session(body: ResolveSessionRequest, db=Depends(get_db)):
     # 校验 product_id 是否存在，不存在则忽略
     product_id = body.product_id
     if product_id is not None:
-        if not product_repository.get_product(db, product_id):
+        if not product_repository.find_by_id(db, product_id):
             product_id = None
 
     # 确定 profile：产品模式使用 "product" profile

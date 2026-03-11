@@ -81,11 +81,17 @@ def list_product_projects(product_id: int, db=Depends(get_db)):
     return service.list_projects(db, product_id)
 
 
+def _is_remote_url(path: str) -> bool:
+    p = (path or "").strip()
+    return p.startswith("http://") or p.startswith("https://") or p.startswith("git@")
+
+
 @router.post("/{product_id}/projects/create", status_code=201, response_model=dict)
 def create_project_in_product(product_id: int, body: ProjectCreateInProduct, db=Depends(get_db)):
     product = service.get_product(db, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+    repo_url = body.repo_path if _is_remote_url(body.repo_path) else None
     return service.create_project_in_product(
         db,
         product_id=product_id,
@@ -93,6 +99,7 @@ def create_project_in_product(product_id: int, body: ProjectCreateInProduct, db=
         repo_path=body.repo_path,
         repo_username=body.repo_username,
         repo_password=body.repo_password,
+        repo_url=repo_url,
     )
 
 

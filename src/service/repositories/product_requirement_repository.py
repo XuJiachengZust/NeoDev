@@ -58,6 +58,30 @@ def list_tree(conn, product_id: int, version_id: int | None = None) -> list[dict
         return [dict(row) for row in cur.fetchall()]
 
 
+def list_tree_with_commit_counts(conn, product_id: int, version_id: int | None = None) -> list[dict]:
+    """返回需求平铺列表，附带每条需求已绑定的提交数（LEFT JOIN 避免 N+1）。"""
+    conditions = ["r.product_id = %s"]
+    args: list = [product_id]
+    if version_id is not None:
+        conditions.append("r.version_id = %s")
+        args.append(version_id)
+    where = " AND ".join(conditions)
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""SELECT r.id, r.product_id, r.parent_id, r.level, r.title, r.description,
+                       r.external_id, r.status, r.priority, r.assignee, r.version_id,
+                       r.sort_order, r.created_at, r.updated_at,
+                       COUNT(prc.commit_id) AS commit_count
+                FROM product_requirements r
+                LEFT JOIN product_requirement_commits prc ON prc.requirement_id = r.id
+                WHERE {where}
+                GROUP BY r.id
+                ORDER BY r.sort_order, r.id""",
+            args,
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
 def find_by_id(conn, requirement_id: int) -> dict | None:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(

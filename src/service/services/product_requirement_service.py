@@ -21,6 +21,10 @@ def list_tree(conn, product_id: int, version_id: int | None = None) -> list[dict
     return repo.list_tree(conn, product_id, version_id=version_id)
 
 
+def list_tree_with_counts(conn, product_id: int, version_id: int | None = None) -> list[dict]:
+    return repo.list_tree_with_commit_counts(conn, product_id, version_id=version_id)
+
+
 def get_requirement(conn, requirement_id: int) -> dict | None:
     return repo.find_by_id(conn, requirement_id)
 

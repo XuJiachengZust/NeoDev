@@ -20,10 +20,12 @@ def create_project(
     neo4j_identifier: str | None = None,
     repo_username: str | None = None,
     repo_password: str | None = None,
+    repo_url: str | None = None,
 ) -> dict:
     return repo.create(
         conn, name, repo_path, watch_enabled, neo4j_database, neo4j_identifier,
         repo_username=repo_username, repo_password=repo_password,
+        repo_url=repo_url,
     )
 
 

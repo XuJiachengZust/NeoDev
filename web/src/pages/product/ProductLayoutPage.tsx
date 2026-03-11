@@ -43,32 +43,36 @@ export function ProductLayoutPage() {
   if (error || !product) return <div className="result error">{error ?? "产品不存在"}</div>;
 
   return (
-    <div data-testid="page-product-layout">
-      <button type="button" className="secondary" onClick={() => navigate("/products")}>
-        返回产品列表
-      </button>
-      <h2 className="page-title mt-16">
-        {product.name}
-        {product.code && (
-          <span className="text-caption text-muted" style={{ marginLeft: 8 }}>
-            [{product.code}]
-          </span>
-        )}
-      </h2>
+    <div data-testid="page-product-layout" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ flexShrink: 0 }}>
+        <button type="button" className="secondary" onClick={() => navigate("/products")}>
+          返回产品列表
+        </button>
+        <h2 className="page-title mt-16">
+          {product.name}
+          {product.code && (
+            <span className="text-caption text-muted" style={{ marginLeft: 8 }}>
+              [{product.code}]
+            </span>
+          )}
+        </h2>
 
-      <nav role="tablist" className="cockpit-tabs mb-16">
-        <NavLink to="dashboard" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
-          仪表盘
-        </NavLink>
-        <NavLink to="projects" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
-          项目
-        </NavLink>
-        <NavLink to="versions" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
-          版本
-        </NavLink>
-      </nav>
+        <nav role="tablist" className="cockpit-tabs mb-16">
+          <NavLink to="dashboard" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
+            仪表盘
+          </NavLink>
+          <NavLink to="projects" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
+            项目
+          </NavLink>
+          <NavLink to="versions" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
+            版本
+          </NavLink>
+        </nav>
+      </div>
 
-      <Outlet context={{ productId, product, reloadProduct: loadProduct }} />
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+        <Outlet context={{ productId, product, reloadProduct: loadProduct }} />
+      </div>
     </div>
   );
 }

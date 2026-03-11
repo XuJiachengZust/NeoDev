@@ -17,6 +17,7 @@
 .mt-4 { margin-top: 4px; }
 .mb-8 { margin-bottom: 8px; }
 .mb-16 { margin-bottom: 16px; }
+.mb-12 { margin-bottom: 12px; }
 .mb-24 { margin-bottom: 24px; }
 .mt-16 { margin-top: 16px; }
 
@@ -90,16 +91,19 @@ button.xs { padding: 2px 8px; font-size: 11px; }
 
 .app-main-wrap {
   width: 100%;
+  height: calc(100vh - 56px);
   display: flex;
   align-items: stretch;
+  overflow: hidden;
 }
 
 .app-main {
   flex: 1;
   max-width: none;
   margin: 0;
-  padding: 24px 20px 40px;
+  padding: 24px 20px 24px;
   min-width: 0;
+  overflow-y: auto;
 }
 
 /* 右侧 Agent 样式保留（当前布局未启用） */
@@ -846,4 +850,51 @@ button.secondary:hover {
 
 .modal-close:hover {
   color: var(--color-text);
+}
+
+/* ── Toast 通知 ── */
+
+.toast-container {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  padding: 12px 20px;
+  border-radius: var(--radius-input);
+  font-size: var(--text-body);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  animation: toast-in 0.3s ease-out;
+}
+
+.toast.success {
+  border-color: var(--color-primary);
+  background: rgba(0, 240, 255, 0.08);
+}
+
+.toast.error {
+  border-color: var(--color-alert);
+  background: rgba(255, 0, 85, 0.1);
+  color: var(--color-alert);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(80px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }

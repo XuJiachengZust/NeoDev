@@ -40,10 +40,12 @@ def create_project_in_product(
     repo_path: str,
     repo_username: str | None = None,
     repo_password: str | None = None,
+    repo_url: str | None = None,
 ) -> dict:
     return repo.create_project(
         conn, product_id, name, repo_path,
         repo_username=repo_username, repo_password=repo_password,
+        repo_url=repo_url,
     )
 
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useVersionPageContext } from "./ProductVersionWorkspacePage";
 import {
   updateProductVersion,
@@ -8,8 +9,10 @@ import {
   setVersionBranch,
   listProductRequirements,
   listProductBugs,
+  getPreprocessStatus,
   type VersionBranch,
   type Project,
+  type PreprocessStatusItem,
 } from "../../api/client";
 
 const STATUS_OPTIONS = ["planning", "developing", "testing", "released"];
@@ -22,12 +25,16 @@ const STATUS_LABELS: Record<string, string> = {
 
 export function ProductVersionOverviewPage() {
   const { productId, versionId, version, reloadVersion } = useVersionPageContext();
+  const navigate = useNavigate();
 
   const [branches, setBranches] = useState<VersionBranch[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [reqCount, setReqCount] = useState(0);
   const [bugCount, setBugCount] = useState(0);
+
+  // 分支 AI 分析状态: key = "projectId:branch"
+  const [branchAiStatus, setBranchAiStatus] = useState<Record<string, PreprocessStatusItem>>({});
 
   // 分支设置表单
   const [branchForm, setBranchForm] = useState({ projectId: 0, branch: "" });
@@ -45,6 +52,22 @@ export function ProductVersionOverviewPage() {
       setProjects(projs);
       setReqCount(reqs.length);
       setBugCount(bugs.length);
+
+      // 加载每个分支的 AI 分析状态
+      const statusMap: Record<string, PreprocessStatusItem> = {};
+      await Promise.all(
+        brs.map(async (b) => {
+          try {
+            const resp = await getPreprocessStatus(b.project_id, b.branch);
+            if (resp && "status" in resp) {
+              statusMap[`${b.project_id}:${b.branch}`] = resp as PreprocessStatusItem;
+            }
+          } catch {
+            // 没有预处理记录，忽略
+          }
+        })
+      );
+      setBranchAiStatus(statusMap);
     } catch (e) {
       setError(e instanceof Error ? e.message : "加载失败");
     }
@@ -114,12 +137,30 @@ export function ProductVersionOverviewPage() {
           <div className="text-muted">暂无分支映射</div>
         ) : (
           <div className="list-col">
-            {branches.map((b) => (
-              <div key={b.id} className="flex-center gap-12">
-                <span className="text-bold">{b.project_name ?? `项目#${b.project_id}`}</span>
-                <span style={{ color: "var(--color-primary)" }}>{b.branch}</span>
-              </div>
-            ))}
+            {branches.map((b) => {
+              const aiStatus = branchAiStatus[`${b.project_id}:${b.branch}`];
+              return (
+                <div
+                  key={b.id}
+                  className="flex-center gap-12"
+                  style={{
+                    cursor: "pointer",
+                    padding: "6px 8px",
+                    borderRadius: 4,
+                    transition: "background 0.15s",
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0, 240, 255, 0.08)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  onClick={() => navigate(`/products/${productId}/projects/${b.project_id}?versionId=${versionId}`)}
+                >
+                  <span className="text-bold">{b.project_name ?? `项目#${b.project_id}`}</span>
+                  <span style={{ color: "var(--color-primary)" }}>{b.branch}</span>
+                  <AiStatusBadge status={aiStatus} />
+                  <span className="flex-1" />
+                  <span className="text-muted">→</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -174,5 +215,46 @@ export function ProductVersionOverviewPage() {
         </div>
       )}
     </div>
+  );
+}
+
+const AI_STATUS_STYLES: Record<string, { bg: string; color: string; label: string }> = {
+  pending: { bg: "rgba(255, 200, 0, 0.12)", color: "#ffc800", label: "AI 待分析" },
+  running: { bg: "rgba(0, 240, 255, 0.12)", color: "var(--color-primary)", label: "AI 分析中" },
+  completed: { bg: "rgba(0, 255, 128, 0.12)", color: "#00ff80", label: "AI 已完成" },
+  failed: { bg: "rgba(255, 0, 85, 0.12)", color: "var(--color-alert)", label: "AI 失败" },
+};
+
+function AiStatusBadge({ status }: { status?: PreprocessStatusItem }) {
+  if (!status) {
+    return (
+      <span
+        style={{
+          fontSize: 11,
+          padding: "1px 6px",
+          borderRadius: "var(--radius-pill)",
+          background: "rgba(74, 74, 85, 0.3)",
+          color: "var(--color-text-muted)",
+        }}
+      >
+        未分析
+      </span>
+    );
+  }
+  const s = AI_STATUS_STYLES[status.status] ?? AI_STATUS_STYLES.pending;
+  return (
+    <span
+      style={{
+        fontSize: 11,
+        padding: "1px 6px",
+        borderRadius: "var(--radius-pill)",
+        background: s.bg,
+        color: s.color,
+        ...(status.status === "running" ? { animation: "pulse 1s ease-in-out infinite" } : {}),
+      }}
+      title={status.error_message || undefined}
+    >
+      {s.label}
+    </span>
   );
 }

@@ -72,6 +72,17 @@ def list_requirements_tree(
     return service.list_tree(db, product_id, version_id=version_id)
 
 
+@router.get("/{product_id}/requirements/tree_counts", response_model=list)
+def list_requirements_tree_with_counts(
+    product_id: int,
+    version_id: int | None = Query(None),
+    db=Depends(get_db),
+):
+    """返回平铺需求列表，附带每条需求已绑定提交数。"""
+    _check_product(db, product_id)
+    return service.list_tree_with_counts(db, product_id, version_id=version_id)
+
+
 @router.post("/{product_id}/requirements", status_code=201, response_model=dict)
 def create_requirement(product_id: int, body: RequirementCreate, db=Depends(get_db)):
     _check_product(db, product_id)

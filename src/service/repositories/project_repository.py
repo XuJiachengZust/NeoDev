@@ -3,7 +3,7 @@
 from psycopg2.extras import RealDictCursor
 
 
-_COLUMNS = "id, name, repo_path, created_at, watch_enabled, neo4j_database, neo4j_identifier, repo_username, repo_password"
+_COLUMNS = "id, name, repo_path, repo_url, created_at, watch_enabled, neo4j_database, neo4j_identifier, repo_username, repo_password"
 
 
 def list_all(conn) -> list[dict]:
@@ -31,20 +31,21 @@ def create(
     neo4j_identifier: str | None = None,
     repo_username: str | None = None,
     repo_password: str | None = None,
+    repo_url: str | None = None,
 ) -> dict:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
-            """INSERT INTO projects (name, repo_path, watch_enabled, neo4j_database, neo4j_identifier, repo_username, repo_password)
-             VALUES (%s, %s, %s, %s, %s, %s, %s)
-             RETURNING id, name, repo_path, created_at, watch_enabled, neo4j_database, neo4j_identifier, repo_username, repo_password""",
-            (name, repo_path, watch_enabled, neo4j_database, neo4j_identifier, repo_username, repo_password),
+            f"""INSERT INTO projects (name, repo_path, repo_url, watch_enabled, neo4j_database, neo4j_identifier, repo_username, repo_password)
+             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+             RETURNING {_COLUMNS}""",
+            (name, repo_path, repo_url, watch_enabled, neo4j_database, neo4j_identifier, repo_username, repo_password),
         )
         row = cur.fetchone()
         return dict(row)
 
 
 _ALLOWED_UPDATE_KEYS = frozenset(
-    {"name", "repo_path", "watch_enabled", "neo4j_database", "neo4j_identifier", "repo_username", "repo_password"}
+    {"name", "repo_path", "repo_url", "watch_enabled", "neo4j_database", "neo4j_identifier", "repo_username", "repo_password"}
 )
 
 
