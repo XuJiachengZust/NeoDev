@@ -73,7 +73,7 @@ def log_unhandled_exception(request: Request, exc: Exception):
 
 
 @app.on_event("startup")
-def startup():
+async def startup():
     # 未配置时自动设置 REPO_CLONE_BASE 为项目根的同级 repos 目录
     if not os.environ.get("REPO_CLONE_BASE", "").strip():
         neodev_root = Path(__file__).resolve().parent.parent.parent  # service -> src -> NeoDev
@@ -81,8 +81,21 @@ def startup():
         os.environ["REPO_CLONE_BASE"] = str(default_repos.resolve())
         logger.info("REPO_CLONE_BASE 未配置，已设为默认: %s", os.environ["REPO_CLONE_BASE"])
 
+    # 初始化 LangGraph Checkpointer（PostgreSQL 持久化）
+    try:
+        from service.checkpointer import init_checkpointer
+        await init_checkpointer()
+    except Exception:
+        logger.error("LangGraph Checkpointer 初始化失败，Agent 将降级为内存 Checkpointer（重启后丢失上下文）", exc_info=True)
+
     log = logging.getLogger("uvicorn.error")
     log.info("NeoDev API 已启动 -> http://127.0.0.1:8000  docs -> http://127.0.0.1:8000/docs")
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    from service.checkpointer import close_checkpointer
+    await close_checkpointer()
 
 app.add_middleware(
     CORSMiddleware,
@@ -97,4 +110,9 @@ app.include_router(api_router)
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    from service.checkpointer import get_checkpointer
+    cp = get_checkpointer()
+    return {
+        "status": "ok",
+        "checkpointer": type(cp).__name__ if cp else "None (will fallback to MemorySaver)",
+    }

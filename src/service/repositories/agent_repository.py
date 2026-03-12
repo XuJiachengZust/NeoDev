@@ -28,6 +28,11 @@ def upsert_session(conn, session_id: str, user_id: str | None = None) -> dict:
 # ── Conversations ─────────────────────────────────────────────────────
 
 
+_CONV_COLUMNS = """id, session_id, route_context_key, project_id, product_id,
+                    agent_profile, thread_id, title, version_id, is_active,
+                    created_at, updated_at"""
+
+
 def resolve_conversation(
     conn,
     session_id: str,
@@ -35,29 +40,42 @@ def resolve_conversation(
     project_id: int | None = None,
     product_id: int | None = None,
     agent_profile: str = "default",
+    version_id: int | None = None,
 ) -> dict:
-    """查找或创建 session + route + project/product 对应的对话，返回对话行。
+    """查找或创建对话。
 
-    产品模式：当 product_id 存在时，按 session + route + product 查找。
+    产品模式：按 (session_id, product_id, is_active=true) 查找唯一激活对话，
+    找到后更新 route_context_key 和 version_id（随页面切换动态更新）。
+    旧模式：按 (session_id, route_context_key, project_id) 查找。
     """
     coalesced_pid = project_id if project_id is not None else -1
+    now = datetime.now(timezone.utc)
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         if product_id is not None:
-            # 产品模式：按 product_id 查找
+            # 产品模式：按 session + product + is_active 查找唯一激活对话
             cur.execute(
-                """SELECT id, session_id, route_context_key, project_id, product_id,
-                          agent_profile, thread_id, title, created_at, updated_at
+                f"""SELECT {_CONV_COLUMNS}
                    FROM ai_agent_conversations
                    WHERE session_id = %s
-                     AND route_context_key = %s
-                     AND product_id = %s""",
-                (session_id, route_context_key, product_id),
+                     AND product_id = %s
+                     AND is_active = true""",
+                (session_id, product_id),
             )
+            row = cur.fetchone()
+            if row:
+                # 动态更新 route_context_key 和 version_id
+                cur.execute(
+                    """UPDATE ai_agent_conversations
+                       SET route_context_key = %s, version_id = %s, updated_at = %s
+                       WHERE id = %s
+                       RETURNING """ + _CONV_COLUMNS,
+                    (route_context_key, version_id, now, row["id"]),
+                )
+                return dict(cur.fetchone())
         else:
             # 旧模式：按 project_id 查找
             cur.execute(
-                """SELECT id, session_id, route_context_key, project_id, product_id,
-                          agent_profile, thread_id, title, created_at, updated_at
+                f"""SELECT {_CONV_COLUMNS}
                    FROM ai_agent_conversations
                    WHERE session_id = %s
                      AND route_context_key = %s
@@ -65,20 +83,20 @@ def resolve_conversation(
                      AND product_id IS NULL""",
                 (session_id, route_context_key, coalesced_pid),
             )
-        row = cur.fetchone()
-        if row:
-            return dict(row)
+            row = cur.fetchone()
+            if row:
+                return dict(row)
 
         # 不存在则创建
         thread_id = f"agent-{session_id[:8]}-{uuid.uuid4().hex[:12]}"
-        now = datetime.now(timezone.utc)
         cur.execute(
-            """INSERT INTO ai_agent_conversations
-               (session_id, route_context_key, project_id, product_id, agent_profile, thread_id, created_at, updated_at)
-             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-             RETURNING id, session_id, route_context_key, project_id, product_id,
-                       agent_profile, thread_id, title, created_at, updated_at""",
-            (session_id, route_context_key, project_id, product_id, agent_profile, thread_id, now, now),
+            f"""INSERT INTO ai_agent_conversations
+               (session_id, route_context_key, project_id, product_id, agent_profile,
+                thread_id, version_id, is_active, created_at, updated_at)
+             VALUES (%s, %s, %s, %s, %s, %s, %s, true, %s, %s)
+             RETURNING {_CONV_COLUMNS}""",
+            (session_id, route_context_key, project_id, product_id,
+             agent_profile, thread_id, version_id, now, now),
         )
         return dict(cur.fetchone())
 
@@ -87,10 +105,106 @@ def get_conversation(conn, conversation_id: int) -> dict | None:
     """按 ID 获取对话。"""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
-            """SELECT id, session_id, route_context_key, project_id, product_id,
-                      agent_profile, thread_id, title, created_at, updated_at
-               FROM ai_agent_conversations WHERE id = %s""",
+            f"SELECT {_CONV_COLUMNS} FROM ai_agent_conversations WHERE id = %s",
             (conversation_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def list_conversations(
+    conn, session_id: str, product_id: int,
+) -> list[dict]:
+    """列出 session+product 的所有对话，含消息数，按 updated_at DESC。"""
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """SELECT c.id, c.title, c.is_active, c.route_context_key,
+                      c.version_id, c.created_at, c.updated_at,
+                      COUNT(m.id) AS message_count
+               FROM ai_agent_conversations c
+               LEFT JOIN ai_agent_messages m ON m.conversation_id = c.id
+               WHERE c.session_id = %s AND c.product_id = %s
+               GROUP BY c.id
+               ORDER BY c.updated_at DESC""",
+            (session_id, product_id),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def create_new_conversation(
+    conn,
+    session_id: str,
+    product_id: int,
+    route_context_key: str,
+    version_id: int | None = None,
+    agent_profile: str = "product",
+) -> dict:
+    """新建对话：旧激活对话 deactivate，创建新激活对话。"""
+    now = datetime.now(timezone.utc)
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # 旧激活对话 deactivate
+        cur.execute(
+            """UPDATE ai_agent_conversations SET is_active = false, updated_at = %s
+               WHERE session_id = %s AND product_id = %s AND is_active = true""",
+            (now, session_id, product_id),
+        )
+        thread_id = f"agent-{session_id[:8]}-{uuid.uuid4().hex[:12]}"
+        cur.execute(
+            f"""INSERT INTO ai_agent_conversations
+               (session_id, route_context_key, product_id, agent_profile,
+                thread_id, version_id, is_active, created_at, updated_at)
+             VALUES (%s, %s, %s, %s, %s, %s, true, %s, %s)
+             RETURNING {_CONV_COLUMNS}""",
+            (session_id, route_context_key, product_id, agent_profile,
+             thread_id, version_id, now, now),
+        )
+        return dict(cur.fetchone())
+
+
+def activate_conversation(
+    conn, conversation_id: int, session_id: str,
+) -> dict | None:
+    """切换激活对话：校验 session 归属，旧的 deactivate，目标 activate。"""
+    now = datetime.now(timezone.utc)
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        # 校验目标对话归属
+        cur.execute(
+            f"SELECT {_CONV_COLUMNS} FROM ai_agent_conversations WHERE id = %s",
+            (conversation_id,),
+        )
+        row = cur.fetchone()
+        if not row or row["session_id"] != session_id:
+            return None
+        target = dict(row)
+        product_id = target.get("product_id")
+        if product_id is None:
+            return None  # 非产品对话不支持切换
+
+        # 旧激活对话 deactivate
+        cur.execute(
+            """UPDATE ai_agent_conversations SET is_active = false, updated_at = %s
+               WHERE session_id = %s AND product_id = %s AND is_active = true""",
+            (now, session_id, product_id),
+        )
+        # 目标 activate
+        cur.execute(
+            f"""UPDATE ai_agent_conversations SET is_active = true, updated_at = %s
+               WHERE id = %s
+               RETURNING {_CONV_COLUMNS}""",
+            (now, conversation_id),
+        )
+        return dict(cur.fetchone())
+
+
+def update_conversation_title(conn, conversation_id: int, title: str) -> dict | None:
+    """更新对话标题。"""
+    now = datetime.now(timezone.utc)
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""UPDATE ai_agent_conversations SET title = %s, updated_at = %s
+               WHERE id = %s
+               RETURNING {_CONV_COLUMNS}""",
+            (title, now, conversation_id),
         )
         row = cur.fetchone()
         return dict(row) if row else None

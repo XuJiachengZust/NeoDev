@@ -195,3 +195,102 @@ def fetch_repo(repo_path: str) -> None:
     except FileNotFoundError as e:
         logger.error("git not found")
         raise RuntimeError("git not found") from e
+
+
+def show_commit(repo_path: str, commit_sha: str, stat_only: bool = False) -> str | None:
+    """获取 commit 详细信息。stat_only=True 时只返回 --stat 统计。"""
+    repo = Path(repo_path).resolve()
+    if not repo.is_dir():
+        return None
+    cmd = ["git", "show", commit_sha]
+    if stat_only:
+        cmd.append("--stat")
+    try:
+        r = subprocess.run(
+            cmd,
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+        if r.returncode != 0:
+            return None
+        return r.stdout or ""
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+
+def diff_commit(
+    repo_path: str,
+    commit_sha: str,
+    file_path: str | None = None,
+    context_lines: int = 3,
+    stat_only: bool = False,
+) -> str | None:
+    """获取 commit 的 unified diff 或 --stat。"""
+    repo = Path(repo_path).resolve()
+    if not repo.is_dir():
+        return None
+    cmd = ["git", "diff", f"{commit_sha}^..{commit_sha}"]
+    if stat_only:
+        cmd.append("--stat")
+    else:
+        cmd.append(f"-U{context_lines}")
+    if file_path:
+        cmd.extend(["--", file_path])
+    try:
+        r = subprocess.run(
+            cmd,
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+        if r.returncode != 0:
+            return None
+        return r.stdout or ""
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+
+
+def log_range(
+    repo_path: str,
+    from_ref: str | None = None,
+    to_ref: str = "HEAD",
+    path: str | None = None,
+    max_count: int = 50,
+    show_stat: bool = False,
+) -> str | None:
+    """获取 ref 范围内的提交列表。"""
+    repo = Path(repo_path).resolve()
+    if not repo.is_dir():
+        return None
+    clamped = max(1, min(max_count, 200))
+    if from_ref:
+        rev_range = f"{from_ref}..{to_ref}"
+    else:
+        rev_range = to_ref
+    cmd = ["git", "log", rev_range, f"--max-count={clamped}"]
+    if show_stat:
+        cmd.append("--stat")
+    if path:
+        cmd.extend(["--", path])
+    try:
+        r = subprocess.run(
+            cmd,
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+        if r.returncode != 0:
+            return None
+        return r.stdout or ""
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None

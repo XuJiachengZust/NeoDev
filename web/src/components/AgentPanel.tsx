@@ -3,7 +3,7 @@ import { useAgentSession } from "../contexts/AgentSessionContext";
 import { useRouteContextKey } from "../hooks/useRouteContextKey";
 import { useProductContext } from "../hooks/useProductContext";
 import { AgentQuickCommands } from "./AgentQuickCommands";
-import type { AgentMessage } from "../api/client";
+import type { AgentMessage, SubagentStep } from "../api/client";
 
 interface AgentPanelProps {
   collapsed: boolean;
@@ -30,29 +30,38 @@ export function AgentPanel({ collapsed, onToggle }: AgentPanelProps) {
     streaming,
     resolving,
     error,
+    recursionLimitHit,
     resolve,
     send,
     cancel,
+    continueGeneration,
     routeContextKey,
     productId: sessionProductId,
+    versionName,
+    productName,
+    projectBranches,
+    conversations,
+    currentConversationId,
+    createNewConversation,
+    switchConversation,
   } = useAgentSession();
 
   const { routeContextKey: currentRouteKey, projectId } = useRouteContextKey();
-  const { productId: routeProductId, routeHint } = useProductContext();
+  const { productId: routeProductId, versionId: routeVersionId, routeHint } = useProductContext();
   const [input, setInput] = useState("");
+  const [ctxExpanded, setCtxExpanded] = useState(false);
+  const [convListOpen, setConvListOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // 路由变化时自动 resolve（支持产品模式）
+  // 路由变化时自动 resolve（支持产品模式 + 版本）
   useEffect(() => {
     if (routeProductId) {
-      // 产品模式
-      resolve(routeHint, null, routeProductId);
+      resolve(routeHint, null, routeProductId, routeVersionId);
     } else {
-      // 旧模式
       resolve(currentRouteKey, projectId);
     }
-  }, [currentRouteKey, projectId, routeProductId, routeHint, resolve]);
+  }, [currentRouteKey, projectId, routeProductId, routeVersionId, routeHint, resolve]);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -74,6 +83,7 @@ export function AgentPanel({ collapsed, onToggle }: AgentPanelProps) {
   };
 
   const contextLabel = CONTEXT_LABELS[routeContextKey ?? "default"] ?? "通用助手";
+  const isProductMode = !!sessionProductId;
 
   return (
     <div
@@ -91,12 +101,81 @@ export function AgentPanel({ collapsed, onToggle }: AgentPanelProps) {
       </button>
       {!collapsed && (
         <div className="agent-chat-panel">
-          {/* 顶部：上下文标签 */}
+          {/* 顶部：上下文标签 + 对话管理 */}
           <div className="agent-chat-header">
             <span className="agent-chat-title">NeoDev Agent</span>
             <span className="agent-context-badge">{contextLabel}</span>
             {streaming && <span className="agent-status-dot streaming" />}
+            {isProductMode && (
+              <div className="agent-header-actions">
+                <button
+                  type="button"
+                  className="agent-conv-list-btn"
+                  onClick={() => setConvListOpen(!convListOpen)}
+                  title="对话列表"
+                >
+                  ☰
+                </button>
+                <button
+                  type="button"
+                  className="agent-new-conv-btn"
+                  onClick={() => { createNewConversation(); setConvListOpen(false); }}
+                  title="新建对话"
+                >
+                  +
+                </button>
+              </div>
+            )}
           </div>
+
+          {/* 对话列表下拉 */}
+          {convListOpen && isProductMode && (
+            <div className="agent-conv-list">
+              {conversations.length === 0 && (
+                <div className="agent-conv-list-empty">暂无历史对话</div>
+              )}
+              {conversations.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`agent-conv-item ${c.id === currentConversationId ? "active" : ""}`}
+                  onClick={() => { switchConversation(c.id); setConvListOpen(false); }}
+                >
+                  <span className="agent-conv-title">
+                    {c.title || "新对话"}
+                  </span>
+                  <span className="agent-conv-meta">
+                    {c.message_count} 条 · {new Date(c.created_at).toLocaleDateString()}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* 上下文信息面板（仅产品模式） */}
+          {isProductMode && (
+            <div className="agent-ctx-panel">
+              <button
+                type="button"
+                className="agent-ctx-toggle"
+                onClick={() => setCtxExpanded(!ctxExpanded)}
+              >
+                {ctxExpanded ? "▾" : "▸"} {productName ?? "产品"}
+                {versionName ? ` · ${versionName}` : " · 未选择版本"}
+              </button>
+              {ctxExpanded && projectBranches && projectBranches.length > 0 && (
+                <div className="agent-ctx-branches">
+                  {projectBranches.map((b) => (
+                    <div key={b.project_id} className="agent-ctx-branch-item">
+                      <span className="agent-ctx-proj-name">{b.project_name}</span>
+                      <span className="agent-ctx-branch-arrow">&rarr;</span>
+                      <span className="agent-ctx-branch-name">{b.branch}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 消息区域 */}
           <div className="agent-chat-messages">
@@ -117,10 +196,25 @@ export function AgentPanel({ collapsed, onToggle }: AgentPanelProps) {
               </div>
             )}
             {messages.map((msg, i) => (
-              <MessageBubble key={msg.id ?? `msg-${i}`} message={msg} />
+              <MessageBubble key={msg.id ?? `msg-${i}`} message={msg} streaming={streaming} />
             ))}
             {error && (
               <div className="agent-chat-error">{error}</div>
+            )}
+            {recursionLimitHit && (
+              <div className="agent-chat-warning">
+                <div className="agent-chat-warning-text">
+                  我已经进行了很多轮思考，到达了循环上限。你可以选择让我继续。
+                </div>
+                <button
+                  type="button"
+                  className="agent-chat-warning-btn"
+                  onClick={continueGeneration}
+                  disabled={streaming}
+                >
+                  继续
+                </button>
+              </div>
             )}
             <div ref={messagesEndRef} />
           </div>
@@ -164,12 +258,86 @@ export function AgentPanel({ collapsed, onToggle }: AgentPanelProps) {
   );
 }
 
-function MessageBubble({ message }: { message: AgentMessage }) {
+function MessageBubble({ message, streaming }: { message: AgentMessage; streaming: boolean }) {
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
   const [toolExpanded, setToolExpanded] = useState(false);
 
+  const isTaskTool = isTool && message.content.startsWith("[调用工具] task");
+  const hasSubagent = isTaskTool && (!!message.subagent_content || (message.subagent_steps && message.subagent_steps.length > 0));
+
+  // 子智能体：流式过程中默认展开，结束后自动折叠
+  const isSubagentStreaming = hasSubagent && streaming;
+  const [subagentExpanded, setSubagentExpanded] = useState(false);
+  const prevStreamingRef = useRef(streaming);
+
+  useEffect(() => {
+    if (hasSubagent) {
+      // 流式开始时展开
+      if (streaming && !prevStreamingRef.current) {
+        setSubagentExpanded(true);
+      }
+      // 流式结束时折叠
+      if (!streaming && prevStreamingRef.current) {
+        setSubagentExpanded(false);
+      }
+    }
+    prevStreamingRef.current = streaming;
+  }, [streaming, hasSubagent]);
+
+  // 流式过程中如果有新的子智能体内容，自动展开
+  useEffect(() => {
+    if (isSubagentStreaming) {
+      setSubagentExpanded(true);
+    }
+  }, [isSubagentStreaming]);
+
   if (isTool) {
+    // 子智能体 task 工具调用
+    if (isTaskTool && hasSubagent) {
+      const toolCalls = message.tool_calls as Array<{ name: string; args: Record<string, unknown> }> | undefined;
+      const subagentType = toolCalls?.[0]?.args?.subagent_type as string | undefined;
+      const subagentLabel = subagentType ?? "task";
+
+      return (
+        <div className="agent-subagent-block">
+          <button
+            type="button"
+            className="agent-subagent-header"
+            onClick={() => setSubagentExpanded(!subagentExpanded)}
+          >
+            <span className="agent-subagent-arrow">{subagentExpanded ? "▾" : "▸"}</span>
+            <span className="agent-subagent-label">[子智能体] {subagentLabel}</span>
+            {isSubagentStreaming && <span className="agent-status-dot streaming" />}
+          </button>
+          {subagentExpanded && (
+            <div className="agent-subagent-body">
+              {message.subagent_steps && message.subagent_steps.length > 0 && (
+                <div className="agent-subagent-steps">
+                  {message.subagent_steps.map((step: SubagentStep, i: number) => (
+                    <div key={i} className="agent-subagent-step">
+                      {step.type === "tool_start" ? "▸" : "✓"} {step.name}
+                      {step.type === "tool_end" && step.result && (
+                        <span className="agent-subagent-step-result">
+                          {" → "}{step.result.length > 80 ? step.result.slice(0, 80) + "…" : step.result}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {message.subagent_content && (
+                <div className="agent-subagent-content">
+                  {message.subagent_content}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 普通工具调用
     return (
       <div className="agent-msg-tool">
         <button

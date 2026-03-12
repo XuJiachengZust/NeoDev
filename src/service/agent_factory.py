@@ -1,8 +1,8 @@
-"""Agent Factory: 根据 profile 创建或复用 LangGraph agent。
+"""Agent Factory: 根据 thread_id 缓存 LangGraph agent 实例。
 
-使用 create_deep_agent() 构建智能体，按 profile 名称缓存编译后的 StateGraph。
-复用 .env 中的 OPENAI_API_KEY, OPENAI_BASE, OPENAI_MODEL_CHAT 配置。
-支持 CompositeBackend：项目目录只读挂载 + 沙箱可写区域。
+一个 thread_id 对应一个 agent 实例，后续复用。
+system_prompt 通过 DynamicPromptMiddleware 在运行时动态注入，
+不随 agent 编译固化，支持页面切换时 prompt 更新。
 """
 
 import logging
@@ -12,20 +12,53 @@ from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.errors import GraphRecursionError
 
 from service.agent_profiles import (
-    AGENT_PROFILES,
     PRODUCT_AGENT_PROFILE,
     SUBAGENT_DEFINITIONS,
+    build_commit_analyzer_subagent,
     build_product_system_prompt,
+    build_retriever_subagent,
     get_profile,
 )
+from service.checkpointer import get_checkpointer
 
 logger = logging.getLogger(__name__)
 
-# ── 缓存 ──────────────────────────────────────────────────────────────
+# ── 缓存（key = thread_id）─────────────────────────────────────────────
 
 _agent_cache: dict[str, Any] = {}
+_fallback_checkpointer = None
+
+
+def _get_effective_checkpointer():
+    """获取 checkpointer，如果 PostgreSQL 不可用则降级为内存 checkpointer。"""
+    global _fallback_checkpointer
+    cp = get_checkpointer()
+    if cp is not None:
+        return cp
+    if _fallback_checkpointer is None:
+        from langgraph.checkpoint.memory import MemorySaver
+        _fallback_checkpointer = MemorySaver()
+        logger.warning("PostgreSQL checkpointer 不可用，降级为 MemorySaver（仅进程内持久化）")
+    return _fallback_checkpointer
+
+
+def evict_agent(thread_id: str) -> bool:
+    """从缓存中移除指定 thread_id 的 agent 实例。返回是否确实移除了。"""
+    removed = _agent_cache.pop(thread_id, None)
+    if removed:
+        logger.info("已移除缓存 Agent [%s]", thread_id)
+    return removed is not None
+
+
+def _ensure_openai_env() -> None:
+    """确保 OPENAI_API_BASE 等环境变量已设置。"""
+    openai_env = _get_openai_env()
+    for k, v in openai_env.items():
+        if k not in os.environ:
+            os.environ[k] = v
 
 
 def _get_model_name() -> str:
@@ -77,62 +110,83 @@ def _build_backend(profile_name: str, session_id: str | None = None, project_pat
 
 
 def get_or_create_agent(
+    thread_id: str,
     profile_name: str,
     session_id: str | None = None,
     project_path: str | None = None,
 ) -> Any:
-    """获取或创建编译后的 agent（CompiledStateGraph）。
+    """获取或创建编译后的 agent，按 thread_id 缓存。
 
-    如果提供了 session_id 和 project_path，将构建 CompositeBackend。
-    无 session/project 时按 profile_name 缓存。
+    system_prompt 使用占位符，实际 prompt 在运行时由 DynamicPromptMiddleware 注入。
     """
-    # 有 session/project 参数时不缓存（每次创建带上下文的 agent）
-    cache_key = profile_name if (session_id is None and project_path is None) else None
-    if cache_key and cache_key in _agent_cache:
-        return _agent_cache[cache_key]
+    current_cp = _get_effective_checkpointer()
+
+    if thread_id in _agent_cache:
+        cached = _agent_cache[thread_id]
+        # 检查 checkpointer 是否一致，不一致则重建
+        cached_cp = getattr(cached, "checkpointer", None)
+        if cached_cp is not current_cp:
+            logger.info("Checkpointer 变化，重建 Agent [%s]", thread_id)
+            del _agent_cache[thread_id]
+        else:
+            logger.debug("复用 Agent [%s]", thread_id)
+            return cached
 
     from deepagents.graph import create_deep_agent
 
-    profile = get_profile(profile_name)
-    system_prompt = profile["system_prompt"]
     model_name = _get_model_name()
+    _ensure_openai_env()
 
-    # 确保 OPENAI_API_BASE 设置正确
-    openai_env = _get_openai_env()
-    for k, v in openai_env.items():
-        if k not in os.environ:
-            os.environ[k] = v
+    logger.info("创建 Agent [%s] profile=%s model=%s checkpointer=%s",
+                thread_id, profile_name, model_name, type(current_cp).__name__)
 
-    logger.info("创建 Agent [%s] model=%s", profile_name, model_name)
-
-    # 构建 backend
     backend = _build_backend(profile_name, session_id, project_path)
 
     # 构建子智能体
     subagents = None
+    profile = get_profile(profile_name)
     subagent_names = profile.get("subagents", [])
     if subagent_names:
+        from deepagents.middleware.git_tools import GitToolsMiddleware
         from deepagents.middleware.subagents import SubAgent
         subagents = []
         for name in subagent_names:
-            defn = SUBAGENT_DEFINITIONS.get(name)
+            if name == "project-retriever":
+                defn = build_retriever_subagent(
+                    project_path="/workspace/project/" if project_path else None,
+                )
+            elif name == "commit-analyzer":
+                if not project_path:
+                    continue
+                real_repo_map = {"default": project_path}
+                defn = build_commit_analyzer_subagent()
+                subagents.append(SubAgent(
+                    name=defn["name"],
+                    description=defn["description"],
+                    system_prompt=defn["prompt"],
+                    middleware=[GitToolsMiddleware(repo_path_map=real_repo_map)],
+                ))
+                continue
+            else:
+                defn = SUBAGENT_DEFINITIONS.get(name)
             if defn:
                 subagents.append(SubAgent(
                     name=defn["name"],
                     description=defn["description"],
-                    prompt=defn["prompt"],
+                    system_prompt=defn["prompt"],
                 ))
 
+    # system_prompt 占位符，运行时由 DynamicPromptMiddleware 替换
     agent = create_deep_agent(
         model=model_name,
-        system_prompt=system_prompt,
-        tools=None,  # 使用默认内置工具
+        system_prompt="placeholder",
+        tools=None,
         backend=backend,
         subagents=subagents,
+        checkpointer=current_cp,
     )
 
-    if cache_key:
-        _agent_cache[cache_key] = agent
+    _agent_cache[thread_id] = agent
     return agent
 
 
@@ -143,25 +197,30 @@ async def run_agent_stream(
     session_id: str | None = None,
     project_path: str | None = None,
 ) -> AsyncIterator[dict]:
-    """流式调用 agent，yield SSE 事件字典。
+    """流式调用 agent，yield SSE 事件字典。"""
+    agent = get_or_create_agent(thread_id, profile_name, session_id=session_id, project_path=project_path)
 
-    事件格式:
-    - {"event": "token", "data": "文本片段"}
-    - {"event": "tool_start", "data": {"name": "...", "args": {...}}}
-    - {"event": "tool_end", "data": {"name": "...", "result": "..."}}
-    - {"event": "done", "data": {"content": "完整回复", "token_in": N, "token_out": N}}
-    - {"event": "error", "data": {"message": "错误信息"}}
-    """
-    agent = get_or_create_agent(profile_name, session_id=session_id, project_path=project_path)
-
+    # 每次调用时构建最新 system_prompt，通过 DynamicPromptMiddleware 注入
+    system_prompt = get_profile(profile_name)["system_prompt"]
     config = {
-        "configurable": {"thread_id": thread_id},
+        "configurable": {
+            "thread_id": thread_id,
+            "system_prompt_override": system_prompt,
+        },
+        "recursion_limit": 1000,
     }
     input_msg = {"messages": [HumanMessage(content=user_message)]}
 
     full_content = ""
     token_in = 0
     token_out = 0
+    subagent_depth = 0
+    has_emitted_content = False
+    had_tool_call = False
+
+    cp_type = type(agent.checkpointer).__name__ if hasattr(agent, "checkpointer") and agent.checkpointer else "None"
+    logger.info("Agent stream 开始 [%s] thread=%s checkpointer=%s input=%s",
+                profile_name, thread_id, cp_type, user_message[:100])
 
     try:
         async for event in agent.astream_events(input_msg, config=config, version="v2"):
@@ -169,14 +228,21 @@ async def run_agent_stream(
             data = event.get("data", {})
 
             if kind == "on_chat_model_stream":
-                # 逐 token 输出
                 chunk = data.get("chunk")
                 if chunk and hasattr(chunk, "content") and chunk.content:
-                    full_content += chunk.content
-                    yield {"event": "token", "data": chunk.content}
+                    if subagent_depth > 0:
+                        yield {"event": "subagent_token", "data": chunk.content}
+                    else:
+                        if has_emitted_content and had_tool_call:
+                            yield {"event": "content_start", "data": {}}
+                            had_tool_call = False
+                        full_content += chunk.content
+                        has_emitted_content = True
+                        yield {"event": "token", "data": chunk.content}
 
             elif kind == "on_chat_model_end":
-                # 提取 token usage
+                if subagent_depth > 0:
+                    continue
                 output = data.get("output")
                 if output and hasattr(output, "usage_metadata") and output.usage_metadata:
                     usage = output.usage_metadata
@@ -186,20 +252,34 @@ async def run_agent_stream(
             elif kind == "on_tool_start":
                 tool_name = event.get("name", "unknown")
                 tool_input = data.get("input", {})
-                yield {
-                    "event": "tool_start",
-                    "data": {"name": tool_name, "args": tool_input},
-                }
+                if tool_name == "task":
+                    if subagent_depth == 0:
+                        yield {"event": "tool_start", "data": {"name": tool_name, "args": tool_input}}
+                    subagent_depth += 1
+                else:
+                    if subagent_depth > 0:
+                        yield {"event": "subagent_tool_start", "data": {"name": tool_name}}
+                    else:
+                        yield {"event": "tool_start", "data": {"name": tool_name, "args": tool_input}}
+                had_tool_call = True
 
             elif kind == "on_tool_end":
                 tool_name = event.get("name", "unknown")
                 output = data.get("output", "")
                 if hasattr(output, "content"):
                     output = output.content
-                yield {
-                    "event": "tool_end",
-                    "data": {"name": tool_name, "result": str(output)[:2000]},
-                }
+                if tool_name == "task":
+                    subagent_depth = max(0, subagent_depth - 1)
+                    if subagent_depth == 0:
+                        yield {"event": "tool_end", "data": {"name": tool_name, "result": str(output)[:2000]}}
+                else:
+                    if subagent_depth > 0:
+                        yield {"event": "subagent_tool_end", "data": {"name": tool_name, "result": str(output)[:500]}}
+                    else:
+                        yield {"event": "tool_end", "data": {"name": tool_name, "result": str(output)[:2000]}}
+
+        logger.info("Agent stream 完成 [%s] thread=%s full_content_len=%d token_in=%d token_out=%d",
+                    profile_name, thread_id, len(full_content), token_in, token_out)
 
         yield {
             "event": "done",
@@ -207,6 +287,18 @@ async def run_agent_stream(
                 "content": full_content,
                 "token_in": token_in,
                 "token_out": token_out,
+            },
+        }
+
+    except GraphRecursionError:
+        logger.warning("Agent recursion limit reached [%s]", profile_name)
+        yield {
+            "event": "recursion_limit",
+            "data": {
+                "content": full_content,
+                "token_in": token_in,
+                "token_out": token_out,
+                "message": "我已经进行了很多轮思考，到达了循环上限。你可以选择让我继续。",
             },
         }
 
@@ -223,10 +315,15 @@ async def run_agent_invoke(
     project_path: str | None = None,
 ) -> dict:
     """非流式调用 agent，返回完整响应。"""
-    agent = get_or_create_agent(profile_name, session_id=session_id, project_path=project_path)
+    agent = get_or_create_agent(thread_id, profile_name, session_id=session_id, project_path=project_path)
 
+    system_prompt = get_profile(profile_name)["system_prompt"]
     config = {
-        "configurable": {"thread_id": thread_id},
+        "configurable": {
+            "thread_id": thread_id,
+            "system_prompt_override": system_prompt,
+        },
+        "recursion_limit": 1000,
     }
     input_msg = {"messages": [HumanMessage(content=user_message)]}
 
@@ -253,6 +350,15 @@ async def run_agent_invoke(
             "token_in": token_in,
             "token_out": token_out,
         }
+    except GraphRecursionError:
+        logger.warning("Agent recursion limit reached (invoke) [%s]", profile_name)
+        return {
+            "content": "",
+            "token_in": 0,
+            "token_out": 0,
+            "recursion_limit": True,
+            "message": "我已经进行了很多轮思考，到达了循环上限。你可以选择让我继续。",
+        }
     except Exception as e:
         logger.exception("Agent invoke error [%s]", profile_name)
         return {"content": "", "error": str(e)}
@@ -261,46 +367,126 @@ async def run_agent_invoke(
 # ── 产品级 Agent ──────────────────────────────────────────────────────
 
 
+def _build_product_backend(
+    session_id: str | None,
+    project_repo_map: dict[str, str] | None = None,
+):
+    """产品级 CompositeBackend：多项目只读挂载 + 沙箱可写。
+
+    project_repo_map: {"project-a": "/path/to/repo-a", ...}
+    挂载为 /workspace/projects/project-a/ 等。
+    """
+    from deepagents.backends import CompositeBackend, StateBackend
+    from service.readonly_backend import ReadOnlyFilesystemBackend
+    from service.sandbox_manager import ensure_sandbox
+
+    routes: dict[str, Any] = {}
+
+    if project_repo_map:
+        for proj_name, repo_path in project_repo_map.items():
+            if repo_path and Path(repo_path).is_dir():
+                mount = f"/workspace/projects/{proj_name}/"
+                routes[mount] = ReadOnlyFilesystemBackend(root_dir=repo_path)
+                logger.info("产品只读挂载: %s -> %s", repo_path, mount)
+
+    if session_id:
+        sandbox = ensure_sandbox(session_id)
+        routes["/workspace/tmp/"] = sandbox
+        logger.info("沙箱挂载: session=%s -> /workspace/tmp/", session_id)
+
+    def factory(rt):
+        default = StateBackend(rt)
+        if routes:
+            return CompositeBackend(default=default, routes=routes)
+        return default
+
+    return factory
+
+
 def get_or_create_product_agent(
-    product_name: str,
-    project_names: list[str] | None = None,
-    route_hint: str | None = None,
+    thread_id: str,
     session_id: str | None = None,
-    project_path: str | None = None,
+    project_repo_map: dict[str, str] | None = None,
+    version_name: str | None = None,
+    branch_mappings: list[dict] | None = None,
 ) -> Any:
-    """创建带有产品上下文的 Agent。不缓存（每次带最新产品上下文）。"""
+    """获取或创建产品级 Agent，按 thread_id 缓存。
+
+    system_prompt 在运行时由 DynamicPromptMiddleware 动态注入。
+    """
+    current_cp = _get_effective_checkpointer()
+
+    if thread_id in _agent_cache:
+        cached = _agent_cache[thread_id]
+        cached_cp = getattr(cached, "checkpointer", None)
+        if cached_cp is not current_cp:
+            logger.info("Checkpointer 变化，重建产品 Agent [%s]", thread_id)
+            del _agent_cache[thread_id]
+        else:
+            logger.debug("复用产品 Agent [%s]", thread_id)
+            return cached
+
     from deepagents.graph import create_deep_agent
+    from deepagents.middleware.git_tools import GitToolsMiddleware
     from deepagents.middleware.subagents import SubAgent
 
-    system_prompt = build_product_system_prompt(product_name, project_names, route_hint)
     model_name = _get_model_name()
+    _ensure_openai_env()
 
-    openai_env = _get_openai_env()
-    for k, v in openai_env.items():
-        if k not in os.environ:
-            os.environ[k] = v
+    logger.info("创建产品 Agent [%s] model=%s checkpointer=%s",
+                thread_id, model_name, type(current_cp).__name__)
 
-    logger.info("创建产品 Agent [%s] model=%s", product_name, model_name)
+    backend = _build_product_backend(session_id, project_repo_map)
 
-    backend = _build_backend("product", session_id, project_path)
+    virtual_repo_map = {
+        pname: f"/workspace/projects/{pname}/"
+        for pname in project_repo_map
+    } if project_repo_map else None
 
     subagents = []
     for name in PRODUCT_AGENT_PROFILE.get("subagents", []):
-        defn = SUBAGENT_DEFINITIONS.get(name)
+        if name == "project-retriever":
+            defn = build_retriever_subagent(
+                project_repo_map=virtual_repo_map,
+                version_name=version_name,
+                branch_mappings=branch_mappings,
+            )
+        elif name == "commit-analyzer":
+            if not project_repo_map:
+                continue
+            defn = build_commit_analyzer_subagent(
+                project_repo_map=virtual_repo_map,
+                version_name=version_name,
+                branch_mappings=branch_mappings,
+            )
+            # commit-analyzer 需要真实路径访问 git
+            subagents.append(SubAgent(
+                name=defn["name"],
+                description=defn["description"],
+                system_prompt=defn["prompt"],
+                middleware=[GitToolsMiddleware(repo_path_map=project_repo_map)],
+            ))
+            continue
+        else:
+            defn = SUBAGENT_DEFINITIONS.get(name)
         if defn:
             subagents.append(SubAgent(
                 name=defn["name"],
                 description=defn["description"],
-                prompt=defn["prompt"],
+                system_prompt=defn["prompt"],
             ))
 
-    return create_deep_agent(
+    agent = create_deep_agent(
         model=model_name,
-        system_prompt=system_prompt,
+        system_prompt="placeholder",
         tools=None,
         backend=backend,
         subagents=subagents or None,
+        checkpointer=current_cp,
     )
+
+    _agent_cache[thread_id] = agent
+    return agent
 
 
 async def run_product_agent_stream(
@@ -310,20 +496,41 @@ async def run_product_agent_stream(
     project_names: list[str] | None = None,
     route_hint: str | None = None,
     session_id: str | None = None,
-    project_path: str | None = None,
+    project_repo_map: dict[str, str] | None = None,
+    version_name: str | None = None,
+    branch_mappings: list[dict] | None = None,
 ) -> AsyncIterator[dict]:
     """产品级 Agent 流式调用。"""
     agent = get_or_create_product_agent(
-        product_name, project_names=project_names, route_hint=route_hint,
-        session_id=session_id, project_path=project_path,
+        thread_id,
+        session_id=session_id, project_repo_map=project_repo_map,
+        version_name=version_name, branch_mappings=branch_mappings,
     )
 
-    config = {"configurable": {"thread_id": thread_id}}
+    # 每次调用时构建最新 system_prompt，通过 DynamicPromptMiddleware 注入
+    system_prompt = build_product_system_prompt(
+        product_name, project_names, route_hint,
+        version_name=version_name, branch_mappings=branch_mappings,
+    )
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "system_prompt_override": system_prompt,
+        },
+        "recursion_limit": 1000,
+    }
     input_msg = {"messages": [HumanMessage(content=user_message)]}
 
     full_content = ""
     token_in = 0
     token_out = 0
+    subagent_depth = 0
+    has_emitted_content = False
+    had_tool_call = False
+
+    cp_type = type(agent.checkpointer).__name__ if hasattr(agent, "checkpointer") and agent.checkpointer else "None"
+    logger.info("Product Agent stream 开始 [%s] thread=%s checkpointer=%s input=%s",
+                product_name, thread_id, cp_type, user_message[:100])
 
     try:
         async for event in agent.astream_events(input_msg, config=config, version="v2"):
@@ -333,10 +540,19 @@ async def run_product_agent_stream(
             if kind == "on_chat_model_stream":
                 chunk = data.get("chunk")
                 if chunk and hasattr(chunk, "content") and chunk.content:
-                    full_content += chunk.content
-                    yield {"event": "token", "data": chunk.content}
+                    if subagent_depth > 0:
+                        yield {"event": "subagent_token", "data": chunk.content}
+                    else:
+                        if has_emitted_content and had_tool_call:
+                            yield {"event": "content_start", "data": {}}
+                            had_tool_call = False
+                        full_content += chunk.content
+                        has_emitted_content = True
+                        yield {"event": "token", "data": chunk.content}
 
             elif kind == "on_chat_model_end":
+                if subagent_depth > 0:
+                    continue
                 output = data.get("output")
                 if output and hasattr(output, "usage_metadata") and output.usage_metadata:
                     usage = output.usage_metadata
@@ -346,18 +562,50 @@ async def run_product_agent_stream(
             elif kind == "on_tool_start":
                 tool_name = event.get("name", "unknown")
                 tool_input = data.get("input", {})
-                yield {"event": "tool_start", "data": {"name": tool_name, "args": tool_input}}
+                if tool_name == "task":
+                    if subagent_depth == 0:
+                        yield {"event": "tool_start", "data": {"name": tool_name, "args": tool_input}}
+                    subagent_depth += 1
+                else:
+                    if subagent_depth > 0:
+                        yield {"event": "subagent_tool_start", "data": {"name": tool_name}}
+                    else:
+                        yield {"event": "tool_start", "data": {"name": tool_name, "args": tool_input}}
+                had_tool_call = True
 
             elif kind == "on_tool_end":
                 tool_name = event.get("name", "unknown")
                 output = data.get("output", "")
                 if hasattr(output, "content"):
                     output = output.content
-                yield {"event": "tool_end", "data": {"name": tool_name, "result": str(output)[:2000]}}
+                if tool_name == "task":
+                    subagent_depth = max(0, subagent_depth - 1)
+                    if subagent_depth == 0:
+                        yield {"event": "tool_end", "data": {"name": tool_name, "result": str(output)[:2000]}}
+                else:
+                    if subagent_depth > 0:
+                        yield {"event": "subagent_tool_end", "data": {"name": tool_name, "result": str(output)[:500]}}
+                    else:
+                        yield {"event": "tool_end", "data": {"name": tool_name, "result": str(output)[:2000]}}
+
+        logger.info("Product Agent stream 完成 [%s] thread=%s full_content_len=%d token_in=%d token_out=%d",
+                    product_name, thread_id, len(full_content), token_in, token_out)
 
         yield {
             "event": "done",
             "data": {"content": full_content, "token_in": token_in, "token_out": token_out},
+        }
+
+    except GraphRecursionError:
+        logger.warning("Product Agent recursion limit reached [%s]", product_name)
+        yield {
+            "event": "recursion_limit",
+            "data": {
+                "content": full_content,
+                "token_in": token_in,
+                "token_out": token_out,
+                "message": "我已经进行了很多轮思考，到达了循环上限。你可以选择让我继续。",
+            },
         }
 
     except Exception as e:

@@ -20,8 +20,10 @@ from langgraph.types import Checkpointer
 
 from deepagents.backends import StateBackend
 from deepagents.backends.protocol import BackendFactory, BackendProtocol
+from deepagents.middleware.dynamic_prompt import DynamicPromptMiddleware
 from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.memory import MemoryMiddleware
+from deepagents.middleware.parallel_tools import ParallelToolCallsMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.skills import SkillsMiddleware
 from deepagents.middleware.subagents import CompiledSubAgent, SubAgent, SubAgentMiddleware
@@ -182,12 +184,14 @@ def create_deep_agent(
                 truncate_args_settings=truncate_args_settings,
             ),
             AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"),
+            ParallelToolCallsMiddleware(),
             PatchToolCallsMiddleware(),
         ]
     )
 
     # Build main agent middleware stack
     deepagent_middleware: list[AgentMiddleware] = [
+        DynamicPromptMiddleware(),
         TodoListMiddleware(),
     ]
     if memory is not None:

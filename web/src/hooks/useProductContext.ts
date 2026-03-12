@@ -1,11 +1,12 @@
 import { useMatch } from "react-router-dom";
 
 /**
- * 从当前路由解析产品上下文（产品 ID 和路由 hint）。
+ * 从当前路由解析产品上下文（产品 ID、版本 ID 和路由 hint）。
  * 在产品页面下使用，用于 Agent 会话解析。
  */
 export function useProductContext(): {
   productId: number | null;
+  versionId: number | null;
   routeHint: string;
 } {
   const dashMatch = useMatch("/products/:productId/dashboard");
@@ -19,15 +20,19 @@ export function useProductContext(): {
   const baseMatch = useMatch("/products/:productId");
 
   const match = dashMatch || projMatch || projDetailMatch || verMatch || verOverviewMatch || verReqMatch || verBugMatch || verDetailMatch || baseMatch;
-  if (!match) return { productId: null, routeHint: "default" };
+  if (!match) return { productId: null, versionId: null, routeHint: "default" };
 
   const productId = match.params.productId ? Number(match.params.productId) : null;
 
-  if (dashMatch) return { productId, routeHint: "product_dashboard" };
-  if (projMatch || projDetailMatch) return { productId, routeHint: "product_projects" };
-  if (verOverviewMatch || verMatch || verDetailMatch) return { productId, routeHint: "product_versions" };
-  if (verReqMatch) return { productId, routeHint: "product_requirements" };
-  if (verBugMatch) return { productId, routeHint: "product_bugs" };
+  // 从版本子路由提取 versionId
+  const versionMatch = verOverviewMatch || verReqMatch || verBugMatch || verDetailMatch;
+  const versionId = versionMatch?.params.versionId ? Number(versionMatch.params.versionId) : null;
 
-  return { productId, routeHint: "product_dashboard" };
+  if (dashMatch) return { productId, versionId: null, routeHint: "product_dashboard" };
+  if (projMatch || projDetailMatch) return { productId, versionId: null, routeHint: "product_projects" };
+  if (verOverviewMatch || verMatch || verDetailMatch) return { productId, versionId, routeHint: "product_versions" };
+  if (verReqMatch) return { productId, versionId, routeHint: "product_requirements" };
+  if (verBugMatch) return { productId, versionId, routeHint: "product_bugs" };
+
+  return { productId, versionId: null, routeHint: "product_dashboard" };
 }

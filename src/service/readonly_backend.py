@@ -19,7 +19,7 @@ class ReadOnlyFilesystemBackend(FilesystemBackend):
     """只读文件系统后端：继承 FilesystemBackend 的读取能力，拦截所有写操作。"""
 
     def __init__(self, root_dir: str | Path):
-        super().__init__(root_dir=root_dir)
+        super().__init__(root_dir=root_dir, virtual_mode=True)
 
     def write(self, file_path: str, content: str) -> WriteResult:
         return WriteResult(error=_READONLY_ERROR)

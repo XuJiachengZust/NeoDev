@@ -775,6 +775,12 @@ export function bindBugCommits(productId: number, bugId: number, commitIds: numb
 
 // --- AI Agent API ---
 
+export interface SubagentStep {
+  type: "tool_start" | "tool_end";
+  name: string;
+  result?: string;
+}
+
 export interface AgentMessage {
   id?: number;
   conversation_id?: number;
@@ -787,6 +793,8 @@ export interface AgentMessage {
   latency_ms?: number | null;
   model?: string | null;
   created_at?: string;
+  subagent_content?: string;
+  subagent_steps?: SubagentStep[];
 }
 
 export interface AgentConversation {
@@ -795,10 +803,26 @@ export interface AgentConversation {
   agent_profile: string;
   route_context_key: string;
   product_id?: number | null;
+  version_id?: number | null;
+  version_name?: string | null;
+  product_name?: string | null;
+  project_branches?: Array<{ project_id: number; project_name: string; branch: string }> | null;
+}
+
+export interface ConversationSummary {
+  id: number;
+  title: string | null;
+  is_active: boolean;
+  route_context_key: string;
+  version_id: number | null;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
 }
 
 export interface SSEEvent {
-  event: "token" | "tool_start" | "tool_end" | "done" | "error";
+  event: "token" | "tool_start" | "tool_end" | "done" | "error" | "recursion_limit" | "content_start"
+    | "subagent_token" | "subagent_tool_start" | "subagent_tool_end";
   data: unknown;
 }
 
@@ -807,6 +831,7 @@ export function resolveAgentSession(
   routeContextKey: string,
   projectId?: number | null,
   productId?: number | null,
+  versionId?: number | null,
 ): Promise<AgentConversation> {
   return request<AgentConversation>("/api/agent/sessions/resolve", {
     method: "POST",
@@ -815,8 +840,58 @@ export function resolveAgentSession(
       route_context_key: routeContextKey,
       project_id: projectId ?? undefined,
       product_id: productId ?? undefined,
+      version_id: versionId ?? undefined,
     },
   });
+}
+
+export function listAgentConversations(
+  sessionId: string,
+  productId: number,
+): Promise<{ conversations: ConversationSummary[] }> {
+  const params = new URLSearchParams();
+  params.set("session_id", sessionId);
+  params.set("product_id", String(productId));
+  return request<{ conversations: ConversationSummary[] }>(
+    `/api/agent/conversations?${params.toString()}`
+  );
+}
+
+export function createAgentConversation(
+  sessionId: string,
+  productId: number,
+  routeContextKey: string,
+  versionId?: number | null,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>("/api/agent/conversations/new", {
+    method: "POST",
+    body: {
+      session_id: sessionId,
+      product_id: productId,
+      route_context_key: routeContextKey,
+      version_id: versionId ?? undefined,
+    },
+  });
+}
+
+export function activateAgentConversation(
+  conversationId: number,
+  sessionId: string,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/agent/conversations/${conversationId}/activate`,
+    { method: "POST", body: { session_id: sessionId } },
+  );
+}
+
+export function updateAgentConversationTitle(
+  conversationId: number,
+  title: string,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/api/agent/conversations/${conversationId}/title`,
+    { method: "PATCH", body: { title } },
+  );
 }
 
 export function getAgentMessages(
@@ -855,8 +930,12 @@ export function streamAgentChat(
   callbacks: {
     onToken?: (text: string) => void;
     onToolEvent?: (event: SSEEvent) => void;
+    onContentStart?: () => void;
+    onSubagentToken?: (text: string) => void;
+    onSubagentToolEvent?: (event: SSEEvent) => void;
     onDone?: (data: { content: string; token_in?: number; token_out?: number }) => void;
     onError?: (error: string) => void;
+    onRecursionLimit?: (data: { content: string; token_in?: number; token_out?: number; message: string }) => void;
   }
 ): AbortController {
   const controller = new AbortController();
@@ -913,9 +992,24 @@ export function streamAgentChat(
               case "tool_end":
                 callbacks.onToolEvent?.(event);
                 break;
+              case "content_start":
+                callbacks.onContentStart?.();
+                break;
+              case "subagent_token":
+                callbacks.onSubagentToken?.(event.data as string);
+                break;
+              case "subagent_tool_start":
+              case "subagent_tool_end":
+                callbacks.onSubagentToolEvent?.(event);
+                break;
               case "done":
                 callbacks.onDone?.(
                   event.data as { content: string; token_in?: number; token_out?: number }
+                );
+                break;
+              case "recursion_limit":
+                callbacks.onRecursionLimit?.(
+                  event.data as { content: string; token_in?: number; token_out?: number; message: string }
                 );
                 break;
               case "error":

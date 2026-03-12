@@ -349,12 +349,142 @@ button.secondary:hover {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  margin-left: auto;
 }
 
 .agent-status-dot.streaming {
   background: var(--color-primary);
   animation: pulse 1s ease-in-out infinite;
+}
+
+.agent-header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.agent-conv-list-btn,
+.agent-new-conv-btn {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.agent-conv-list-btn:hover,
+.agent-new-conv-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+/* 对话列表下拉 */
+.agent-conv-list {
+  flex-shrink: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--color-border);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.agent-conv-list-empty {
+  padding: 12px 16px;
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  text-align: center;
+}
+
+.agent-conv-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.agent-conv-item:hover {
+  background: rgba(0, 240, 255, 0.06);
+}
+
+.agent-conv-item.active {
+  background: rgba(0, 240, 255, 0.1);
+  border-left: 2px solid var(--color-primary);
+}
+
+.agent-conv-title {
+  font-size: var(--text-body);
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-conv-meta {
+  font-size: var(--text-caption);
+  color: var(--color-text-muted);
+}
+
+/* 上下文信息面板 */
+.agent-ctx-panel {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--color-border);
+  padding: 6px 16px;
+  background: rgba(176, 38, 255, 0.04);
+}
+
+.agent-ctx-toggle {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  cursor: pointer;
+  padding: 0;
+  width: 100%;
+  text-align: left;
+}
+
+.agent-ctx-toggle:hover {
+  color: var(--color-text);
+}
+
+.agent-ctx-branches {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.agent-ctx-branch-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-caption);
+  color: var(--color-text-muted);
+}
+
+.agent-ctx-proj-name {
+  color: var(--color-text);
+}
+
+.agent-ctx-branch-arrow {
+  color: var(--color-text-muted);
+}
+
+.agent-ctx-branch-name {
+  color: var(--color-primary);
+  font-family: var(--font-mono);
 }
 
 @keyframes pulse {
@@ -386,6 +516,45 @@ button.secondary:hover {
   border: 1px solid var(--color-alert);
   border-radius: var(--radius-input);
   color: var(--color-alert);
+}
+
+.agent-chat-warning {
+  padding: 10px 12px;
+  font-size: var(--text-caption);
+  background: rgba(255, 200, 0, 0.08);
+  border: 1px solid rgba(255, 200, 0, 0.35);
+  border-radius: var(--radius-input);
+  color: #ffc800;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.agent-chat-warning-text {
+  flex: 1;
+  line-height: 1.5;
+}
+
+.agent-chat-warning-btn {
+  flex-shrink: 0;
+  padding: 4px 14px;
+  border-radius: var(--radius-button);
+  border: 1px solid rgba(255, 200, 0, 0.5);
+  background: rgba(255, 200, 0, 0.12);
+  color: #ffc800;
+  font-size: var(--text-caption);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.agent-chat-warning-btn:hover:not(:disabled) {
+  background: rgba(255, 200, 0, 0.2);
+  border-color: #ffc800;
+}
+
+.agent-chat-warning-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Loading skeleton */
@@ -480,6 +649,85 @@ button.secondary:hover {
   font-family: var(--font-mono);
   overflow-x: auto;
   max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ── 子智能体思考块 ── */
+
+.agent-subagent-block {
+  align-self: flex-start;
+  max-width: 95%;
+  border-left: 2px solid var(--color-ai);
+  border-radius: 0 var(--radius-input) var(--radius-input) 0;
+  background: rgba(176, 38, 255, 0.04);
+  margin: 2px 0;
+}
+
+.agent-subagent-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.agent-subagent-header:hover {
+  background: rgba(176, 38, 255, 0.08);
+}
+
+.agent-subagent-arrow {
+  font-size: 11px;
+  color: var(--color-ai);
+  flex-shrink: 0;
+}
+
+.agent-subagent-label {
+  font-size: var(--text-caption);
+  color: var(--color-ai);
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+
+.agent-subagent-body {
+  padding: 4px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-subagent-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-subagent-step {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  padding: 1px 0;
+}
+
+.agent-subagent-step-result {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.agent-subagent-content {
+  font-size: var(--text-caption);
+  line-height: 1.5;
+  color: var(--color-text);
+  background: rgba(176, 38, 255, 0.06);
+  border-radius: 4px;
+  padding: 6px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 300px;
   overflow-y: auto;
 }
 

@@ -12,6 +12,7 @@ from service.agent_profiles import resolve_profile_name
 from service.dependencies import get_db
 from service.repositories import agent_repository as agent_repo
 from service.repositories import product_repository
+from service.repositories import product_version_repository
 from service.repositories import project_repository as project_repo
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ class ResolveSessionRequest(BaseModel):
     route_context_key: str
     project_id: int | None = None
     product_id: int | None = None
+    version_id: int | None = None
     agent_profile: str | None = None
 
 
@@ -36,12 +38,31 @@ class ResolveSessionResponse(BaseModel):
     agent_profile: str
     route_context_key: str
     product_id: int | None = None
+    version_id: int | None = None
+    version_name: str | None = None
+    product_name: str | None = None
+    project_branches: list[dict] | None = None
 
 
 class ChatRequest(BaseModel):
     conversation_id: int
     message: str
     stream: bool = True
+
+
+class NewConversationRequest(BaseModel):
+    session_id: str
+    product_id: int
+    route_context_key: str = "product_dashboard"
+    version_id: int | None = None
+
+
+class ActivateConversationRequest(BaseModel):
+    session_id: str
+
+
+class UpdateTitleRequest(BaseModel):
+    title: str
 
 
 class SnapshotRequest(BaseModel):
@@ -58,15 +79,26 @@ def resolve_session(body: ResolveSessionRequest, db=Depends(get_db)):
     """解析会话：确保 session 存在，查找或创建对应 route+project 的 conversation。
 
     支持产品模式：当 product_id 存在时，使用产品级 profile。
+    返回产品名、版本名、版本分支映射等上下文信息。
     """
     # 确保 session 存在
     agent_repo.upsert_session(db, body.session_id)
 
     # 校验 product_id 是否存在，不存在则忽略
     product_id = body.product_id
+    product = None
     if product_id is not None:
-        if not product_repository.find_by_id(db, product_id):
+        product = product_repository.find_by_id(db, product_id)
+        if not product:
             product_id = None
+
+    # 校验 version_id
+    version_id = body.version_id
+    version = None
+    if version_id is not None:
+        version = product_version_repository.find_by_id(db, version_id)
+        if not version:
+            version_id = None
 
     # 确定 profile：产品模式使用 "product" profile
     if product_id is not None:
@@ -82,7 +114,19 @@ def resolve_session(body: ResolveSessionRequest, db=Depends(get_db)):
         project_id=body.project_id,
         product_id=product_id,
         agent_profile=profile_name,
+        version_id=version_id,
     )
+    db.commit()
+
+    # 构建版本分支映射
+    project_branches = None
+    if version_id:
+        branches = product_version_repository.list_branches(db, version_id)
+        if branches:
+            project_branches = [
+                {"project_id": b["project_id"], "project_name": b["project_name"], "branch": b["branch"]}
+                for b in branches
+            ]
 
     return ResolveSessionResponse(
         conversation_id=conv["id"],
@@ -90,6 +134,10 @@ def resolve_session(body: ResolveSessionRequest, db=Depends(get_db)):
         agent_profile=conv["agent_profile"],
         route_context_key=conv["route_context_key"],
         product_id=conv.get("product_id"),
+        version_id=conv.get("version_id"),
+        version_name=version["version_name"] if version else None,
+        product_name=product["name"] if product else None,
+        project_branches=project_branches,
     )
 
 
@@ -143,6 +191,7 @@ async def chat(body: ChatRequest, db=Depends(get_db)):
                 db, body.conversation_id, conv["product_id"],
                 conv.get("route_context_key", ""),
                 thread_id, body.message, session_id=session_id,
+                version_id=conv.get("version_id"),
             )
         else:
             gen = _stream_chat(
@@ -197,6 +246,21 @@ async def _stream_chat(
                 )
                 db.commit()
 
+            elif event["event"] == "recursion_limit":
+                latency_ms = int((time.time() - start_time) * 1000)
+                data = event["data"]
+                agent_repo.insert_message(
+                    db,
+                    conversation_id,
+                    role="assistant",
+                    content=data.get("content", ""),
+                    token_in=data.get("token_in"),
+                    token_out=data.get("token_out"),
+                    latency_ms=latency_ms,
+                    model=profile_name,
+                )
+                db.commit()
+
             elif event["event"] == "error":
                 latency_ms = int((time.time() - start_time) * 1000)
                 agent_repo.insert_message(
@@ -217,6 +281,7 @@ async def _stream_chat(
 async def _stream_product_chat(
     db, conversation_id: int, product_id: int, route_context_key: str,
     thread_id: str, message: str, session_id: str | None = None,
+    version_id: int | None = None,
 ):
     """产品级 SSE 流式生成器。"""
     from service.agent_factory import run_product_agent_stream
@@ -225,9 +290,28 @@ async def _stream_product_chat(
     product = product_repository.find_by_id(db, product_id)
     product_name = product["name"] if product else "Unknown"
     project_names = None
+    project_repo_map: dict[str, str] = {}
     if product:
         projects = product_repository.list_projects(db, product_id)
-        project_names = [p["name"] for p in projects] if projects else None
+        if projects:
+            project_names = [p["name"] for p in projects]
+            for p in projects:
+                if p.get("repo_path"):
+                    project_repo_map[p["name"]] = p["repo_path"]
+
+    # 获取版本分支映射
+    version_name = None
+    branch_mappings = None
+    if version_id:
+        version = product_version_repository.find_by_id(db, version_id)
+        if version:
+            version_name = version["version_name"]
+        branches = product_version_repository.list_branches(db, version_id)
+        if branches:
+            branch_mappings = [
+                {"project_name": b["project_name"], "branch": b["branch"]}
+                for b in branches
+            ]
 
     start_time = time.time()
 
@@ -237,11 +321,27 @@ async def _stream_product_chat(
             project_names=project_names,
             route_hint=route_context_key,
             session_id=session_id,
+            project_repo_map=project_repo_map or None,
+            version_name=version_name,
+            branch_mappings=branch_mappings,
         ):
             sse_data = json.dumps(event, ensure_ascii=False)
             yield f"data: {sse_data}\n\n"
 
             if event["event"] == "done":
+                latency_ms = int((time.time() - start_time) * 1000)
+                data = event["data"]
+                agent_repo.insert_message(
+                    db, conversation_id, role="assistant",
+                    content=data.get("content", ""),
+                    token_in=data.get("token_in"),
+                    token_out=data.get("token_out"),
+                    latency_ms=latency_ms,
+                    model="product",
+                )
+                db.commit()
+
+            elif event["event"] == "recursion_limit":
                 latency_ms = int((time.time() - start_time) * 1000)
                 data = event["data"]
                 agent_repo.insert_message(
@@ -302,6 +402,64 @@ async def _invoke_chat(
         "token_out": result.get("token_out"),
         "latency_ms": latency_ms,
     }
+
+
+@router.get("/conversations")
+def list_conversations(
+    session_id: str = Query(...),
+    product_id: int = Query(...),
+    db=Depends(get_db),
+):
+    """列出 session+product 的所有对话。"""
+    return {"conversations": agent_repo.list_conversations(db, session_id, product_id)}
+
+
+@router.post("/conversations/new")
+def create_conversation(body: NewConversationRequest, db=Depends(get_db)):
+    """新建对话：旧激活对话 deactivate，创建新激活对话。清除旧 agent 缓存。"""
+    from service.agent_factory import evict_agent
+
+    agent_repo.upsert_session(db, body.session_id)
+
+    # 在创建新对话前，获取旧激活对话的 thread_id 并清除 agent 缓存
+    old_convs = agent_repo.list_conversations(db, body.session_id, body.product_id)
+    for c in old_convs:
+        if c.get("is_active"):
+            old_thread = agent_repo.get_conversation(db, c["id"])
+            if old_thread and old_thread.get("thread_id"):
+                evict_agent(old_thread["thread_id"])
+
+    conv = agent_repo.create_new_conversation(
+        db,
+        session_id=body.session_id,
+        product_id=body.product_id,
+        route_context_key=body.route_context_key,
+        version_id=body.version_id,
+    )
+    db.commit()
+    return conv
+
+
+@router.post("/conversations/{conversation_id}/activate")
+def activate_conversation(
+    conversation_id: int, body: ActivateConversationRequest, db=Depends(get_db),
+):
+    """切换激活对话。"""
+    conv = agent_repo.activate_conversation(db, conversation_id, body.session_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found or not owned by session")
+    db.commit()
+    return conv
+
+
+@router.patch("/conversations/{conversation_id}/title")
+def update_title(conversation_id: int, body: UpdateTitleRequest, db=Depends(get_db)):
+    """更新对话标题。"""
+    conv = agent_repo.update_conversation_title(db, conversation_id, body.title)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    db.commit()
+    return conv
 
 
 @router.post("/context/snapshot")
