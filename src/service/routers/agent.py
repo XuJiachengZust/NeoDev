@@ -313,6 +313,13 @@ async def _stream_product_chat(
                 for b in branches
             ]
 
+    # 构建项目名 → ID 映射（供 nexus 子智能体使用）
+    project_id_map: dict[str, int] | None = None
+    if product:
+        projects = product_repository.list_projects(db, product_id)
+        if projects:
+            project_id_map = {p["name"]: p["id"] for p in projects}
+
     start_time = time.time()
 
     try:
@@ -324,6 +331,7 @@ async def _stream_product_chat(
             project_repo_map=project_repo_map or None,
             version_name=version_name,
             branch_mappings=branch_mappings,
+            project_id_map=project_id_map,
         ):
             sse_data = json.dumps(event, ensure_ascii=False)
             yield f"data: {sse_data}\n\n"

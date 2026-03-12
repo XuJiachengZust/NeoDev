@@ -18,6 +18,7 @@ from service.agent_profiles import (
     PRODUCT_AGENT_PROFILE,
     SUBAGENT_DEFINITIONS,
     build_commit_analyzer_subagent,
+    build_nexus_subagent,
     build_product_system_prompt,
     build_retriever_subagent,
     get_profile,
@@ -78,6 +79,38 @@ def _get_openai_env() -> dict[str, str]:
     if key:
         env["OPENAI_API_KEY"] = key
     return env
+
+
+def _load_nexus_neo4j_config() -> dict[str, str] | None:
+    """加载全局 Neo4j 连接配置（不依赖 project）。
+
+    返回 {"neo4j_uri": ..., "neo4j_user": ..., "neo4j_password": ..., "neo4j_database": ...}
+    或 None（未配置）。
+    """
+    config: dict[str, str] = {}
+    try:
+        from gitnexus_parser import load_config
+        config = load_config()
+        if not config.get("neo4j_uri"):
+            src_dir = Path(__file__).resolve().parent.parent
+            for path in [src_dir / "config.json", src_dir / "config.example.json"]:
+                if path.is_file():
+                    try:
+                        config = load_config(path)
+                        if config.get("neo4j_uri"):
+                            break
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    if not config.get("neo4j_uri"):
+        return None
+    return {
+        "neo4j_uri": config["neo4j_uri"],
+        "neo4j_user": config.get("neo4j_user", "neo4j"),
+        "neo4j_password": config.get("neo4j_password", ""),
+        "neo4j_database": config.get("neo4j_database") or None,
+    }
 
 
 def _build_backend(profile_name: str, session_id: str | None = None, project_path: str | None = None):
@@ -409,6 +442,7 @@ def get_or_create_product_agent(
     project_repo_map: dict[str, str] | None = None,
     version_name: str | None = None,
     branch_mappings: list[dict] | None = None,
+    project_id_map: dict[str, int] | None = None,
 ) -> Any:
     """获取或创建产品级 Agent，按 thread_id 缓存。
 
@@ -467,6 +501,37 @@ def get_or_create_product_agent(
                 middleware=[GitToolsMiddleware(repo_path_map=project_repo_map)],
             ))
             continue
+        elif name == "nexus":
+            neo4j_cfg = _load_nexus_neo4j_config()
+            if not neo4j_cfg:
+                logger.info("Neo4j 未配置，跳过 nexus 子智能体")
+                continue
+            from deepagents.middleware.nexus_tools import NexusToolsMiddleware
+            branch_map = {
+                bm["project_name"]: bm["branch"]
+                for bm in (branch_mappings or [])
+            }
+            nexus_mw = NexusToolsMiddleware(
+                neo4j_uri=neo4j_cfg["neo4j_uri"],
+                neo4j_user=neo4j_cfg.get("neo4j_user", "neo4j"),
+                neo4j_password=neo4j_cfg.get("neo4j_password", ""),
+                neo4j_database=neo4j_cfg.get("neo4j_database"),
+                project_id_map=project_id_map,
+                branch_map=branch_map,
+            )
+            defn = build_nexus_subagent(
+                project_id_map=project_id_map,
+                branch_map=branch_map,
+                version_name=version_name,
+            )
+            subagents.append(SubAgent(
+                name=defn["name"],
+                description=defn["description"],
+                system_prompt=defn["prompt"],
+                tools=nexus_mw.tools,
+                middleware=[nexus_mw],
+            ))
+            continue
         else:
             defn = SUBAGENT_DEFINITIONS.get(name)
         if defn:
@@ -499,12 +564,14 @@ async def run_product_agent_stream(
     project_repo_map: dict[str, str] | None = None,
     version_name: str | None = None,
     branch_mappings: list[dict] | None = None,
+    project_id_map: dict[str, int] | None = None,
 ) -> AsyncIterator[dict]:
     """产品级 Agent 流式调用。"""
     agent = get_or_create_product_agent(
         thread_id,
         session_id=session_id, project_repo_map=project_repo_map,
         version_name=version_name, branch_mappings=branch_mappings,
+        project_id_map=project_id_map,
     )
 
     # 每次调用时构建最新 system_prompt，通过 DynamicPromptMiddleware 注入

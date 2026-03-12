@@ -27,6 +27,10 @@ _FULL_TOOLS = frozenset({"ls", "read_file", "write_file", "edit_file", "glob", "
 _ANALYSIS_TOOLS = frozenset({"ls", "read_file", "glob", "grep", "write_todos"})
 _GIT_ANALYSIS_TOOLS = frozenset({"ls", "read_file", "glob", "grep",
                                   "git_show", "git_diff", "git_log_range"})
+_NEXUS_TOOLS = frozenset({
+    "nexus_search", "nexus_cypher", "nexus_explore",
+    "nexus_overview", "nexus_impact",
+})
 
 # ── Agent Profiles ──
 
@@ -168,6 +172,16 @@ SUBAGENT_DEFINITIONS: dict[str, dict] = {
         "description": "Git 提交分析子智能体：深入分析代码提交的变更内容、影响范围和代码质量。",
         "prompt": "",  # 动态构建，见 build_commit_analyzer_subagent
         "tools_whitelist": _GIT_ANALYSIS_TOOLS,
+    },
+    "nexus": {
+        "name": "nexus",
+        "description": (
+            "知识图谱代码分析子智能体：可查询 Neo4j 知识图谱，分析代码架构、"
+            "依赖关系、调用链、影响面。适合回答关于系统架构、模块耦合、变更影响等结构性问题。"
+            "不处理源码文件，需要查看源码时请另行调度 project-retriever。"
+        ),
+        "prompt": "",  # 动态构建，见 build_nexus_subagent
+        "tools_whitelist": _NEXUS_TOOLS,
     },
 }
 
@@ -371,8 +385,116 @@ def build_commit_analyzer_subagent(
     }
 
 
+def build_nexus_subagent(
+    *,
+    project_id_map: dict[str, int] | None = None,
+    branch_map: dict[str, str] | None = None,
+    version_name: str | None = None,
+) -> dict:
+    """动态构建 nexus 子智能体定义，注入项目上下文。
+
+    project_id_map: 项目名 → numeric project_id
+    branch_map: 项目名 → branch
+    version_name: 当前关注版本名称
+    """
+    base_prompt = (
+        "你是 Nexus，知识图谱代码分析代理。你的回答必须有事实依据，基于图谱查询结果。\n"
+        "\n"
+        "## 核心协议\n"
+        "1. 先用 nexus_search 或 nexus_overview 定位目标\n"
+        "2. 用 nexus_explore 查看节点关联\n"
+        "3. 用 nexus_cypher 做精确追踪\n"
+        "4. 用 nexus_impact 做变更影响分析\n"
+        "5. 引用图谱节点时使用 [[Type:Name]] 格式\n"
+        "\n"
+        "## 工具集（仅 5 个图谱工具）\n"
+        "- nexus_search: 混合搜索节点（文本 + 向量相似度）\n"
+        "- nexus_cypher: 执行只读 Cypher 查询（自动注入 $project_id/$branch）\n"
+        "- nexus_explore: 查询节点的直接关联关系\n"
+        "- nexus_overview: 代码库整体地图（Community/Process）\n"
+        "- nexus_impact: N 跳影响分析（沿 CALLS/IMPORTS 传播）\n"
+        "\n"
+        "⚠ 你没有文件系统工具，不能直接读取源码文件。\n"
+        "需要查看源码验证时，请在回复中明确说明需要查看哪些文件，\n"
+        "编排者会另行调度 project-retriever 获取源码。\n"
+        "\n"
+        "## 图谱节点类型\n"
+        "Project, Package, Module, Folder, File, Class, Function, Method, "
+        "Variable, Interface, Enum, Community, Process, Struct, Trait, Impl 等\n"
+        "\n"
+        "## 主要关系类型\n"
+        "- CONTAINS/DEFINES: 包含/定义（结构层级）\n"
+        "- CALLS: 函数/方法调用\n"
+        "- IMPORTS: 模块/包导入\n"
+        "- INHERITS/IMPLEMENTS: 继承/实现\n"
+        "- MEMBER_OF: 属于某 Community\n"
+        "- STEP_OF: 属于某 Process\n"
+        "\n"
+        "## 关键规则\n"
+        "- 先查后结论，不要凭记忆回答\n"
+        "- 引用节点：使用 [[Type:Name]] 格式\n"
+        "- 信任 nexus_impact 的输出结果\n"
+        "- 尽量并行调用多个工具\n"
+        "\n"
+        "## 输出风格\n"
+        "- 结构化：表格、列表、Mermaid 图\n"
+        "- 简洁：TL;DR 在前，细节在后\n"
+        "- Mermaid 图中节点 ID 使用简化名，标签用引号包裹\n"
+        "- 请用中文回答\n"
+    )
+
+    # ── 项目上下文 ──
+    context_section = ""
+    if project_id_map:
+        project_lines = "\n".join(
+            f"  - {name} (project_id={pid})"
+            for name, pid in project_id_map.items()
+        )
+        context_section += f"\n## 可用项目\n{project_lines}\n"
+        if len(project_id_map) == 1:
+            context_section += "（单项目环境，project 参数可省略）\n"
+
+    if branch_map:
+        branch_lines = "\n".join(
+            f"  - {name} → {br}" for name, br in branch_map.items()
+        )
+        context_section += f"\n## 分支映射\n{branch_lines}\n"
+
+    if version_name:
+        context_section += f"\n当前关注版本：「{version_name}」\n"
+
+    # ── 动态 description ──
+    if project_id_map:
+        names = "、".join(project_id_map.keys())
+        description = (
+            f"知识图谱分析：可查询 {names} 等项目的 Neo4j 图谱，"
+            f"分析代码架构、依赖关系、调用链和影响面。不处理源码文件。"
+        )
+    else:
+        description = SUBAGENT_DEFINITIONS["nexus"]["description"]
+
+    return {
+        "name": "nexus",
+        "description": description,
+        "prompt": base_prompt + context_section,
+        "tools_whitelist": _NEXUS_TOOLS,
+    }
+
+
+# ── 图谱分析独立 Profile ──
+
+GRAPH_ANALYSIS_PROFILE = {
+    "system_prompt": "",  # 动态构建（Nexus 直接对话模式）
+    "tools_whitelist": _NEXUS_TOOLS,
+    "subagents": ["project-retriever"],
+    "model": None,
+}
+
+
 def get_profile(profile_name: str) -> dict:
     """获取 agent profile，不存在则回退到 default。"""
+    if profile_name == "graph_analysis":
+        return GRAPH_ANALYSIS_PROFILE
     return AGENT_PROFILES.get(profile_name, AGENT_PROFILES["default"])
 
 
@@ -389,7 +511,7 @@ def resolve_profile_name(route_context_key: str) -> str:
 PRODUCT_AGENT_PROFILE = {
     "system_prompt": "",  # 动态构建，见 build_product_system_prompt
     "tools_whitelist": _ANALYSIS_TOOLS,
-    "subagents": ["project-retriever", "commit-analyzer"],
+    "subagents": ["project-retriever", "commit-analyzer", "nexus"],
     "model": None,
 }
 
@@ -455,11 +577,21 @@ def build_product_system_prompt(
         "- **必须串行**：当后续任务依赖前一个任务的结果时（如先检索 commit SHA，再用该 SHA 调用 commit-analyzer 分析具体变更）\n"
         "- 判断原则：如果任务 B 需要任务 A 的输出作为输入参数，则必须等 A 完成后再派发 B\n"
         "\n"
+        "## 子智能体调度指南\n"
+        "- **代码实现/源码细节** → 调度 project-retriever（grep/glob/read_file/ls）\n"
+        "- **提交变更分析** → 调度 commit-analyzer（git_show/git_diff/git_log_range）\n"
+        "- **架构/依赖/调用链/影响面** → 调度 nexus（nexus_search/cypher/explore/overview/impact）\n"
+        "- **复合问题** → 并行调度多个子智能体，各取所长后综合\n"
+        "- nexus 不能读文件，project-retriever 不能查图谱，commit-analyzer 不能做两者——职责不重叠\n"
+        "- nexus 返回的结果中如包含文件路径，你应接力调度 project-retriever 获取源码验证\n"
+        "\n"
         "## 你可以帮助用户\n"
         "- 管理产品版本规划与发布\n"
         "- 分析需求结构（Epic → Story → Task）和完成度\n"
         "- 追踪 Bug 状态和修复进度\n"
         "- 跨项目分析代码提交和影响面\n"
+        "- 查询代码架构、模块依赖、调用链（通过知识图谱）\n"
+        "- 分析代码变更的影响范围和风险（通过图谱影响分析）\n"
         "- 提供产品质量和进度洞察\n"
         "\n"
         "请用中文回答。回答要简洁、准确、有依据。"
