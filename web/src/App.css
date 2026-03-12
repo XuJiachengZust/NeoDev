@@ -1282,6 +1282,7 @@ button.secondary:hover {
 
 /* Mermaid 图表 */
 .md-mermaid {
+  position: relative;
   margin: 0.5em 0;
   padding: 12px;
   background: #12121a;
@@ -1294,12 +1295,114 @@ button.secondary:hover {
   max-width: 100%;
   height: auto;
 }
-.md-mermaid.mermaid-error {
-  color: var(--color-alert);
+/* mermaid 解析失败时回退为普通代码块 */
+.md-mermaid-fallback {
+  margin: 0.5em 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-card);
+  background: #12121a;
+  border: 1px solid var(--color-border);
+  overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 12px;
-  text-align: left;
+  line-height: 1.5;
+  color: var(--color-text-muted);
   white-space: pre-wrap;
+  text-align: left;
+}
+
+/* 放大按钮 */
+.md-mermaid-zoomable:hover .mermaid-zoom-btn {
+  opacity: 1;
+}
+.mermaid-zoom-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-button);
+  border: 1px solid var(--color-border);
+  background: rgba(13, 13, 18, 0.85);
+  color: var(--color-text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+.mermaid-zoom-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+/* Mermaid 全屏弹层 */
+.mermaid-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.mermaid-zoom-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px;
+  background: rgba(26, 26, 36, 0.95);
+  border-bottom: 1px solid var(--color-border);
+  width: 100%;
+  justify-content: center;
+}
+.mermaid-zoom-toolbar button {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-button);
+  border: 1px solid var(--color-border);
+  background: rgba(42, 42, 51, 0.6);
+  color: var(--color-text);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.mermaid-zoom-toolbar button:hover {
+  background: rgba(0, 240, 255, 0.1);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.mermaid-zoom-level {
+  min-width: 48px;
+  text-align: center;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+}
+
+.mermaid-zoom-canvas {
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+.mermaid-zoom-content {
+  transform-origin: center center;
+  transition: none;
+}
+.mermaid-zoom-content svg {
+  max-width: none;
+  height: auto;
 }
 
 /* highlight.js 暗色主题覆盖 */
