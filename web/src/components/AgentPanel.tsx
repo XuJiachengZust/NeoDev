@@ -3,6 +3,7 @@ import { useAgentSession } from "../contexts/AgentSessionContext";
 import { useRouteContextKey } from "../hooks/useRouteContextKey";
 import { useProductContext } from "../hooks/useProductContext";
 import { AgentQuickCommands } from "./AgentQuickCommands";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 import type { AgentMessage, SubagentStep } from "../api/client";
 
 interface AgentPanelProps {
@@ -328,7 +329,7 @@ function MessageBubble({ message, streaming }: { message: AgentMessage; streamin
               )}
               {message.subagent_content && (
                 <div className="agent-subagent-content">
-                  {message.subagent_content}
+                  <MarkdownRenderer content={message.subagent_content} />
                 </div>
               )}
             </div>
@@ -358,7 +359,9 @@ function MessageBubble({ message, streaming }: { message: AgentMessage; streamin
 
   return (
     <div className={`agent-msg ${isUser ? "user" : "assistant"}`}>
-      <div className="agent-msg-content">{message.content}</div>
+      <div className="agent-msg-content">
+        {isUser ? message.content : <MarkdownRenderer content={message.content} />}
+      </div>
       {!isUser && message.token_in != null && (
         <div className="agent-msg-meta">
           {message.token_in}↓ {message.token_out}↑
