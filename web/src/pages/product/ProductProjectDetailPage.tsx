@@ -34,7 +34,7 @@ export function ProductProjectDetailPage() {
   const { productId, product } = useProductPageContext();
   const { projectId: pid } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const projectId = pid ? Number(pid) : NaN;
   const urlVersionId = searchParams.get("versionId");
 
@@ -107,6 +107,14 @@ export function ProductProjectDetailPage() {
         const fromUrl = urlVersionId ? pVersions.find((v) => v.id === Number(urlVersionId)) : null;
         const dev = fromUrl || pVersions.find((v) => v.status === "developing") || pVersions[0];
         setSelectedVersionId(dev.id);
+        // 同步到 URL 查询参数，让 Agent 感知版本上下文
+        if (!urlVersionId || Number(urlVersionId) !== dev.id) {
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.set("versionId", String(dev.id));
+            return next;
+          }, { replace: true });
+        }
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "加载项目失败");
@@ -445,7 +453,17 @@ export function ProductProjectDetailPage() {
               <select
                 className="input-select"
                 value={selectedVersionId ?? ""}
-                onChange={(e) => setSelectedVersionId(e.target.value ? Number(e.target.value) : null)}
+                onChange={(e) => {
+                  const vid = e.target.value ? Number(e.target.value) : null;
+                  setSelectedVersionId(vid);
+                  // 同步到 URL 查询参数，让 Agent 感知版本上下文
+                  setSearchParams((prev) => {
+                    const next = new URLSearchParams(prev);
+                    if (vid != null) { next.set("versionId", String(vid)); }
+                    else { next.delete("versionId"); }
+                    return next;
+                  }, { replace: true });
+                }}
                 style={{ minWidth: "8rem", padding: "6px 10px", fontSize: 13 }}
               >
                 {productVersions.map((v) => (

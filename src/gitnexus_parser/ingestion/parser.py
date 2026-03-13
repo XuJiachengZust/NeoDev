@@ -37,6 +37,43 @@ LUA_BUILT_INS = frozenset({
     "getmetatable", "setmetatable", "rawequal", "load", "loadfile",
 })
 
+C_BUILT_INS = frozenset({
+    "printf", "scanf", "malloc", "free", "sizeof", "memcpy", "memset", "strlen",
+    "strcmp", "strcpy", "strncpy", "strcat", "fopen", "fclose", "fprintf", "sprintf",
+    "snprintf", "exit", "abort", "calloc", "realloc", "fread", "fwrite", "fgets",
+    "fputs", "atoi", "atof", "strtol", "strtod", "NULL",
+})
+
+CPP_BUILT_INS = C_BUILT_INS | frozenset({
+    "cout", "cin", "cerr", "endl", "std", "vector", "string", "map", "set",
+    "make_shared", "make_unique", "move", "forward", "static_cast", "dynamic_cast",
+    "const_cast", "reinterpret_cast", "begin", "end", "push_back", "emplace_back",
+    "size", "empty", "find", "insert", "erase",
+})
+
+JS_BUILT_INS = frozenset({
+    "console", "log", "require", "setTimeout", "setInterval", "clearTimeout",
+    "clearInterval", "parseInt", "parseFloat", "JSON", "Math", "Array", "Object",
+    "String", "Number", "Boolean", "Promise", "Symbol", "Map", "Set", "WeakMap",
+    "WeakSet", "Error", "TypeError", "Date", "RegExp", "isNaN", "isFinite",
+    "encodeURIComponent", "decodeURIComponent", "fetch", "alert", "confirm",
+})
+
+TS_BUILT_INS = JS_BUILT_INS
+
+GO_BUILT_INS = frozenset({
+    "fmt", "println", "Println", "Printf", "Sprintf", "Fprintf", "len", "cap",
+    "make", "new", "append", "copy", "delete", "close", "panic", "recover",
+    "print", "error", "Error", "Errorf", "String",
+})
+
+RUST_BUILT_INS = frozenset({
+    "println", "eprintln", "format", "vec", "Box", "Rc", "Arc", "Some", "None",
+    "Ok", "Err", "todo", "unimplemented", "unreachable", "assert", "assert_eq",
+    "assert_ne", "dbg", "cfg", "include", "String", "Vec", "HashMap", "HashSet",
+    "Option", "Result", "drop", "clone", "default",
+})
+
 
 @dataclass
 class ParsedNode:
@@ -128,6 +165,22 @@ def _get_label_from_captures(capture_map: dict[str, Node]) -> Optional[str]:
         return "Enum"
     if capture_map.get("definition.annotation"):
         return "Annotation"
+    if capture_map.get("definition.struct"):
+        return "Struct"
+    if capture_map.get("definition.namespace"):
+        return "Namespace"
+    if capture_map.get("definition.trait"):
+        return "Trait"
+    if capture_map.get("definition.impl"):
+        return "Impl"
+    if capture_map.get("definition.type_alias"):
+        return "TypeAlias"
+    if capture_map.get("definition.macro"):
+        return "Macro"
+    if capture_map.get("definition.typedef"):
+        return "Typedef"
+    if capture_map.get("definition.union"):
+        return "Union"
     return "CodeElement"
 
 
@@ -190,6 +243,117 @@ def _find_enclosing_function_id_lua(node: Node, file_path: str, source_bytes: by
             if name_node:
                 name = _node_text(name_node, source_bytes)
                 return generate_id("Function", f"{file_path}:{name}")
+        current = getattr(current, "parent", None)
+    return None
+
+
+def _extract_c_function_name(declarator_node: Node, source_bytes: bytes) -> Optional[str]:
+    """Extract function name from a C/C++ declarator node."""
+    if declarator_node.type == "function_declarator":
+        inner = declarator_node.child_by_field_name("declarator")
+        if inner:
+            return _node_text(inner, source_bytes)
+    elif declarator_node.type == "pointer_declarator":
+        inner = declarator_node.child_by_field_name("declarator")
+        if inner:
+            return _extract_c_function_name(inner, source_bytes)
+    return None
+
+
+def _find_enclosing_function_id_c(node: Node, file_path: str, source_bytes: bytes) -> Optional[str]:
+    """Walk up AST to find enclosing function (C)."""
+    try:
+        current = node.parent
+    except Exception:
+        return None
+    while current:
+        if current.type == "function_definition":
+            decl = current.child_by_field_name("declarator")
+            if decl:
+                name = _extract_c_function_name(decl, source_bytes)
+                if name:
+                    return generate_id("Function", f"{file_path}:{name}")
+        current = getattr(current, "parent", None)
+    return None
+
+
+def _find_enclosing_function_id_cpp(node: Node, file_path: str, source_bytes: bytes) -> Optional[str]:
+    """Walk up AST to find enclosing function/method (C++)."""
+    try:
+        current = node.parent
+    except Exception:
+        return None
+    while current:
+        if current.type == "function_definition":
+            decl = current.child_by_field_name("declarator")
+            if decl:
+                name = _extract_c_function_name(decl, source_bytes)
+                if name:
+                    label = "Function"
+                    if decl.type == "function_declarator":
+                        inner = decl.child_by_field_name("declarator")
+                        if inner and inner.type == "qualified_identifier":
+                            label = "Method"
+                    return generate_id(label, f"{file_path}:{name}")
+        current = getattr(current, "parent", None)
+    return None
+
+
+def _find_enclosing_function_id_js(node: Node, file_path: str, source_bytes: bytes) -> Optional[str]:
+    """Walk up AST to find enclosing function/method (JavaScript)."""
+    try:
+        current = node.parent
+    except Exception:
+        return None
+    while current:
+        if current.type == "function_declaration":
+            name_node = current.child_by_field_name("name")
+            if name_node:
+                return generate_id("Function", f"{file_path}:{_node_text(name_node, source_bytes)}")
+        elif current.type == "method_definition":
+            name_node = current.child_by_field_name("name")
+            if name_node:
+                return generate_id("Method", f"{file_path}:{_node_text(name_node, source_bytes)}")
+        elif current.type == "arrow_function":
+            parent = getattr(current, "parent", None)
+            if parent and parent.type == "variable_declarator":
+                name_node = parent.child_by_field_name("name")
+                if name_node:
+                    return generate_id("Function", f"{file_path}:{_node_text(name_node, source_bytes)}")
+        current = getattr(current, "parent", None)
+    return None
+
+
+def _find_enclosing_function_id_go(node: Node, file_path: str, source_bytes: bytes) -> Optional[str]:
+    """Walk up AST to find enclosing function/method (Go)."""
+    try:
+        current = node.parent
+    except Exception:
+        return None
+    while current:
+        if current.type == "function_declaration":
+            name_node = current.child_by_field_name("name")
+            if name_node:
+                return generate_id("Function", f"{file_path}:{_node_text(name_node, source_bytes)}")
+        elif current.type == "method_declaration":
+            name_node = current.child_by_field_name("name")
+            if name_node:
+                return generate_id("Method", f"{file_path}:{_node_text(name_node, source_bytes)}")
+        current = getattr(current, "parent", None)
+    return None
+
+
+def _find_enclosing_function_id_rust(node: Node, file_path: str, source_bytes: bytes) -> Optional[str]:
+    """Walk up AST to find enclosing function (Rust)."""
+    try:
+        current = node.parent
+    except Exception:
+        return None
+    while current:
+        if current.type == "function_item":
+            name_node = current.child_by_field_name("name")
+            if name_node:
+                return generate_id("Function", f"{file_path}:{_node_text(name_node, source_bytes)}")
         current = getattr(current, "parent", None)
     return None
 
@@ -601,6 +765,193 @@ def _parse_lua_file(
         )
 
 
+def _generic_parse_file(
+    file_path: str,
+    content: str,
+    language: str,
+    result: ParseResult,
+    lang_obj: Any,
+    built_ins: frozenset,
+    enclosing_fn,
+    is_exported_fn=None,
+    heritage_kind: str = "extends",
+) -> None:
+    """Generic parse logic shared by C/C++/JS/TS/Go/Rust."""
+    parser = Parser(lang_obj)
+    query_str = LANGUAGE_QUERIES.get(language)
+    if not query_str:
+        return
+    try:
+        query = Query(lang_obj, query_str)
+    except Exception:
+        return
+    source_bytes = content.encode("utf-8")
+    if len(source_bytes) > MAX_FILE_BYTES:
+        return
+    try:
+        tree = parser.parse(source_bytes)
+    except Exception:
+        return
+    if not tree or not tree.root_node:
+        return
+    result.fileCount += 1
+    cursor = QueryCursor(query)
+    try:
+        matches = cursor.matches(tree.root_node)
+    except Exception:
+        return
+    file_id = generate_id("File", file_path)
+    for match in matches:
+        try:
+            pattern_idx, captures = match
+            capture_map = {name: nodes[0] for name, nodes in captures.items() if nodes}
+        except (TypeError, ValueError):
+            continue
+
+        # Imports
+        if "import" in capture_map and "import.source" in capture_map:
+            # Skip require()-as-import that isn't actually require (JS)
+            if "import.require" in capture_map:
+                if _node_text(capture_map["import.require"], source_bytes) != "require":
+                    continue
+            raw = _parse_import_source_text(capture_map["import.source"], source_bytes)
+            if raw:
+                result.imports.append(
+                    ExtractedImport(filePath=file_path, rawImportPath=raw, language=language)
+                )
+            continue
+
+        # Calls
+        if "call" in capture_map and "call.name" in capture_map:
+            called_name = _node_text(capture_map["call.name"], source_bytes)
+            if called_name not in built_ins:
+                call_node = capture_map["call"]
+                source_id = enclosing_fn(call_node, file_path, source_bytes) or file_id
+                result.calls.append(
+                    ExtractedCall(filePath=file_path, calledName=called_name, sourceId=source_id)
+                )
+            continue
+
+        # Heritage
+        if "heritage.class" in capture_map:
+            class_name = _node_text(capture_map["heritage.class"], source_bytes)
+            if "heritage.extends" in capture_map:
+                parent_name = _node_text(capture_map["heritage.extends"], source_bytes)
+                kind = heritage_kind
+                # Rust impl Trait for Struct → trait-impl
+                if language == "rust":
+                    kind = "trait-impl"
+                result.heritage.append(
+                    ExtractedHeritage(filePath=file_path, className=class_name, parentName=parent_name, kind=kind)
+                )
+            if "heritage.implements" in capture_map:
+                parent_name = _node_text(capture_map["heritage.implements"], source_bytes)
+                result.heritage.append(
+                    ExtractedHeritage(filePath=file_path, className=class_name, parentName=parent_name, kind="implements")
+                )
+            continue
+
+        # Definitions
+        node_label = _get_label_from_captures(capture_map)
+        if not node_label:
+            continue
+        name_node = capture_map.get("name")
+        if not name_node:
+            continue
+        node_name = _node_text(name_node, source_bytes)
+        node_id = generate_id(node_label, f"{file_path}:{node_name}")
+        start_line = name_node.start_point[0] + 1
+        end_line = name_node.end_point[0] + 1
+        is_exported = is_exported_fn(node_name) if is_exported_fn else True
+        result.nodes.append(
+            ParsedNode(
+                id=node_id,
+                label=node_label,
+                properties={
+                    "name": node_name,
+                    "filePath": file_path,
+                    "startLine": start_line,
+                    "endLine": end_line,
+                    "language": language,
+                    "isExported": is_exported,
+                },
+            )
+        )
+        result.symbols.append(
+            ParsedSymbol(filePath=file_path, name=node_name, nodeId=node_id, type=node_label)
+        )
+        rel_id = generate_id("DEFINES", f"{file_id}->{node_id}")
+        result.relationships.append(
+            ParsedRelationship(
+                id=rel_id, sourceId=file_id, targetId=node_id, type="DEFINES", confidence=1.0, reason="",
+            )
+        )
+
+
+def _parse_c_file(file_path: str, content: str, language: str, result: ParseResult) -> None:
+    try:
+        import tree_sitter_c
+    except ImportError:
+        return
+    lang = Language(tree_sitter_c.language())
+    _generic_parse_file(file_path, content, language, result, lang, C_BUILT_INS, _find_enclosing_function_id_c)
+
+
+def _parse_cpp_file(file_path: str, content: str, language: str, result: ParseResult) -> None:
+    try:
+        import tree_sitter_cpp
+    except ImportError:
+        return
+    lang = Language(tree_sitter_cpp.language())
+    _generic_parse_file(file_path, content, language, result, lang, CPP_BUILT_INS, _find_enclosing_function_id_cpp)
+
+
+def _parse_javascript_file(file_path: str, content: str, language: str, result: ParseResult) -> None:
+    try:
+        import tree_sitter_javascript
+    except ImportError:
+        return
+    lang = Language(tree_sitter_javascript.language())
+    _generic_parse_file(file_path, content, language, result, lang, JS_BUILT_INS, _find_enclosing_function_id_js)
+
+
+def _parse_typescript_file(file_path: str, content: str, language: str, result: ParseResult) -> None:
+    try:
+        import tree_sitter_typescript
+    except ImportError:
+        return
+    if file_path.endswith(".tsx") or file_path.endswith(".jsx"):
+        lang = Language(tree_sitter_typescript.language_tsx())
+    else:
+        lang = Language(tree_sitter_typescript.language_typescript())
+    _generic_parse_file(file_path, content, language, result, lang, TS_BUILT_INS, _find_enclosing_function_id_js)
+
+
+def _parse_go_file(file_path: str, content: str, language: str, result: ParseResult) -> None:
+    try:
+        import tree_sitter_go
+    except ImportError:
+        return
+    lang = Language(tree_sitter_go.language())
+    _generic_parse_file(
+        file_path, content, language, result, lang, GO_BUILT_INS, _find_enclosing_function_id_go,
+        is_exported_fn=lambda name: name[0].isupper() if name else False,
+    )
+
+
+def _parse_rust_file(file_path: str, content: str, language: str, result: ParseResult) -> None:
+    try:
+        import tree_sitter_rust
+    except ImportError:
+        return
+    lang = Language(tree_sitter_rust.language())
+    _generic_parse_file(
+        file_path, content, language, result, lang, RUST_BUILT_INS, _find_enclosing_function_id_rust,
+        is_exported_fn=lambda name: True,
+        heritage_kind="trait-impl",
+    )
+
+
 def parse_files(
     files: list[tuple[str, str]],
 ) -> ParseResult:
@@ -625,4 +976,22 @@ def parse_files(
         elif language == "lua":
             for path, content in group:
                 _parse_lua_file(path, content, language, result)
+        elif language == "c":
+            for path, content in group:
+                _parse_c_file(path, content, language, result)
+        elif language == "cpp":
+            for path, content in group:
+                _parse_cpp_file(path, content, language, result)
+        elif language == "javascript":
+            for path, content in group:
+                _parse_javascript_file(path, content, language, result)
+        elif language == "typescript":
+            for path, content in group:
+                _parse_typescript_file(path, content, language, result)
+        elif language == "go":
+            for path, content in group:
+                _parse_go_file(path, content, language, result)
+        elif language == "rust":
+            for path, content in group:
+                _parse_rust_file(path, content, language, result)
     return result

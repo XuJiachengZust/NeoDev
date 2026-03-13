@@ -78,8 +78,270 @@ LUA_QUERIES = """
     method: (identifier) @call.name)) @call
 """
 
+# C - function definitions, structs, enums, unions, typedefs, macros, includes, calls
+C_QUERIES = """
+(function_definition
+  declarator: (function_declarator
+    declarator: (identifier) @name)) @definition.function
+
+(function_definition
+  declarator: (pointer_declarator
+    declarator: (function_declarator
+      declarator: (identifier) @name))) @definition.function
+
+(struct_specifier
+  name: (type_identifier) @name) @definition.struct
+
+(enum_specifier
+  name: (type_identifier) @name) @definition.enum
+
+(union_specifier
+  name: (type_identifier) @name) @definition.union
+
+(type_definition
+  declarator: (type_identifier) @name) @definition.typedef
+
+(preproc_def
+  name: (identifier) @name) @definition.macro
+
+(preproc_include
+  path: (_) @import.source) @import
+
+(call_expression
+  function: (identifier) @call.name) @call
+
+(call_expression
+  function: (field_expression
+    field: (field_identifier) @call.name)) @call
+"""
+
+# C++ - extends C with classes, namespaces, methods
+CPP_QUERIES = """
+(function_definition
+  declarator: (function_declarator
+    declarator: (identifier) @name)) @definition.function
+
+(function_definition
+  declarator: (function_declarator
+    declarator: (qualified_identifier
+      name: (identifier) @name))) @definition.method
+
+(function_definition
+  declarator: (pointer_declarator
+    declarator: (function_declarator
+      declarator: (identifier) @name))) @definition.function
+
+(class_specifier
+  name: (type_identifier) @name) @definition.class
+
+(struct_specifier
+  name: (type_identifier) @name) @definition.struct
+
+(enum_specifier
+  name: (type_identifier) @name) @definition.enum
+
+(union_specifier
+  name: (type_identifier) @name) @definition.union
+
+(namespace_definition
+  name: (namespace_identifier) @name) @definition.namespace
+
+(type_definition
+  declarator: (type_identifier) @name) @definition.typedef
+
+(preproc_def
+  name: (identifier) @name) @definition.macro
+
+(preproc_include
+  path: (_) @import.source) @import
+
+(call_expression
+  function: (identifier) @call.name) @call
+
+(call_expression
+  function: (field_expression
+    field: (field_identifier) @call.name)) @call
+
+(call_expression
+  function: (qualified_identifier
+    name: (identifier) @call.name)) @call
+
+; Heritage: class Derived : public Base
+(class_specifier
+  name: (type_identifier) @heritage.class
+  (base_class_clause
+    (type_identifier) @heritage.extends)) @heritage
+"""
+
+# JavaScript - functions, classes, methods, arrow functions, imports, calls, heritage
+JS_QUERIES = """
+(function_declaration
+  name: (identifier) @name) @definition.function
+
+(class_declaration
+  name: (identifier) @name) @definition.class
+
+(method_definition
+  name: (property_identifier) @name) @definition.method
+
+(variable_declarator
+  name: (identifier) @name
+  value: (arrow_function)) @definition.function
+
+(import_statement
+  source: (string) @import.source) @import
+
+(call_expression
+  function: (identifier) @call.name) @call
+
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @call.name)) @call
+
+; require("module")
+(call_expression
+  function: (identifier) @import.require
+  arguments: (arguments (string) @import.source)) @import
+
+; Heritage: class Foo extends Bar
+(class_declaration
+  name: (identifier) @heritage.class
+  (class_heritage
+    (identifier) @heritage.extends)) @heritage
+"""
+
+# TypeScript - extends JS with interfaces, enums, type aliases, implements
+TS_QUERIES = """
+(function_declaration
+  name: (identifier) @name) @definition.function
+
+(class_declaration
+  name: (type_identifier) @name) @definition.class
+
+(method_definition
+  name: (property_identifier) @name) @definition.method
+
+(variable_declarator
+  name: (identifier) @name
+  value: (arrow_function)) @definition.function
+
+(interface_declaration
+  name: (type_identifier) @name) @definition.interface
+
+(enum_declaration
+  name: (identifier) @name) @definition.enum
+
+(type_alias_declaration
+  name: (type_identifier) @name) @definition.type_alias
+
+(import_statement
+  source: (string) @import.source) @import
+
+(call_expression
+  function: (identifier) @call.name) @call
+
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @call.name)) @call
+
+; Heritage: class Foo extends Bar
+(class_declaration
+  name: (type_identifier) @heritage.class
+  (class_heritage
+    (extends_clause
+      value: (identifier) @heritage.extends))) @heritage
+
+; Heritage: class Foo implements Bar
+(class_declaration
+  name: (type_identifier) @heritage.class
+  (class_heritage
+    (implements_clause
+      (type_identifier) @heritage.implements))) @heritage.impl
+"""
+
+# Go - functions, methods, type declarations, imports, calls
+GO_QUERIES = """
+(function_declaration
+  name: (identifier) @name) @definition.function
+
+(method_declaration
+  name: (field_identifier) @name) @definition.method
+
+(type_declaration
+  (type_spec
+    name: (type_identifier) @name
+    type: (struct_type))) @definition.struct
+
+(type_declaration
+  (type_spec
+    name: (type_identifier) @name
+    type: (interface_type))) @definition.interface
+
+(import_declaration
+  (import_spec
+    path: (interpreted_string_literal) @import.source)) @import
+
+(import_declaration
+  (import_spec_list
+    (import_spec
+      path: (interpreted_string_literal) @import.source))) @import
+
+(call_expression
+  function: (identifier) @call.name) @call
+
+(call_expression
+  function: (selector_expression
+    field: (field_identifier) @call.name)) @call
+"""
+
+# Rust - functions, structs, enums, traits, impl, type aliases, use, calls
+RUST_QUERIES = """
+(function_item
+  name: (identifier) @name) @definition.function
+
+(struct_item
+  name: (type_identifier) @name) @definition.struct
+
+(enum_item
+  name: (type_identifier) @name) @definition.enum
+
+(trait_item
+  name: (type_identifier) @name) @definition.trait
+
+(impl_item
+  type: (type_identifier) @name) @definition.impl
+
+(type_item
+  name: (type_identifier) @name) @definition.type_alias
+
+(use_declaration
+  argument: (_) @import.source) @import
+
+(call_expression
+  function: (identifier) @call.name) @call
+
+(call_expression
+  function: (field_expression
+    field: (field_identifier) @call.name)) @call
+
+(call_expression
+  function: (scoped_identifier
+    name: (identifier) @call.name)) @call
+
+; Heritage: impl Trait for Struct
+(impl_item
+  trait: (type_identifier) @heritage.extends
+  type: (type_identifier) @heritage.class) @heritage
+"""
+
 LANGUAGE_QUERIES: dict[str, str] = {
     "python": PYTHON_QUERIES,
     "java": JAVA_QUERIES,
     "lua": LUA_QUERIES,
+    "c": C_QUERIES,
+    "cpp": CPP_QUERIES,
+    "javascript": JS_QUERIES,
+    "typescript": TS_QUERIES,
+    "go": GO_QUERIES,
+    "rust": RUST_QUERIES,
 }
