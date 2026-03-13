@@ -15,6 +15,7 @@ import { ProductVersionWorkspacePage } from "./pages/product/ProductVersionWorks
 import { ProductVersionOverviewPage } from "./pages/product/ProductVersionOverviewPage";
 import { ProductRequirementsPage } from "./pages/product/ProductRequirementsPage";
 import { ProductBugsPage } from "./pages/product/ProductBugsPage";
+import { ProductReportsPage } from "./pages/product/ProductReportsPage";
 import "./App.css";
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
           <Route path="projects" element={<ProductProjectsPage />} />
           <Route path="projects/:projectId" element={<ProductProjectDetailPage />} />
           <Route path="versions" element={<ProductVersionsPage />} />
+          <Route path="reports" element={<ProductReportsPage />} />
           <Route path="versions/:versionId" element={<ProductVersionWorkspacePage />}>
             <Route index element={<Navigate to="overview" replace />} />
             <Route path="overview" element={<ProductVersionOverviewPage />} />

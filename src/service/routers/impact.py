@@ -1,4 +1,4 @@
-"""Impact analyses API (Phase 3): under /api/projects/{project_id}/impact-analyses."""
+"""Impact analyses API: under /api/projects/{project_id}/impact-analyses + product-level reports."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -51,3 +51,12 @@ def get_impact_analysis(
     if out is None:
         raise HTTPException(status_code=404, detail="Impact analysis not found")
     return out
+
+
+# 产品级报告路由（单独 router，挂载到 /api/products 前缀）
+product_reports_router = APIRouter(prefix="", tags=["product-reports"])
+
+
+@product_reports_router.get("/{product_id}/reports", response_model=list)
+def list_product_reports(product_id: int, db=Depends(get_db)):
+    return service.list_by_product(db, product_id)

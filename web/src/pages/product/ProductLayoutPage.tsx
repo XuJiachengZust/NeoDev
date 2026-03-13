@@ -67,6 +67,9 @@ export function ProductLayoutPage() {
           <NavLink to="versions" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
             版本
           </NavLink>
+          <NavLink to="reports" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
+            报告
+          </NavLink>
         </nav>
       </div>
 

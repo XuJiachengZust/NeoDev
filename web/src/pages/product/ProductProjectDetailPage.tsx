@@ -87,6 +87,7 @@ export function ProductProjectDetailPage() {
   // Toast 通知
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
+
   const loadProject = useCallback(async () => {
     if (!Number.isFinite(projectId)) return;
     setLoading(true);
@@ -384,8 +385,8 @@ export function ProductProjectDetailPage() {
     setError(null);
     try {
       await createImpactAnalysis(projectId, { commit_ids: Array.from(selectedCommits) });
-      setSuccess("影响面分析已创建");
       setSelectedCommits(new Set());
+      setToast({ message: "影响面分析已启动，前往「报告」页查看进度", type: "success" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "创建影响面分析失败");
     } finally {

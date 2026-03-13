@@ -109,10 +109,15 @@ export interface Commit {
 export interface ImpactAnalysis {
   id: number;
   project_id: number;
+  version_id?: number | null;
   status: string;
+  title?: string | null;
   triggered_at?: string | null;
   result_summary?: string | null;
-  result_store_path?: string | null;
+  project_name?: string | null;
+  version_name?: string | null;
+  commit_count?: number | null;
+  commit_ids?: number[] | null;
 }
 
 export interface ImpactAnalysisCreate {
@@ -270,6 +275,10 @@ export function getImpactAnalysis(
   analysisId: number
 ): Promise<ImpactAnalysis> {
   return request<ImpactAnalysis>(`/api/projects/${projectId}/impact-analyses/${analysisId}`);
+}
+
+export function listProductReports(productId: number): Promise<ImpactAnalysis[]> {
+  return request<ImpactAnalysis[]>(`/api/products/${productId}/reports`);
 }
 
 export function getWatchStatus(projectId: number): Promise<WatchStatus> {

@@ -23,6 +23,9 @@ services:
       - ./docker/migrations/007_ai_agent_tables.sql:/docker-entrypoint-initdb.d/007_ai_agent_tables.sql:ro
       - ./docker/migrations/008_product_refactoring.sql:/docker-entrypoint-initdb.d/008_product_refactoring.sql:ro
       - ./docker/migrations/009_version_required.sql:/docker-entrypoint-initdb.d/009_version_required.sql:ro
+      - ./docker/migrations/010_project_repo_url.sql:/docker-entrypoint-initdb.d/010_project_repo_url.sql:ro
+      - ./docker/migrations/011_agent_conversation_enhancements.sql:/docker-entrypoint-initdb.d/011_agent_conversation_enhancements.sql:ro
+      - ./docker/migrations/012_impact_analysis_enhancements.sql:/docker-entrypoint-initdb.d/012_impact_analysis_enhancements.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
