@@ -6,12 +6,14 @@ from deepagents.backends.local_shell import LocalShellBackend
 from deepagents.backends.protocol import BackendProtocol
 from deepagents.backends.state import StateBackend
 from deepagents.backends.store import StoreBackend
+from deepagents.backends.workspace import SandboxWorkspaceBackend
 
 __all__ = [
     "BackendProtocol",
     "CompositeBackend",
     "FilesystemBackend",
     "LocalShellBackend",
+    "SandboxWorkspaceBackend",
     "StateBackend",
     "StoreBackend",
 ]

@@ -259,6 +259,14 @@ def run_preprocess(conn, project_id: int, branch: str = "main", force: bool = Fa
         stats["logs"] = process_logs
         status_repo.set_completed(conn, project_id, branch, extra=stats)
         conn.commit()
+
+        # 自动触发版本功能总结
+        try:
+            from service.services.version_feature_summary_service import trigger_for_project_branch
+            trigger_for_project_branch(conn, project_id, branch)
+        except Exception:
+            logger.warning("[AI 分析] 触发版本功能总结失败（不影响主流程）", exc_info=True)
+
         return {
             "status": "completed",
             "project_id": project_id,

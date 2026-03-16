@@ -19,7 +19,9 @@ from langgraph.store.base import BaseStore
 from langgraph.types import Checkpointer
 
 from deepagents.backends import StateBackend
+from deepagents.backends.composite import CompositeBackend
 from deepagents.backends.protocol import BackendFactory, BackendProtocol
+from deepagents.backends.workspace import SandboxWorkspaceBackend
 from deepagents.middleware.dynamic_prompt import DynamicPromptMiddleware
 from deepagents.middleware.filesystem import FilesystemMiddleware
 from deepagents.middleware.memory import MemoryMiddleware
@@ -28,6 +30,7 @@ from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.skills import SkillsMiddleware
 from deepagents.middleware.subagents import CompiledSubAgent, SubAgent, SubAgentMiddleware
 from deepagents.middleware.summarization import SummarizationMiddleware
+from deepagents.middleware.workspace import SandboxWorkspaceMiddleware
 
 BASE_AGENT_PROMPT = "In order to complete the objective that the user asks of you, you have access to a number of standard tools."
 
@@ -58,6 +61,9 @@ def create_deep_agent(
     checkpointer: Checkpointer | None = None,
     store: BaseStore | None = None,
     backend: BackendProtocol | BackendFactory | None = None,
+    workspace: bool | SandboxWorkspaceBackend = False,
+    workspace_routing: dict[str, SandboxWorkspaceBackend] | None = None,
+    workspace_path_prefix: str = "/workspace/",
     interrupt_on: dict[str, bool | InterruptOnConfig] | None = None,
     debug: bool = False,
     name: str | None = None,
@@ -126,6 +132,21 @@ def create_deep_agent(
 
             Pass either a `Backend` instance or a callable factory like `lambda rt: StateBackend(rt)`.
             For execution support, use a backend that implements `SandboxBackendProtocol`.
+        workspace: 沙箱工作空间配置。
+
+            当为 ``True`` 时，自动创建 ``SandboxWorkspaceBackend`` 并通过
+            ``CompositeBackend`` 将 ``/workspace/`` 路由到临时磁盘目录。
+            父智能体和子智能体共享同一磁盘目录，但接收不同的提示词。
+            也可以传入一个已有的 ``SandboxWorkspaceBackend`` 实例。
+        workspace_routing: 自定义 workspace 路由标记。
+
+            当不为 None 时，表示调用方已在 ``backend`` 中自行处理了 workspace 路由
+            （如挂载到 ``/workspace/sandbox/``），此处跳过默认的 ``CompositeBackend``
+            包装。仅影响路由，不影响 middleware 注入。
+        workspace_path_prefix: 提示词中使用的路径前缀。
+
+            默认 ``"/workspace/"``。当使用自定义 ``workspace_routing`` 时，
+            应传入对应的前缀（如 ``"/workspace/sandbox/"``）。
         interrupt_on: Mapping of tool names to interrupt configs.
 
             Pass to pause agent execution at specified tool calls for human approval or modification.
@@ -170,6 +191,17 @@ def create_deep_agent(
 
     backend = backend if backend is not None else (lambda rt: StateBackend(rt))
 
+    # 沙箱工作空间：将 workspace 路由到临时磁盘目录
+    workspace_backend: SandboxWorkspaceBackend | None = None
+    if workspace:
+        workspace_backend = workspace if isinstance(workspace, SandboxWorkspaceBackend) else SandboxWorkspaceBackend()
+        if workspace_routing is not None:
+            # 调用方已在 backend 中处理了自定义路由（如 /workspace/sandbox/），
+            # 这里只需记录 workspace_backend 以便后续注入 middleware，不再包装 CompositeBackend。
+            pass
+        else:
+            backend = CompositeBackend(default=backend, routes={"/workspace/": workspace_backend})
+
     if skills is not None:
         subagent_middleware.append(SkillsMiddleware(backend=backend, sources=skills))
     subagent_middleware.extend(
@@ -188,6 +220,10 @@ def create_deep_agent(
             PatchToolCallsMiddleware(),
         ]
     )
+
+    # 子智能体工作空间中间件（subagent 角色）
+    if workspace_backend is not None:
+        subagent_middleware.insert(0, SandboxWorkspaceMiddleware(workspace_backend, role="subagent", path_prefix=workspace_path_prefix))
 
     # Build main agent middleware stack
     deepagent_middleware: list[AgentMiddleware] = [
@@ -221,6 +257,10 @@ def create_deep_agent(
             PatchToolCallsMiddleware(),
         ]
     )
+    # 父智能体工作空间中间件（orchestrator 角色）
+    if workspace_backend is not None:
+        deepagent_middleware.insert(0, SandboxWorkspaceMiddleware(workspace_backend, role="orchestrator", path_prefix=workspace_path_prefix))
+
     if middleware:
         deepagent_middleware.extend(middleware)
     if interrupt_on is not None:

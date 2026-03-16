@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from service.routers import (
     agent,
     commits,
+    feature_summaries,
     impact,
     parse,
     preprocess,
@@ -36,5 +37,6 @@ router.include_router(agent.router, prefix="/agent", tags=["agent"])
 router.include_router(product_versions.router, prefix="/products", tags=["product-versions"])
 router.include_router(product_requirements.router, prefix="/products", tags=["product-requirements"])
 router.include_router(product_bugs.router, prefix="/products", tags=["product-bugs"])
+router.include_router(feature_summaries.router, prefix="/products", tags=["feature-summaries"])
 router.include_router(impact.product_reports_router, prefix="/products", tags=["product-reports"])
 router.include_router(products.router, prefix="/products", tags=["products"])

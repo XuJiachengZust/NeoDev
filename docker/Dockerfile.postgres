@@ -1,0 +1,16 @@
+# 自包含 PostgreSQL + pgvector 镜像（内含全部迁移脚本）
+FROM pgvector/pgvector:0.8.0-pg16
+
+COPY docker/init-pgvector.sql                                       /docker-entrypoint-initdb.d/001_init-pgvector.sql
+COPY docker/migrations/001_impact_analysis_tables.sql               /docker-entrypoint-initdb.d/002_impact_analysis_tables.sql
+COPY docker/migrations/002_versions_branch_nullable.sql             /docker-entrypoint-initdb.d/003_versions_branch_nullable.sql
+COPY docker/migrations/003_git_branches.sql                         /docker-entrypoint-initdb.d/004_git_branches.sql
+COPY docker/migrations/004_project_repo_auth.sql                    /docker-entrypoint-initdb.d/005_project_repo_auth.sql
+COPY docker/migrations/006_ai_preprocess_status.sql                 /docker-entrypoint-initdb.d/006_ai_preprocess_status.sql
+COPY docker/migrations/007_ai_agent_tables.sql                      /docker-entrypoint-initdb.d/007_ai_agent_tables.sql
+COPY docker/migrations/008_product_refactoring.sql                  /docker-entrypoint-initdb.d/008_product_refactoring.sql
+COPY docker/migrations/009_version_required.sql                     /docker-entrypoint-initdb.d/009_version_required.sql
+COPY docker/migrations/010_project_repo_url.sql                     /docker-entrypoint-initdb.d/010_project_repo_url.sql
+COPY docker/migrations/011_agent_conversation_enhancements.sql      /docker-entrypoint-initdb.d/011_agent_conversation_enhancements.sql
+COPY docker/migrations/012_impact_analysis_enhancements.sql         /docker-entrypoint-initdb.d/012_impact_analysis_enhancements.sql
+COPY docker/migrations/013_version_feature_summaries.sql            /docker-entrypoint-initdb.d/013_version_feature_summaries.sql

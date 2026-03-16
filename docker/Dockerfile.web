@@ -1,0 +1,18 @@
+# NeoDev 前端镜像：构建 + Nginx 托管
+# ── Stage 1: Node 构建 ─────────────────────────────────────────────
+FROM node:20-alpine AS builder
+
+WORKDIR /build
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY web/ ./
+RUN npm run build
+
+# ── Stage 2: Nginx 运行时 ──────────────────────────────────────────
+FROM nginx:1.27-alpine
+
+RUN rm -rf /usr/share/nginx/html/*
+COPY --from=builder /build/dist /usr/share/nginx/html
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80

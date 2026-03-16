@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # ── 缓存（key = thread_id）─────────────────────────────────────────────
 
 _agent_cache: dict[str, Any] = {}
+_workspace_cache: dict[str, Any] = {}  # thread_id → SandboxWorkspaceBackend
 _fallback_checkpointer = None
 
 
@@ -48,6 +49,13 @@ def _get_effective_checkpointer():
 
 def evict_agent(thread_id: str) -> bool:
     """从缓存中移除指定 thread_id 的 agent 实例。返回是否确实移除了。"""
+    ws = _workspace_cache.pop(thread_id, None)
+    if ws:
+        try:
+            ws.cleanup()
+            logger.info("已清理 workspace [%s]", thread_id)
+        except Exception:
+            logger.warning("workspace cleanup 失败 [%s]", thread_id, exc_info=True)
     removed = _agent_cache.pop(thread_id, None)
     if removed:
         logger.info("已移除缓存 Agent [%s]", thread_id)
@@ -403,11 +411,13 @@ async def run_agent_invoke(
 def _build_product_backend(
     session_id: str | None,
     project_repo_map: dict[str, str] | None = None,
+    workspace_backend: Any = None,
 ):
-    """产品级 CompositeBackend：多项目只读挂载 + 沙箱可写。
+    """产品级 CompositeBackend：多项目只读挂载 + 沙箱可写 + workspace。
 
     project_repo_map: {"project-a": "/path/to/repo-a", ...}
     挂载为 /workspace/projects/project-a/ 等。
+    workspace_backend: SandboxWorkspaceBackend 实例，挂载到 /workspace/sandbox/。
     """
     from deepagents.backends import CompositeBackend, StateBackend
     from service.readonly_backend import ReadOnlyFilesystemBackend
@@ -426,6 +436,10 @@ def _build_product_backend(
         sandbox = ensure_sandbox(session_id)
         routes["/workspace/tmp/"] = sandbox
         logger.info("沙箱挂载: session=%s -> /workspace/tmp/", session_id)
+
+    if workspace_backend is not None:
+        routes["/workspace/sandbox/"] = workspace_backend
+        logger.info("workspace 挂载: /workspace/sandbox/")
 
     def factory(rt):
         default = StateBackend(rt)
@@ -460,6 +474,7 @@ def get_or_create_product_agent(
             logger.debug("复用产品 Agent [%s]", thread_id)
             return cached
 
+    from deepagents.backends.workspace import SandboxWorkspaceBackend
     from deepagents.graph import create_deep_agent
     from deepagents.middleware.git_tools import GitToolsMiddleware
     from deepagents.middleware.subagents import SubAgent
@@ -470,7 +485,11 @@ def get_or_create_product_agent(
     logger.info("创建产品 Agent [%s] model=%s checkpointer=%s",
                 thread_id, model_name, type(current_cp).__name__)
 
-    backend = _build_product_backend(session_id, project_repo_map)
+    # 创建 workspace
+    workspace_backend = SandboxWorkspaceBackend()
+    _workspace_cache[thread_id] = workspace_backend
+
+    backend = _build_product_backend(session_id, project_repo_map, workspace_backend=workspace_backend)
 
     virtual_repo_map = {
         pname: f"/workspace/projects/{pname}/"
@@ -548,6 +567,9 @@ def get_or_create_product_agent(
         backend=backend,
         subagents=subagents or None,
         checkpointer=current_cp,
+        workspace=workspace_backend,
+        workspace_routing={"/workspace/sandbox/": workspace_backend},
+        workspace_path_prefix="/workspace/sandbox/",
     )
 
     _agent_cache[thread_id] = agent

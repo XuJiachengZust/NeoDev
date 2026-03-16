@@ -97,9 +97,15 @@ async def shutdown():
     from service.checkpointer import close_checkpointer
     await close_checkpointer()
 
+_cors_origins = os.environ.get("CORS_ORIGINS", "").strip()
+_allowed_origins = (
+    [o.strip() for o in _cors_origins.split(",") if o.strip()]
+    if _cors_origins
+    else ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost", "http://127.0.0.1"]
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
