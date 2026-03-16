@@ -20,6 +20,7 @@ from service.agent_profiles import (
     build_commit_analyzer_subagent,
     build_nexus_subagent,
     build_product_system_prompt,
+    build_requirement_doc_prompt,
     build_retriever_subagent,
     get_profile,
 )
@@ -574,6 +575,236 @@ def get_or_create_product_agent(
 
     _agent_cache[thread_id] = agent
     return agent
+
+
+# 文档编辑 Agent 使用独立 cache key，与产品 Agent 区分
+_DOC_EDITOR_CACHE_PREFIX = "doc_editor:"
+
+
+def get_or_create_doc_editor_agent(
+    thread_id: str,
+    session_id: str | None = None,
+    project_repo_map: dict[str, str] | None = None,
+    project_id_map: dict[str, int] | None = None,
+    version_name: str | None = None,
+    branch_mappings: list[dict] | None = None,
+) -> Any:
+    """获取或创建需求文档编辑 Agent，复用 project-retriever 与 nexus 子智能体。
+
+    system_prompt 在运行时由 DynamicPromptMiddleware 通过 build_requirement_doc_prompt 动态注入。
+    """
+    cache_key = _DOC_EDITOR_CACHE_PREFIX + thread_id
+    current_cp = _get_effective_checkpointer()
+
+    if cache_key in _agent_cache:
+        cached = _agent_cache[cache_key]
+        cached_cp = getattr(cached, "checkpointer", None)
+        if cached_cp is not current_cp:
+            logger.info("Checkpointer 变化，重建文档编辑 Agent [%s]", thread_id)
+            del _agent_cache[cache_key]
+        else:
+            logger.debug("复用文档编辑 Agent [%s]", thread_id)
+            return cached
+
+    from deepagents.backends.workspace import SandboxWorkspaceBackend
+    from deepagents.graph import create_deep_agent
+    from deepagents.middleware.nexus_tools import NexusToolsMiddleware
+    from deepagents.middleware.subagents import SubAgent
+
+    profile = get_profile("requirement_doc_editor")
+    model_name = _get_model_name()
+    _ensure_openai_env()
+
+    logger.info("创建文档编辑 Agent [%s] model=%s", thread_id, model_name)
+
+    workspace_backend = SandboxWorkspaceBackend()
+    _workspace_cache[cache_key] = workspace_backend
+
+    backend = _build_product_backend(
+        session_id, project_repo_map, workspace_backend=workspace_backend
+    )
+    virtual_repo_map = (
+        {pname: f"/workspace/projects/{pname}/" for pname in project_repo_map}
+        if project_repo_map
+        else None
+    )
+
+    subagents = []
+    for name in profile.get("subagents", []):
+        if name == "project-retriever":
+            defn = build_retriever_subagent(
+                project_repo_map=virtual_repo_map,
+                version_name=version_name,
+                branch_mappings=branch_mappings,
+            )
+            subagents.append(SubAgent(
+                name=defn["name"],
+                description=defn["description"],
+                system_prompt=defn["prompt"],
+            ))
+        elif name == "nexus":
+            neo4j_cfg = _load_nexus_neo4j_config()
+            if not neo4j_cfg:
+                logger.info("Neo4j 未配置，跳过 nexus 子智能体")
+                continue
+            branch_map = {
+                bm["project_name"]: bm["branch"]
+                for bm in (branch_mappings or [])
+            }
+            nexus_mw = NexusToolsMiddleware(
+                neo4j_uri=neo4j_cfg["neo4j_uri"],
+                neo4j_user=neo4j_cfg.get("neo4j_user", "neo4j"),
+                neo4j_password=neo4j_cfg.get("neo4j_password", ""),
+                neo4j_database=neo4j_cfg.get("neo4j_database"),
+                project_id_map=project_id_map,
+                branch_map=branch_map,
+            )
+            defn = build_nexus_subagent(
+                project_id_map=project_id_map,
+                branch_map=branch_map,
+                version_name=version_name,
+            )
+            subagents.append(SubAgent(
+                name=defn["name"],
+                description=defn["description"],
+                system_prompt=defn["prompt"],
+                tools=nexus_mw.tools,
+                middleware=[nexus_mw],
+            ))
+        else:
+            defn = SUBAGENT_DEFINITIONS.get(name)
+            if defn:
+                subagents.append(SubAgent(
+                    name=defn["name"],
+                    description=defn["description"],
+                    system_prompt=defn["prompt"],
+                ))
+
+    agent = create_deep_agent(
+        model=model_name,
+        system_prompt="placeholder",
+        tools=None,
+        backend=backend,
+        subagents=subagents or None,
+        checkpointer=current_cp,
+        workspace=workspace_backend,
+        workspace_routing={"/workspace/sandbox/": workspace_backend},
+        workspace_path_prefix="/workspace/sandbox/",
+    )
+
+    _agent_cache[cache_key] = agent
+    return agent
+
+
+async def run_doc_editor_agent_stream(
+    thread_id: str,
+    user_message: str,
+    doc_context: dict,
+    session_id: str | None = None,
+    project_repo_map: dict[str, str] | None = None,
+    project_id_map: dict[str, int] | None = None,
+    version_name: str | None = None,
+    branch_mappings: list[dict] | None = None,
+) -> AsyncIterator[dict]:
+    """需求文档编辑 Agent 流式调用。doc_context 需包含：level, requirement_title,
+    requirement_description, parent_doc, sibling_titles, product_name, version_name,
+    existing_doc, code_context, graph_context（可选）。
+    """
+    agent = get_or_create_doc_editor_agent(
+        thread_id,
+        session_id=session_id,
+        project_repo_map=project_repo_map,
+        project_id_map=project_id_map,
+        version_name=version_name,
+        branch_mappings=branch_mappings,
+    )
+
+    system_prompt = build_requirement_doc_prompt(
+        level=doc_context.get("level", "story"),
+        requirement_title=doc_context.get("requirement_title", ""),
+        requirement_description=doc_context.get("requirement_description"),
+        parent_doc=doc_context.get("parent_doc"),
+        sibling_titles=doc_context.get("sibling_titles") or [],
+        product_name=doc_context.get("product_name", ""),
+        version_name=doc_context.get("version_name") or version_name,
+        code_context=doc_context.get("code_context"),
+        graph_context=doc_context.get("graph_context"),
+        existing_doc=doc_context.get("existing_doc"),
+    )
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+            "system_prompt_override": system_prompt,
+        },
+        "recursion_limit": 1000,
+    }
+    input_msg = {"messages": [HumanMessage(content=user_message)]}
+
+    full_content = ""
+    token_in = 0
+    token_out = 0
+    subagent_depth = 0
+    has_emitted_content = False
+    had_tool_call = False
+
+    try:
+        async for event in agent.astream_events(input_msg, config=config, version="v2"):
+            kind = event.get("event", "")
+            data = event.get("data", {})
+
+            if kind == "on_chat_model_stream":
+                chunk = data.get("chunk")
+                if chunk and hasattr(chunk, "content") and chunk.content:
+                    if subagent_depth > 0:
+                        yield {"event": "subagent_token", "data": chunk.content}
+                    else:
+                        if has_emitted_content and had_tool_call:
+                            yield {"event": "content_start", "data": {}}
+                            had_tool_call = False
+                        full_content += chunk.content
+                        has_emitted_content = True
+                        yield {"event": "token", "data": chunk.content}
+
+            elif kind == "on_chat_model_end":
+                if subagent_depth > 0:
+                    continue
+                output = data.get("output")
+                if output and hasattr(output, "usage_metadata") and output.usage_metadata:
+                    usage = output.usage_metadata
+                    token_in = getattr(usage, "input_tokens", 0) or 0
+                    token_out = getattr(usage, "output_tokens", 0) or 0
+
+            elif kind == "on_agent_action":
+                had_tool_call = True
+                if data.get("name") and "subagent" in str(data.get("name", "")).lower():
+                    subagent_depth += 1
+            elif kind == "on_agent_finish":
+                if data.get("name") and "subagent" in str(data.get("name", "")).lower():
+                    subagent_depth = max(0, subagent_depth - 1)
+
+        yield {
+            "event": "done",
+            "data": {
+                "content": full_content,
+                "token_in": token_in,
+                "token_out": token_out,
+            },
+        }
+    except GraphRecursionError:
+        logger.warning("文档编辑 Agent 递归上限 [%s]", thread_id)
+        yield {
+            "event": "recursion_limit",
+            "data": {
+                "content": full_content,
+                "token_in": token_in,
+                "token_out": token_out,
+                "message": "已达到循环上限。",
+            },
+        }
+    except Exception as e:
+        logger.exception("文档编辑 Agent stream 错误 [%s]", thread_id)
+        yield {"event": "error", "data": {"message": str(e)}}
 
 
 async def run_product_agent_stream(

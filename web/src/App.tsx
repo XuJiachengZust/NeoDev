@@ -15,6 +15,7 @@ import { ProductVersionWorkspacePage } from "./pages/product/ProductVersionWorks
 import { ProductVersionOverviewPage } from "./pages/product/ProductVersionOverviewPage";
 import { ProductRequirementsPage } from "./pages/product/ProductRequirementsPage";
 import { ProductBugsPage } from "./pages/product/ProductBugsPage";
+import { RequirementDocPage } from "./pages/RequirementDocPage";
 import { ProductReportsPage } from "./pages/product/ProductReportsPage";
 import "./App.css";
 
@@ -33,6 +34,7 @@ function App() {
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/products/:productId" element={<ProductLayoutPage />}>
           <Route index element={<Navigate to="dashboard" replace />} />
+          <Route path="requirements/:requirementId/doc" element={<RequirementDocPage />} />
           <Route path="dashboard" element={<ProductDashboardPage />} />
           <Route path="projects" element={<ProductProjectsPage />} />
           <Route path="projects/:projectId" element={<ProductProjectDetailPage />} />

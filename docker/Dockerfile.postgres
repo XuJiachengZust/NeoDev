@@ -14,3 +14,4 @@ COPY docker/migrations/010_project_repo_url.sql                     /docker-entr
 COPY docker/migrations/011_agent_conversation_enhancements.sql      /docker-entrypoint-initdb.d/011_agent_conversation_enhancements.sql
 COPY docker/migrations/012_impact_analysis_enhancements.sql         /docker-entrypoint-initdb.d/012_impact_analysis_enhancements.sql
 COPY docker/migrations/013_version_feature_summaries.sql            /docker-entrypoint-initdb.d/013_version_feature_summaries.sql
+COPY docker/migrations/014_requirement_doc_meta.sql                 /docker-entrypoint-initdb.d/014_requirement_doc_meta.sql

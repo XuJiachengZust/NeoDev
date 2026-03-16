@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useVersionPageContext } from "./ProductVersionWorkspacePage";
 import {
   listProductRequirementsTree,
   createProductRequirement,
   updateProductRequirement,
   deleteProductRequirement,
+  canGenerateChildren,
+  streamGenerateChildrenDocs,
   type ProductRequirement,
 } from "../../api/client";
 
@@ -37,6 +39,9 @@ export function ProductRequirementsPage() {
 
   // 折叠状态
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [generatingChildrenId, setGeneratingChildrenId] = useState<number | null>(null);
+  const generateChildrenAbortRef = useRef<{ abort: () => void } | null>(null);
+
   const toggleCollapse = (id: number) =>
     setCollapsed((prev) => {
       const next = new Set(prev);
@@ -118,6 +123,31 @@ export function ProductRequirementsPage() {
       load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "删除失败");
+    }
+  };
+
+  const handleGenerateChildren = async (parentId: number) => {
+    try {
+      const { can_generate_children } = await canGenerateChildren(productId, parentId);
+      if (!can_generate_children) {
+        setError("请先完成当前需求文档后再生成子级文档");
+        return;
+      }
+      setGeneratingChildrenId(parentId);
+      setError(null);
+      generateChildrenAbortRef.current = streamGenerateChildrenDocs(productId, parentId, {
+        workflow_done: () => {
+          setGeneratingChildrenId(null);
+          load();
+          generateChildrenAbortRef.current = null;
+        },
+        error: () => {
+          setGeneratingChildrenId(null);
+          generateChildrenAbortRef.current = null;
+        },
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "校验失败");
     }
   };
 
@@ -241,12 +271,15 @@ export function ProductRequirementsPage() {
               <div key={epic.id}>
                 <RequirementRow
                   req={epic}
+                  productId={productId}
                   onStatusChange={handleStatusChange}
                   onDelete={handleDelete}
                   onCreateChild={openInlineCreate}
+                  onGenerateChildren={handleGenerateChildren}
                   hasChildren={childStories.length > 0}
                   isCollapsed={isEpicCollapsed}
                   onToggleCollapse={() => toggleCollapse(epic.id)}
+                  generatingChildrenId={generatingChildrenId}
                 />
                 {!isEpicCollapsed && (
                   <>
@@ -258,12 +291,15 @@ export function ProductRequirementsPage() {
                         <div key={story.id}>
                           <RequirementRow
                             req={story}
+                            productId={productId}
                             onStatusChange={handleStatusChange}
                             onDelete={handleDelete}
                             onCreateChild={openInlineCreate}
+                            onGenerateChildren={handleGenerateChildren}
                             hasChildren={childTasks.length > 0}
                             isCollapsed={isStoryCollapsed}
                             onToggleCollapse={() => toggleCollapse(story.id)}
+                            generatingChildrenId={generatingChildrenId}
                           />
                           {!isStoryCollapsed && (
                             <>
@@ -272,8 +308,10 @@ export function ProductRequirementsPage() {
                                 <RequirementRow
                                   key={task.id}
                                   req={task}
+                                  productId={productId}
                                   onStatusChange={handleStatusChange}
                                   onDelete={handleDelete}
+                                  generatingChildrenId={generatingChildrenId}
                                 />
                               ))}
                             </>
@@ -296,12 +334,15 @@ export function ProductRequirementsPage() {
                 <div key={story.id}>
                   <RequirementRow
                     req={story}
+                    productId={productId}
                     onStatusChange={handleStatusChange}
                     onDelete={handleDelete}
                     onCreateChild={openInlineCreate}
+                    onGenerateChildren={handleGenerateChildren}
                     hasChildren={childTasks.length > 0}
                     isCollapsed={isStoryCollapsed}
                     onToggleCollapse={() => toggleCollapse(story.id)}
+                    generatingChildrenId={generatingChildrenId}
                   />
                   {!isStoryCollapsed && (
                     <>
@@ -310,8 +351,10 @@ export function ProductRequirementsPage() {
                         <RequirementRow
                           key={task.id}
                           req={task}
+                          productId={productId}
                           onStatusChange={handleStatusChange}
                           onDelete={handleDelete}
+                          generatingChildrenId={generatingChildrenId}
                         />
                       ))}
                     </>
@@ -325,8 +368,10 @@ export function ProductRequirementsPage() {
               <RequirementRow
                 key={task.id}
                 req={task}
+                productId={productId}
                 onStatusChange={handleStatusChange}
                 onDelete={handleDelete}
+                generatingChildrenId={generatingChildrenId}
               />
             ))}
         </div>
@@ -337,26 +382,34 @@ export function ProductRequirementsPage() {
 
 function RequirementRow({
   req,
+  productId,
   onStatusChange,
   onDelete,
   onCreateChild,
+  onGenerateChildren,
   hasChildren,
   isCollapsed,
   onToggleCollapse,
+  generatingChildrenId,
 }: {
   req: ProductRequirement;
+  productId: number;
   onStatusChange: (id: number, status: string) => void;
   onDelete: (id: number) => void;
   onCreateChild?: (parentId: number, level: string) => void;
+  onGenerateChildren?: (parentId: number) => void;
   hasChildren?: boolean;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  generatingChildrenId?: number | null;
 }) {
   const childLevel = CHILD_LEVEL[req.level];
   const childLabel = CHILD_LABEL[req.level];
+  const docUrl = `/products/${productId}/requirements/${req.id}/doc`;
+  const isGenerating = generatingChildrenId === req.id;
 
   return (
-    <div className={`req-tree-item ${req.level}`}>
+    <div className={`req-tree-item ${req.level}`} data-has-doc={req.has_doc ? "true" : undefined}>
       {hasChildren && onToggleCollapse ? (
         <span
           onClick={onToggleCollapse}
@@ -367,8 +420,24 @@ function RequirementRow({
       ) : req.level !== "task" ? (
         <span style={{ width: 16, flexShrink: 0 }} />
       ) : null}
+      <span
+        className="req-doc-status"
+        title={req.has_doc ? "有文档" : "无文档"}
+        aria-hidden
+      >
+        {req.has_doc ? "●" : "○"}
+      </span>
       <span className={`req-level-badge ${req.level}`}>{req.level}</span>
       <span className="flex-1">{req.title}</span>
+      <a
+        href={docUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="secondary xs"
+        style={{ textDecoration: "none" }}
+      >
+        文档
+      </a>
       {childLevel && onCreateChild && (
         <button
           type="button"
@@ -377,6 +446,17 @@ function RequirementRow({
           style={{ color: "var(--color-primary)", borderColor: "var(--color-primary)" }}
         >
           {childLabel}
+        </button>
+      )}
+      {childLevel && onGenerateChildren && (req.level === "epic" || req.level === "story") && (
+        <button
+          type="button"
+          className="secondary xs"
+          onClick={() => onGenerateChildren(req.id)}
+          disabled={isGenerating}
+          title="批量生成子级需求文档"
+        >
+          {isGenerating ? "生成中…" : "生成子级文档"}
         </button>
       )}
       <select

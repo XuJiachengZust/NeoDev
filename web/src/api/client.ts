@@ -527,6 +527,8 @@ export interface ProductRequirement {
   sort_order: number;
   created_at?: string;
   updated_at?: string;
+  /** 是否有需求文档（来自 list_tree 的 LEFT JOIN） */
+  has_doc?: boolean;
 }
 
 export interface ProductRequirementCreate {
@@ -720,6 +722,10 @@ export function createProductRequirement(productId: number, body: ProductRequire
   return request<ProductRequirement>(`/api/products/${productId}/requirements`, { method: "POST", body });
 }
 
+export function getProductRequirement(productId: number, reqId: number): Promise<ProductRequirement> {
+  return request<ProductRequirement>(`/api/products/${productId}/requirements/${reqId}`);
+}
+
 export function updateProductRequirement(productId: number, reqId: number, body: ProductRequirementUpdate): Promise<ProductRequirement> {
   return request<ProductRequirement>(`/api/products/${productId}/requirements/${reqId}`, { method: "PATCH", body });
 }
@@ -744,6 +750,229 @@ export function unbindRequirementCommitsProduct(productId: number, reqId: number
     method: "DELETE",
     body: { commit_ids: commitIds },
   });
+}
+
+// --- Requirement Doc API (需求文档) ---
+
+export interface RequirementDoc {
+  content: string;
+  version: number;
+  generated_by: string | null;
+  updated_at: string;
+}
+
+export interface DocVersion {
+  version: number;
+  generated_by?: string | null;
+  created_at?: string;
+}
+
+export interface DocDiff {
+  v1_content: string;
+  v2_content: string;
+}
+
+export function getRequirementDoc(productId: number, reqId: number): Promise<RequirementDoc> {
+  return request<RequirementDoc>(`/api/products/${productId}/requirements/${reqId}/doc`);
+}
+
+export function saveRequirementDoc(
+  productId: number,
+  reqId: number,
+  content: string,
+  generatedBy?: string
+): Promise<RequirementDoc> {
+  return request<RequirementDoc>(`/api/products/${productId}/requirements/${reqId}/doc`, {
+    method: "PUT",
+    body: { content, generated_by: generatedBy },
+  });
+}
+
+export function listDocVersions(productId: number, reqId: number): Promise<DocVersion[]> {
+  return request<DocVersion[]>(`/api/products/${productId}/requirements/${reqId}/doc/versions`);
+}
+
+export function getDocVersion(
+  productId: number,
+  reqId: number,
+  version: number
+): Promise<{ content: string; version: number }> {
+  return request<{ content: string; version: number }>(
+    `/api/products/${productId}/requirements/${reqId}/doc/versions/${version}`
+  );
+}
+
+export function getDocDiff(
+  productId: number,
+  reqId: number,
+  v1: number,
+  v2: number
+): Promise<DocDiff> {
+  const q = `v1=${v1}&v2=${v2}`;
+  return request<{ v1: string | null; v2: string | null }>(
+    `/api/products/${productId}/requirements/${reqId}/doc/diff?${q}`
+  ).then((r) => ({
+    v1_content: r.v1 ?? "",
+    v2_content: r.v2 ?? "",
+  }));
+}
+
+export function canGenerateChildren(
+  productId: number,
+  reqId: number
+): Promise<{ can_generate_children: boolean }> {
+  return request<{ can_generate_children: boolean }>(
+    `/api/products/${productId}/requirements/${reqId}/doc/can-generate-children`
+  );
+}
+
+/** 文档编辑 Agent SSE 事件类型 */
+export type DocChatEventType = "token" | "done" | "error" | "content_start" | "subagent_token" | "subagent_tool_event" | "recursion_limit";
+
+export interface DocChatStreamHandle {
+  abort(): void;
+}
+
+/** 文档编辑 Agent 流式对话（SSE）。用于需求文档页右侧面板。 */
+export function streamDocEditorChat(
+  productId: number,
+  requirementId: number,
+  message: string,
+  callbacks: Partial<Record<DocChatEventType, (data: unknown) => void>>
+): DocChatStreamHandle {
+  const ac = new AbortController();
+  fetch(`/api/products/${productId}/requirements/${requirementId}/doc/chat`, {
+    method: "POST",
+    signal: ac.signal,
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ message }),
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(res.statusText);
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      function pump() {
+        if (!reader) return;
+        reader.read().then(({ done, value }) => {
+          if (done) return;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          let eventType: string = "message";
+          for (const line of lines) {
+            if (line.startsWith("event:")) eventType = line.slice(6).trim();
+            else if (line.startsWith("data:")) {
+              const raw = line.slice(5).trim();
+              try {
+                const data = raw ? JSON.parse(raw) : {};
+                const fn = callbacks[eventType as DocChatEventType];
+                if (fn) fn(data);
+              } catch {
+                // ignore
+              }
+            }
+          }
+          pump();
+        });
+      }
+      pump();
+    })
+    .catch(() => {
+      callbacks.error?.({ message: "Request failed" });
+    });
+  return { abort: () => ac.abort() };
+}
+
+/** 工作流 SSE 事件类型：workflow_step | token | workflow_done | decompose_done | child_done */
+export type DocWorkflowEventType = "workflow_step" | "token" | "workflow_done" | "decompose_done" | "child_done";
+
+export interface DocWorkflowStreamHandle {
+  abort(): void;
+}
+
+function parseSSEStream(
+  res: Response,
+  callbacks: Partial<Record<DocWorkflowEventType, (data: unknown) => void>>
+): { abort: () => void } {
+  const ac = new AbortController();
+  const reader = res.body?.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  async function pump() {
+    if (!reader) return;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        let eventType: string = "message";
+        for (const line of lines) {
+          if (line.startsWith("event:")) eventType = line.slice(6).trim();
+          else if (line.startsWith("data:")) {
+            const raw = line.slice(5).trim();
+            try {
+              const data = raw ? JSON.parse(raw) : {};
+              const fn = callbacks[eventType as DocWorkflowEventType];
+              if (fn) fn(data);
+            } catch {
+              // ignore parse error
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+  pump();
+  return {
+    abort() {
+      ac.abort();
+      reader?.cancel();
+    },
+  };
+}
+
+export function streamGenerateDoc(
+  productId: number,
+  requirementId: number,
+  callbacks: Partial<Record<DocWorkflowEventType, (data: unknown) => void>>
+): DocWorkflowStreamHandle {
+  const ac = new AbortController();
+  fetch(`/api/products/${productId}/requirements/${requirementId}/doc/generate`, {
+    method: "POST",
+    signal: ac.signal,
+    headers: { Accept: "text/event-stream" },
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(res.statusText);
+      parseSSEStream(res, callbacks);
+    })
+    .catch(() => {});
+  return { abort: () => ac.abort() };
+}
+
+export function streamGenerateChildrenDocs(
+  productId: number,
+  requirementId: number,
+  callbacks: Partial<Record<DocWorkflowEventType, (data: unknown) => void>>
+): DocWorkflowStreamHandle {
+  const ac = new AbortController();
+  fetch(`/api/products/${productId}/requirements/${requirementId}/doc/generate-children`, {
+    method: "POST",
+    signal: ac.signal,
+    headers: { Accept: "text/event-stream" },
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(res.statusText);
+      parseSSEStream(res, callbacks);
+    })
+    .catch(() => {});
+  return { abort: () => ac.abort() };
 }
 
 // Product Bugs
