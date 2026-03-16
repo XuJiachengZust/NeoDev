@@ -92,3 +92,17 @@ def get_status(conn, project_id: int, branch: str | None = None) -> list[dict]:
             )
         rows = cur.fetchall()
     return [dict(r) for r in rows]
+
+
+def update_progress(conn, project_id: int, branch: str, progress: dict) -> None:
+    """在任务运行过程中更新进度信息（extra.progress）。"""
+    from psycopg2.extras import Json
+    now = datetime.now(timezone.utc)
+    with conn.cursor() as cur:
+        # 运行中只关心进度信息，extra 最终会在 completed/failed 时被覆盖为完整统计。
+        cur.execute(
+            """UPDATE ai_preprocess_status
+             SET extra = %s, updated_at = %s
+             WHERE project_id = %s AND branch = %s""",
+            (Json({"progress": progress}), now, project_id, branch),
+        )

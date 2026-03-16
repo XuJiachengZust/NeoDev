@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
+from fnmatch import fnmatch
 
 from tree_sitter import Language, Node, Parser, Query, QueryCursor
 
@@ -141,6 +142,59 @@ class ParseResult:
     moduleMembers: list[ExtractedModuleMember] = field(default_factory=list)
     fileCount: int = 0
 
+
+SOURCE_STORAGE_POLICY: dict[str, Any] = {
+    "default": {
+        "include_labels": {"Function", "Method", "Constructor"},
+        "exclude_labels": {"Project", "Community", "Process", "Folder"},
+    },
+    "lua": {
+        "include_labels": {"Function", "Method", "Constructor", "Module"},
+        "exclude_labels": {"Project", "Community", "Process", "Folder"},
+        "path_patterns": [
+            {"include_if_path_matches": "*/models/*.lua"},
+            {"include_if_name_matches": "*Model"},
+        ],
+    },
+}
+
+
+def _match_any_pattern(patterns: list[dict[str, str]] | None, file_path: str, name: str) -> bool:
+    if not patterns:
+        return False
+    for rule in patterns:
+        path_pat = rule.get("include_if_path_matches")
+        if path_pat and fnmatch(file_path, path_pat):
+            return True
+        name_pat = rule.get("include_if_name_matches")
+        if name_pat and fnmatch(name, name_pat):
+            return True
+    return False
+
+
+def should_store_source(language: str, label: str, *, file_path: str, name: str) -> bool:
+    """
+    Decide whether to store sourceCode for a node based on language, label and basic metadata.
+    """
+    base = SOURCE_STORAGE_POLICY.get("default", {})
+    lang_policy = SOURCE_STORAGE_POLICY.get(language, {})
+
+    include_labels = set(base.get("include_labels", set()))
+    include_labels.update(lang_policy.get("include_labels", []))
+
+    exclude_labels = set(base.get("exclude_labels", set()))
+    exclude_labels.update(lang_policy.get("exclude_labels", []))
+
+    if label in exclude_labels:
+        return False
+
+    if _match_any_pattern(lang_policy.get("path_patterns"), file_path, name):
+        return True
+
+    if label in include_labels:
+        return True
+
+    return False
 
 def _node_text(node: Node, source_bytes: bytes) -> str:
     return source_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
@@ -453,6 +507,16 @@ def _parse_python_file(
         node_id = generate_id(node_label, f"{file_path}:{node_name}")
         start_line = name_node.start_point[0] + 1
         end_line = name_node.end_point[0] + 1
+        source_code: Optional[str] = None
+        if should_store_source(language, node_label, file_path=file_path, name=node_name):
+            definition_node = (
+                capture_map.get("definition.function")
+                or capture_map.get("definition.class")
+                or capture_map.get("definition.method")
+                or capture_map.get("definition.constructor")
+            )
+            target_node = definition_node or name_node
+            source_code = _node_text(target_node, source_bytes)
         is_exported = _is_node_exported_python(node_name)
         result.nodes.append(
             ParsedNode(
@@ -465,6 +529,7 @@ def _parse_python_file(
                     "endLine": end_line,
                     "language": language,
                     "isExported": is_exported,
+                    "sourceCode": source_code,
                 },
             )
         )
@@ -581,6 +646,15 @@ def _parse_java_file(
         node_id = generate_id(node_label, f"{file_path}:{node_name}")
         start_line = name_node.start_point[0] + 1
         end_line = name_node.end_point[0] + 1
+        source_code: Optional[str] = None
+        if should_store_source(language, node_label, file_path=file_path, name=node_name):
+            definition_node = (
+                capture_map.get("definition.class")
+                or capture_map.get("definition.method")
+                or capture_map.get("definition.constructor")
+            )
+            target_node = definition_node or name_node
+            source_code = _node_text(target_node, source_bytes)
         result.nodes.append(
             ParsedNode(
                 id=node_id,
@@ -592,6 +666,7 @@ def _parse_java_file(
                     "endLine": end_line,
                     "language": language,
                     "isExported": True,
+                    "sourceCode": source_code,
                 },
             )
         )
@@ -688,6 +763,11 @@ def _parse_lua_file(
         node_id = generate_id(node_label, f"{file_path}:{node_name}")
         start_line = name_node.start_point[0] + 1
         end_line = name_node.end_point[0] + 1
+        source_code: Optional[str] = None
+        if should_store_source(language, node_label, file_path=file_path, name=node_name):
+            definition_node = capture_map.get("definition.function")
+            target_node = definition_node or name_node
+            source_code = _node_text(target_node, source_bytes)
         result.nodes.append(
             ParsedNode(
                 id=node_id,
@@ -699,6 +779,7 @@ def _parse_lua_file(
                     "endLine": end_line,
                     "language": language,
                     "isExported": True,
+                    "sourceCode": source_code,
                 },
             )
         )
@@ -862,6 +943,18 @@ def _generic_parse_file(
         node_id = generate_id(node_label, f"{file_path}:{node_name}")
         start_line = name_node.start_point[0] + 1
         end_line = name_node.end_point[0] + 1
+        source_code: Optional[str] = None
+        if should_store_source(language, node_label, file_path=file_path, name=node_name):
+            definition_node = (
+                capture_map.get("definition.function")
+                or capture_map.get("definition.method")
+                or capture_map.get("definition.constructor")
+                or capture_map.get("definition.class")
+                or capture_map.get("definition.interface")
+                or capture_map.get("definition.enum")
+            )
+            target_node = definition_node or name_node
+            source_code = _node_text(target_node, source_bytes)
         is_exported = is_exported_fn(node_name) if is_exported_fn else True
         result.nodes.append(
             ParsedNode(
@@ -874,6 +967,7 @@ def _generic_parse_file(
                     "endLine": end_line,
                     "language": language,
                     "isExported": is_exported,
+                    "sourceCode": source_code,
                 },
             )
         )

@@ -147,7 +147,8 @@ def _load_nodes(neo4j_driver, project_id: int, branch: str, database: str | None
         OPTIONAL MATCH (n)-[:CONTAINS|DEFINES]->(c)
         WHERE c.branch = $branch AND c.project_id = $project_id
         RETURN n.id AS id, labels(n)[0] AS label, n.name AS name,
-               n.description AS description, count(c) AS child_count
+               n.description AS description, n.sourceCode AS sourceCode,
+               count(c) AS child_count
         """
         result = session.run(q, branch=branch, project_id=project_id)
         return [dict(r) for r in result]
@@ -233,7 +234,36 @@ def _ensure_vector_indexes(
                 )
 
 
-def _leaf_prompt(label: str, name: str) -> str:
+def _truncate_source(source: str, max_chars: int | None = None) -> str:
+    """
+    截断源码片段，避免 prompt 过长。
+    """
+    if not source:
+        return ""
+    limit = max_chars
+    if limit is None:
+        try:
+            limit = int(os.environ.get("AI_ANALYSIS_SOURCE_MAX_CHARS", "3000"))
+        except ValueError:
+            limit = 3000
+    if len(source) <= limit:
+        return source
+    head = source[: limit - 200]
+    tail = source[-200:]
+    return head + "\n...\n" + tail
+
+
+def _leaf_prompt(node: dict[str, Any]) -> str:
+    label = str(node.get("label") or "")
+    name = str(node.get("name") or node.get("id") or "")
+    source = str(node.get("sourceCode") or node.get("source_code") or "").strip()
+    if source:
+        snippet = _truncate_source(source)
+        return (
+            f"请基于以下源码，用一句话准确描述该代码元素的职责和作用。\n"
+            f"类型：{label}，名称：{name}\n"
+            f"源码片段：\n```code\n{snippet}\n```"
+        )
     return f"请用一句话描述以下代码元素的职责或作用：{label}「{name}」。"
 
 
@@ -362,7 +392,7 @@ def _process_leaf_node(
         project_id=project_id,
         database=database,
         force=force,
-        prompt_builder=lambda n: _leaf_prompt(str(n.get("label") or ""), str(n.get("name") or n.get("id") or "")),
+        prompt_builder=_leaf_prompt,
         max_tokens=200,
     )
 
@@ -444,6 +474,7 @@ def _run_parallel_stage(
     stats: dict[str, Any],
     progress_interval: int,
     ensure_index: Callable[[int], None],
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> None:
     total = len(nodes)
     if total == 0:
@@ -477,16 +508,26 @@ def _run_parallel_stage(
                     worker=result.get("worker"),
                 )
             if done % progress_interval == 0 or done == total:
+                payload = {
+                    "stage": stage,
+                    "done": done,
+                    "total": total,
+                    "saved": stats["saved"],
+                    "skipped": stats["skipped"],
+                    "failed": stats["failed"],
+                }
                 _log_event(
                     process_logs,
                     stage,
                     "阶段进度",
-                    done=done,
-                    total=total,
-                    saved=stats["saved"],
-                    skipped=stats["skipped"],
-                    failed=stats["failed"],
+                    **payload,
                 )
+                if on_progress is not None:
+                    try:
+                        on_progress(payload)
+                    except Exception:
+                        # 进度回调失败不影响主流程
+                        pass
 
 
 def run_ai_analysis(
@@ -496,6 +537,7 @@ def run_ai_analysis(
     force: bool,
     process_logs: list[dict[str, Any]],
     database: str | None = None,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict:
     """
     对 Neo4j 中 (project_id, branch) 的全部节点生成描述。
@@ -591,6 +633,7 @@ def run_ai_analysis(
         stats=stats,
         progress_interval=interval,
         ensure_index=ensure_index_once,
+        on_progress=on_progress,
     )
 
     for idx, level_nodes in enumerate(container_levels, start=1):
@@ -612,6 +655,7 @@ def run_ai_analysis(
             stats=stats,
             progress_interval=interval,
             ensure_index=ensure_index_once,
+            on_progress=on_progress,
         )
 
     durations = stats.pop("durations_ms")

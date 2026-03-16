@@ -24,6 +24,7 @@ class NodeProperties(TypedDict, total=False):
     project_id: Optional[int]
     name: str
     filePath: str
+    sourceCode: Optional[str]
     content: Optional[str]
     startLine: int
     endLine: int

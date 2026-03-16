@@ -217,7 +217,37 @@ def _run_ai_preprocess(
     _log_step(process_logs, "预检通过，开始执行聚合描述生成")
     try:
         from service.services.ai_analysis_runner import run_ai_analysis
-        stats = run_ai_analysis(driver, project_id, branch, force, process_logs, database=database)
+        from service.repositories import ai_preprocess_status_repository as status_repo
+
+        def _on_progress(payload: dict) -> None:
+            # payload: {stage, done, total, saved, skipped, failed}
+            progress = {
+                "stage": payload.get("stage"),
+                "done": int(payload.get("done") or 0),
+                "total": int(payload.get("total") or 0),
+                "saved": int(payload.get("saved") or 0),
+                "skipped": int(payload.get("skipped") or 0),
+                "failed": int(payload.get("failed") or 0),
+            }
+            try:
+                status_repo.update_progress(conn, project_id, branch, progress)
+                conn.commit()
+            except Exception:
+                # 进度更新失败不影响主流程
+                logger.warning(
+                    "[AI 分析] 更新进度失败（忽略，不影响主流程）",
+                    exc_info=True,
+                )
+
+        stats = run_ai_analysis(
+            driver,
+            project_id,
+            branch,
+            force,
+            process_logs,
+            database=database,
+            on_progress=_on_progress,
+        )
         _log_step(
             process_logs,
             "完成："
