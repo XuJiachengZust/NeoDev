@@ -10,6 +10,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import wcmatch.glob as wcglob
+
 from deepagents.backends.protocol import (
     BackendProtocol,
     EditResult,
@@ -29,6 +31,11 @@ logger = logging.getLogger(__name__)
 
 _READONLY_ERROR = "permission_denied: 此目录为只读挂载（git分支模式），不允许写入操作"
 _TIMEOUT = 15
+
+
+def _glob_match(path: str, pattern: str) -> bool:
+    """支持 ** 递归通配符的 glob 匹配。使用 wcmatch 与其他 backend 保持一致。"""
+    return wcglob.globmatch(path, pattern, flags=wcglob.BRACE | wcglob.GLOBSTAR)
 
 
 class GitReadOnlyBackend(BackendProtocol):
@@ -102,10 +109,12 @@ class GitReadOnlyBackend(BackendProtocol):
         except ValueError:
             return []
 
-        tree_path = f"{rel}/" if rel else ""
+        cmd = ["git", "ls-tree", "--long", self.ref]
+        if rel:
+            cmd.append(f"{rel}/")
         try:
             result = subprocess.run(
-                ["git", "ls-tree", "--long", self.ref, tree_path],
+                cmd,
                 cwd=self.repo_dir,
                 capture_output=True,
                 text=True,
@@ -185,7 +194,7 @@ class GitReadOnlyBackend(BackendProtocol):
             else:
                 relative = name
 
-            if fnmatch.fnmatch(relative, pattern):
+            if _glob_match(relative, pattern):
                 vpath = f"/{name}"
                 entries.append(FileInfo(path=vpath, is_dir=False))
 

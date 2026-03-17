@@ -74,6 +74,13 @@ def log_unhandled_exception(request: Request, exc: Exception):
 
 @app.on_event("startup")
 async def startup():
+    # 自动执行数据库迁移（幂等）
+    try:
+        from service.migrate import run_migrations
+        run_migrations()
+    except Exception:
+        logger.error("自动迁移执行异常", exc_info=True)
+
     # 未配置时自动设置 REPO_CLONE_BASE 为项目根的同级 repos 目录
     if not os.environ.get("REPO_CLONE_BASE", "").strip():
         neodev_root = Path(__file__).resolve().parent.parent.parent  # service -> src -> NeoDev

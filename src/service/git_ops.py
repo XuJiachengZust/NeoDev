@@ -34,6 +34,45 @@ def _resolve_ref(repo: Path, branch: str) -> str:
     return branch
 
 
+def get_default_branch(repo_path: str) -> str | None:
+    """Return the default branch name (e.g. main, master) by reading HEAD symbolic ref."""
+    repo = Path(repo_path).resolve()
+    if not repo.is_dir():
+        return None
+    try:
+        r = subprocess.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
+            cwd=repo, capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            ref = r.stdout.strip()
+            return ref.removeprefix("origin/")
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    # fallback: current HEAD branch
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo, capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip() and r.stdout.strip() != "HEAD":
+            return r.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    # fallback: check common names
+    for name in ("main", "master"):
+        try:
+            r = subprocess.run(
+                ["git", "rev-parse", "--verify", f"origin/{name}"],
+                cwd=repo, capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode == 0:
+                return name
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+    return None
+
+
 def get_branches(repo_path: str) -> list[str]:
     """
     Return list of branch names (local + remote-tracking, deduplicated).
