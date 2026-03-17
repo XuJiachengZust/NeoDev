@@ -220,7 +220,7 @@ def _run_ai_preprocess(
         from service.repositories import ai_preprocess_status_repository as status_repo
 
         def _on_progress(payload: dict) -> None:
-            # payload: {stage, done, total, saved, skipped, failed}
+            # payload: {stage, done, total, saved, skipped, failed, cache_hit}
             progress = {
                 "stage": payload.get("stage"),
                 "done": int(payload.get("done") or 0),
@@ -228,6 +228,7 @@ def _run_ai_preprocess(
                 "saved": int(payload.get("saved") or 0),
                 "skipped": int(payload.get("skipped") or 0),
                 "failed": int(payload.get("failed") or 0),
+                "cache_hit": int(payload.get("cache_hit") or 0),
             }
             try:
                 status_repo.update_progress(conn, project_id, branch, progress)
@@ -247,12 +248,14 @@ def _run_ai_preprocess(
             process_logs,
             database=database,
             on_progress=_on_progress,
+            pg_conn=conn,
         )
         _log_step(
             process_logs,
             "完成："
             f"总节点 {stats.get('total', 0)}，"
             f"已更新 {stats.get('saved', 0)}，"
+            f"缓存命中 {stats.get('cache_hit', 0)}，"
             f"向量化 {stats.get('embedded', 0)}，"
             f"跳过 {stats.get('skipped', 0)}，"
             f"失败 {stats.get('failed', 0)}",
@@ -304,7 +307,7 @@ def run_preprocess(conn, project_id: int, branch: str = "main", force: bool = Fa
             "message": "任务已完成",
             "extra": stats,
         }
-    except (ProjectBusyError, type(HTTPException)):
+    except (ProjectBusyError, HTTPException):
         raise
     except Exception as e:
         _log_step(process_logs, f"失败: {e}")

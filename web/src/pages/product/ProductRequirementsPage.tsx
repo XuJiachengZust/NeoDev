@@ -141,10 +141,6 @@ export function ProductRequirementsPage() {
           load();
           generateChildrenAbortRef.current = null;
         },
-        error: () => {
-          setGeneratingChildrenId(null);
-          generateChildrenAbortRef.current = null;
-        },
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "校验失败");

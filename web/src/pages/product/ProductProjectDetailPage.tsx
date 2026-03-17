@@ -61,6 +61,7 @@ export function ProductProjectDetailPage() {
   const [syncing, setSyncing] = useState(false);
   const [preprocessStatus, setPreprocessStatus] = useState<PreprocessStatusItem | null>(null);
   const [preprocessLoading, setPreprocessLoading] = useState(false);
+  const [preprocessPolling, setPreprocessPolling] = useState(false);
 
   // 提交列表 & 筛选
   const [commits, setCommits] = useState<Commit[]>([]);
@@ -357,12 +358,43 @@ export function ProductProjectDetailPage() {
     try {
       await postPreprocess(projectId, currentBranch, false);
       setSuccess("AI 分析已触发");
+      // 启动轮询，实时刷新进度
+      setPreprocessPolling(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "触发 AI 分析失败");
     } finally {
       setPreprocessLoading(false);
     }
   };
+
+  // 轮询预处理状态用于前端进度刷新（仅在 running 时启用）
+  useEffect(() => {
+    if (!currentBranch || !projectId) return;
+    if (!preprocessPolling && preprocessStatus?.status !== "running") return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const resp = await getPreprocessStatus(projectId, currentBranch);
+        if (cancelled) return;
+        if (resp && "status" in resp) {
+          const item = resp as PreprocessStatusItem;
+          setPreprocessStatus(item);
+          if (item.status !== "running") {
+            setPreprocessPolling(false);
+          }
+        }
+      } catch {
+        // 忽略轮询错误
+      }
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [projectId, currentBranch, preprocessPolling, preprocessStatus?.status]);
 
   const toggleCommit = (id: number) => {
     setSelectedCommits((prev) => {
@@ -424,6 +456,10 @@ export function ProductProjectDetailPage() {
   if (!project) return <div className="result error">{error ?? "项目不存在"}</div>;
 
   const hasBranch = !!(currentBranch && projectVersion);
+  const progress = preprocessStatus?.extra?.progress as { done?: number; total?: number } | undefined;
+  const progressTotal = progress?.total ?? 0;
+  const progressDone = progress?.done ?? 0;
+  const progressPct = progressTotal > 0 ? Math.round((progressDone / progressTotal) * 100) : null;
 
   return (
     <div data-testid="page-product-project-detail" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -489,7 +525,11 @@ export function ProductProjectDetailPage() {
                 {preprocessLoading || preprocessStatus?.status === "running" ? "分析中..." : "AI 分析"}
               </button>
               {preprocessStatus && (
-                <span className="text-caption text-muted">({preprocessStatus.status})</span>
+                <span className="text-caption text-muted">
+                  ({preprocessStatus.status}
+                  {progressPct != null && ` · ${progressDone}/${progressTotal} · ${progressPct}%`}
+                  )
+                </span>
               )}
             </>
           )}

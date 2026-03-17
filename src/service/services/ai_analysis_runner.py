@@ -1,4 +1,7 @@
-"""AI 分析执行：分层并行生成 description，并同步写入 embedding。"""
+"""AI 分析执行：分层并行生成 description，并同步写入 embedding。
+
+支持基于内容哈希的缓存机制，实现跨分支复用与变更链路上溯刷新。
+"""
 
 import os
 import threading
@@ -7,6 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from service.services.aggregation_sampling import build_aggregate_prompt, sample_children
+from service.services.content_hash import compute_all_hashes
 from service.services.llm_client import chat_completion, embedding_completion, get_llm_config
 
 # 合法 label 白名单（防 Cypher 注入）
@@ -277,7 +281,16 @@ def _process_node_common(
     force: bool,
     prompt_builder: Callable[[dict[str, Any]], str],
     max_tokens: int,
+    cached_entry: dict[str, Any] | None = None,
+    content_hash: str | None = None,
 ) -> dict[str, Any]:
+    """处理单个节点，支持三路缓存判定。
+
+    三路判定：
+    1. cache hit + Neo4j 已有描述 → skipped（零 I/O）
+    2. cache hit + Neo4j 无描述   → 写缓存数据到 Neo4j → cached
+    3. cache miss / force         → 调 LLM → 写 Neo4j + 返回缓存条目 → saved
+    """
     started = datetime.now(timezone.utc)
     node_id = str(node.get("id") or "")
     label = str(node.get("label") or "")
@@ -297,17 +310,59 @@ def _process_node_common(
             "error_message": "node_id 为空或 label 非法",
             "duration_ms": int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
         }
-    if not force and existing:
-        return {
-            "status": "skipped",
-            "node_id": node_id,
-            "label": label,
-            "name": name,
-            "worker": worker,
-            "reason": "existing_description",
-            "duration_ms": int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
-        }
 
+    # ── 三路判定：缓存命中路径 ──
+    if not force and cached_entry is not None:
+        if existing:
+            # cache hit + 已有描述 → 零 I/O 跳过
+            return {
+                "status": "skipped",
+                "node_id": node_id,
+                "label": label,
+                "name": name,
+                "worker": worker,
+                "reason": "cache_hit_existing",
+                "duration_ms": int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+            }
+        # cache hit + 无描述（新分支）→ 写缓存数据到 Neo4j
+        cached_desc = str(cached_entry.get("description") or "")
+        cached_emb = cached_entry.get("embedding") or []
+        if cached_desc and cached_emb:
+            try:
+                with neo4j_driver.session(database=database) as session:
+                    _update_node_payload(
+                        session=session,
+                        label=label,
+                        node_id=node_id,
+                        branch=branch,
+                        project_id=project_id,
+                        description=cached_desc,
+                        embedding=list(cached_emb),
+                        embedding_model=str(get_llm_config().get("model_embedding") or ""),
+                    )
+            except Exception as exc:  # noqa: BLE001
+                return {
+                    "status": "failed",
+                    "step": "write",
+                    "node_id": node_id,
+                    "label": label,
+                    "name": name,
+                    "worker": worker,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                    "duration_ms": int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+                }
+            return {
+                "status": "cached",
+                "node_id": node_id,
+                "label": label,
+                "name": name,
+                "worker": worker,
+                "embedding_dim": len(cached_emb),
+                "duration_ms": int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+            }
+
+    # ── cache miss 或 force → 调 LLM ──
     try:
         prompt = prompt_builder(node)
         description = chat_completion(prompt, max_tokens=max_tokens)
@@ -366,7 +421,7 @@ def _process_node_common(
             "duration_ms": int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
         }
 
-    return {
+    result = {
         "status": "saved",
         "node_id": node_id,
         "label": label,
@@ -375,6 +430,19 @@ def _process_node_common(
         "embedding_dim": len(embedding),
         "duration_ms": int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
     }
+    # 返回新缓存条目，由主线程批量写入
+    if content_hash:
+        llm_cfg = get_llm_config()
+        result["cache_entry"] = {
+            "content_hash": content_hash,
+            "label": label,
+            "description": description,
+            "embedding": embedding,
+            "embedding_dim": len(embedding),
+            "chat_model": str(llm_cfg.get("model_chat") or ""),
+            "embedding_model": str(llm_cfg.get("model_embedding") or ""),
+        }
+    return result
 
 
 def _process_leaf_node(
@@ -384,6 +452,8 @@ def _process_leaf_node(
     project_id: int,
     database: str | None,
     force: bool,
+    cached_entry: dict[str, Any] | None = None,
+    content_hash: str | None = None,
 ) -> dict[str, Any]:
     return _process_node_common(
         neo4j_driver=neo4j_driver,
@@ -394,6 +464,8 @@ def _process_leaf_node(
         force=force,
         prompt_builder=_leaf_prompt,
         max_tokens=200,
+        cached_entry=cached_entry,
+        content_hash=content_hash,
     )
 
 
@@ -405,6 +477,8 @@ def _process_container_node(
     database: str | None,
     force: bool,
     sample_size: int,
+    cached_entry: dict[str, Any] | None = None,
+    content_hash: str | None = None,
 ) -> dict[str, Any]:
     def _build_prompt(n: dict[str, Any]) -> str:
         node_id = str(n.get("id") or "")
@@ -428,6 +502,8 @@ def _process_container_node(
         force=force,
         prompt_builder=_build_prompt,
         max_tokens=512,
+        cached_entry=cached_entry,
+        content_hash=content_hash,
     )
 
 
@@ -437,6 +513,14 @@ def _merge_stage_result(stats: dict[str, Any], result: dict[str, Any]) -> None:
         stats["saved"] += 1
         stats["embedded"] += 1
         stats["durations_ms"].append(int(result.get("duration_ms") or 0))
+        # 收集新缓存条目（主线程批量写入）
+        cache_entry = result.get("cache_entry")
+        if cache_entry:
+            stats["new_cache_entries"].append(cache_entry)
+        return
+    if status == "cached":
+        stats["cache_hit"] += 1
+        stats["embedded"] += 1
         return
     if status == "skipped":
         stats["skipped"] += 1
@@ -490,7 +574,7 @@ def _run_parallel_stage(
         for future in as_completed(futures):
             done += 1
             result = future.result()
-            if result.get("status") == "saved":
+            if result.get("status") in ("saved", "cached"):
                 dim = int(result.get("embedding_dim") or 0)
                 if dim > 0:
                     ensure_index(dim)
@@ -498,8 +582,8 @@ def _run_parallel_stage(
             if result.get("status") == "failed":
                 _log_event(
                     process_logs,
-                    stage,
-                    "节点处理失败",
+                    stage=stage,
+                    message="节点处理失败",
                     node_id=result.get("node_id"),
                     label=result.get("label"),
                     step=result.get("step"),
@@ -515,12 +599,21 @@ def _run_parallel_stage(
                     "saved": stats["saved"],
                     "skipped": stats["skipped"],
                     "failed": stats["failed"],
+                    "cache_hit": stats["cache_hit"],
+                }
+                log_payload = {
+                    "done": done,
+                    "total": total,
+                    "saved": stats["saved"],
+                    "skipped": stats["skipped"],
+                    "failed": stats["failed"],
+                    "cache_hit": stats["cache_hit"],
                 }
                 _log_event(
                     process_logs,
-                    stage,
-                    "阶段进度",
-                    **payload,
+                    stage=stage,
+                    message="阶段进度",
+                    **log_payload,
                 )
                 if on_progress is not None:
                     try:
@@ -528,6 +621,39 @@ def _run_parallel_stage(
                     except Exception:
                         # 进度回调失败不影响主流程
                         pass
+
+
+def _flush_cache_entries(
+    pg_conn,
+    entries: list[dict],
+    process_logs: list[dict[str, Any]],
+    stage: str,
+) -> None:
+    """将新缓存条目批量写入 PG（主线程调用，线程安全）。"""
+    if not entries or pg_conn is None:
+        return
+    try:
+        from service.repositories import ai_description_cache_repository as cache_repo
+        written = cache_repo.batch_upsert(pg_conn, entries)
+        pg_conn.commit()
+        _log_event(
+            process_logs,
+            stage,
+            f"缓存写入完成: {written} 条",
+            cache_written=written,
+        )
+    except Exception as exc:  # noqa: BLE001
+        _log_event(
+            process_logs,
+            stage,
+            f"缓存写入失败（不影响主流程）: {exc}",
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+        )
+        try:
+            pg_conn.rollback()
+        except Exception:
+            pass
 
 
 def run_ai_analysis(
@@ -538,10 +664,14 @@ def run_ai_analysis(
     process_logs: list[dict[str, Any]],
     database: str | None = None,
     on_progress: Callable[[dict[str, Any]], None] | None = None,
+    pg_conn=None,
 ) -> dict:
     """
     对 Neo4j 中 (project_id, branch) 的全部节点生成描述。
-    过程日志追加到 process_logs；返回 {"saved": n, "skipped": m}。
+    过程日志追加到 process_logs；返回 {"saved": n, "skipped": m, "cache_hit": k}。
+
+    pg_conn: 可选的 PostgreSQL 连接，用于内容哈希缓存。
+    传入时启用缓存（跨分支复用 + 变更链路上溯刷新）。
     """
     llm_cfg = get_llm_config()
     if not llm_cfg["api_key"]:
@@ -557,6 +687,7 @@ def run_ai_analysis(
         "saved": 0,
         "embedded": 0,
         "skipped": 0,
+        "cache_hit": 0,
         "failed": 0,
         "failed_desc": 0,
         "failed_embedding": 0,
@@ -564,6 +695,7 @@ def run_ai_analysis(
         "failed_validate": 0,
         "durations_ms": [],
         "failures": [],
+        "new_cache_entries": [],
     }
     _log_event(
         process_logs,
@@ -575,8 +707,10 @@ def run_ai_analysis(
         max_workers=workers,
         sample_size=sample_size,
         embedding_model=llm_cfg.get("model_embedding"),
+        cache_enabled=pg_conn is not None,
     )
 
+    # ── 1. 加载节点与边 ──
     nodes = _load_nodes(neo4j_driver, project_id, branch, database)
     node_by_id = {str(n.get("id") or ""): n for n in nodes if n.get("id")}
     edges = _load_contains_edges(neo4j_driver, project_id, branch, database)
@@ -596,6 +730,45 @@ def run_ai_analysis(
         edge_count=len(edges),
     )
 
+    # ── 2. 计算内容哈希 + 批量查询缓存 ──
+    hash_map: dict[str, str] = {}  # node_id → content_hash
+    cache_map: dict[str, dict] = {}  # content_hash → cached entry
+    if pg_conn is not None:
+        chat_model = str(llm_cfg.get("model_chat") or "")
+        embedding_model = str(llm_cfg.get("model_embedding") or "")
+        hash_map = compute_all_hashes(node_by_id, edges, chat_model, embedding_model)
+        _log_event(
+            process_logs,
+            "CACHE",
+            f"内容哈希计算完成: {len(hash_map)} 个节点",
+            total_hashes=len(hash_map),
+        )
+
+        all_hashes = list(set(hash_map.values()))
+        if all_hashes:
+            try:
+                from service.repositories import ai_description_cache_repository as cache_repo
+                cache_map = cache_repo.batch_get(pg_conn, all_hashes)
+            except Exception as exc:  # noqa: BLE001
+                _log_event(
+                    process_logs,
+                    "CACHE",
+                    f"缓存查询失败（降级为无缓存模式）: {exc}",
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                )
+                cache_map = {}
+
+        cache_hits = sum(1 for nid in hash_map if hash_map[nid] in cache_map)
+        _log_event(
+            process_logs,
+            "CACHE",
+            f"缓存命中统计: {cache_hits}/{len(hash_map)} ({cache_hits * 100 // max(len(hash_map), 1)}%)",
+            cache_hits=cache_hits,
+            total_nodes=len(hash_map),
+        )
+
+    # ── 3. 向量索引 ──
     index_state: dict[str, Any] = {"ensured": False, "dimensions": 0}
 
     def ensure_index_once(dimensions: int) -> None:
@@ -617,33 +790,47 @@ def run_ai_analysis(
             similarity=_embedding_similarity(),
         )
 
-    _run_parallel_stage(
-        stage="LEAF_PARALLEL",
-        nodes=sorted(leaf_nodes, key=_sort_node_key),
-        max_workers=workers,
-        process_logs=process_logs,
-        worker_fn=lambda n: _process_leaf_node(
+    # ── 4. 并行处理叶子节点 ──
+    def _leaf_worker(n: dict[str, Any]) -> dict[str, Any]:
+        nid = str(n.get("id") or "")
+        h = hash_map.get(nid)
+        cached = cache_map.get(h) if h else None
+        return _process_leaf_node(
             neo4j_driver=neo4j_driver,
             node=n,
             branch=branch,
             project_id=project_id,
             database=database,
             force=force,
-        ),
+            cached_entry=cached,
+            content_hash=h,
+        )
+
+    _run_parallel_stage(
+        stage="LEAF_PARALLEL",
+        nodes=sorted(leaf_nodes, key=_sort_node_key),
+        max_workers=workers,
+        process_logs=process_logs,
+        worker_fn=_leaf_worker,
         stats=stats,
         progress_interval=interval,
         ensure_index=ensure_index_once,
         on_progress=on_progress,
     )
 
+    # 叶子阶段缓存写入
+    _flush_cache_entries(pg_conn, stats["new_cache_entries"], process_logs, "LEAF_CACHE_FLUSH")
+    stats["new_cache_entries"] = []
+
+    # ── 5. 逐层并行处理容器节点 ──
     for idx, level_nodes in enumerate(container_levels, start=1):
         stage = f"CONTAINER_LEVEL_{idx}"
-        _run_parallel_stage(
-            stage=stage,
-            nodes=level_nodes,
-            max_workers=workers,
-            process_logs=process_logs,
-            worker_fn=lambda n: _process_container_node(
+
+        def _container_worker(n: dict[str, Any], _stage=stage) -> dict[str, Any]:
+            nid = str(n.get("id") or "")
+            h = hash_map.get(nid)
+            cached = cache_map.get(h) if h else None
+            return _process_container_node(
                 neo4j_driver=neo4j_driver,
                 node=n,
                 branch=branch,
@@ -651,14 +838,29 @@ def run_ai_analysis(
                 database=database,
                 force=force,
                 sample_size=sample_size,
-            ),
+                cached_entry=cached,
+                content_hash=h,
+            )
+
+        _run_parallel_stage(
+            stage=stage,
+            nodes=level_nodes,
+            max_workers=workers,
+            process_logs=process_logs,
+            worker_fn=_container_worker,
             stats=stats,
             progress_interval=interval,
             ensure_index=ensure_index_once,
             on_progress=on_progress,
         )
 
+        # 每层容器处理完后刷新缓存
+        _flush_cache_entries(pg_conn, stats["new_cache_entries"], process_logs, f"CONTAINER_L{idx}_CACHE_FLUSH")
+        stats["new_cache_entries"] = []
+
+    # ── 6. 汇总统计 ──
     durations = stats.pop("durations_ms")
+    stats.pop("new_cache_entries", None)
     if durations:
         durations_sorted = sorted(durations)
         stats["avg_latency_ms"] = int(sum(durations_sorted) / len(durations_sorted))
@@ -675,6 +877,7 @@ def run_ai_analysis(
         total=stats["total"],
         saved=stats["saved"],
         skipped=stats["skipped"],
+        cache_hit=stats["cache_hit"],
         failed=stats["failed"],
         embedded=stats["embedded"],
         avg_latency_ms=stats["avg_latency_ms"],

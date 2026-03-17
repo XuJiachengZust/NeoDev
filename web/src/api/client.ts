@@ -298,7 +298,20 @@ export interface PreprocessStatusItem {
   started_at: string | null;
   finished_at: string | null;
   error_message?: string | null;
-  extra?: { logs?: PreprocessLogEntry[]; saved?: number; skipped?: number } | null;
+  extra?: {
+    logs?: PreprocessLogEntry[];
+    saved?: number;
+    skipped?: number;
+    // 后端运行时写入的进度信息（可选）
+    progress?: {
+      stage?: string;
+      done?: number;
+      total?: number;
+      saved?: number;
+      skipped?: number;
+      failed?: number;
+    };
+  } | null;
 }
 
 export interface PreprocessStatusResponse {

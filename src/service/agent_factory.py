@@ -413,23 +413,41 @@ def _build_product_backend(
     session_id: str | None,
     project_repo_map: dict[str, str] | None = None,
     workspace_backend: Any = None,
+    branch_mappings: list[dict] | None = None,
 ):
     """产品级 CompositeBackend：多项目只读挂载 + 沙箱可写 + workspace。
 
     project_repo_map: {"project-a": "/path/to/repo-a", ...}
     挂载为 /workspace/projects/project-a/ 等。
     workspace_backend: SandboxWorkspaceBackend 实例，挂载到 /workspace/sandbox/。
+    branch_mappings: [{"project_name": "xxx", "branch": "yyy"}, ...] 指定分支时使用 GitReadOnlyBackend。
     """
     from deepagents.backends import CompositeBackend, StateBackend
+    from service.git_readonly_backend import GitReadOnlyBackend
     from service.readonly_backend import ReadOnlyFilesystemBackend
     from service.sandbox_manager import ensure_sandbox
 
     routes: dict[str, Any] = {}
 
+    # 构建 project_name → branch 映射
+    branch_by_project: dict[str, str] = {}
+    if branch_mappings:
+        for bm in branch_mappings:
+            pname = bm.get("project_name")
+            branch = bm.get("branch")
+            if pname and branch:
+                branch_by_project[pname] = branch
+
     if project_repo_map:
         for proj_name, repo_path in project_repo_map.items():
-            if repo_path and Path(repo_path).is_dir():
-                mount = f"/workspace/projects/{proj_name}/"
+            if not repo_path or not Path(repo_path).is_dir():
+                continue
+            mount = f"/workspace/projects/{proj_name}/"
+            branch = branch_by_project.get(proj_name)
+            if branch:
+                routes[mount] = GitReadOnlyBackend(repo_dir=repo_path, branch=branch)
+                logger.info("Git只读挂载: %s@%s -> %s", repo_path, branch, mount)
+            else:
                 routes[mount] = ReadOnlyFilesystemBackend(root_dir=repo_path)
                 logger.info("产品只读挂载: %s -> %s", repo_path, mount)
 
@@ -490,7 +508,11 @@ def get_or_create_product_agent(
     workspace_backend = SandboxWorkspaceBackend()
     _workspace_cache[thread_id] = workspace_backend
 
-    backend = _build_product_backend(session_id, project_repo_map, workspace_backend=workspace_backend)
+    backend = _build_product_backend(
+        session_id, project_repo_map,
+        workspace_backend=workspace_backend,
+        branch_mappings=branch_mappings,
+    )
 
     virtual_repo_map = {
         pname: f"/workspace/projects/{pname}/"
@@ -621,7 +643,9 @@ def get_or_create_doc_editor_agent(
     _workspace_cache[cache_key] = workspace_backend
 
     backend = _build_product_backend(
-        session_id, project_repo_map, workspace_backend=workspace_backend
+        session_id, project_repo_map,
+        workspace_backend=workspace_backend,
+        branch_mappings=branch_mappings,
     )
     virtual_repo_map = (
         {pname: f"/workspace/projects/{pname}/" for pname in project_repo_map}
