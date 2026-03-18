@@ -840,7 +840,7 @@ export function canGenerateChildren(
 }
 
 /** 文档编辑 Agent SSE 事件类型 */
-export type DocChatEventType = "token" | "done" | "error" | "content_start" | "subagent_token" | "subagent_tool_event" | "recursion_limit";
+export type DocChatEventType = "token" | "done" | "error" | "content_start" | "subagent_token" | "subagent_tool_event" | "recursion_limit" | "tool_start" | "tool_end";
 
 export interface DocChatStreamHandle {
   abort(): void;
@@ -851,14 +851,16 @@ export function streamDocEditorChat(
   productId: number,
   requirementId: number,
   message: string,
-  callbacks: Partial<Record<DocChatEventType, (data: unknown) => void>>
+  callbacks: Partial<Record<DocChatEventType, (data: unknown) => void>>,
+  currentContent?: string,
+  sessionId?: string,
 ): DocChatStreamHandle {
   const ac = new AbortController();
   fetch(`/api/products/${productId}/requirements/${requirementId}/doc/chat`, {
     method: "POST",
     signal: ac.signal,
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, current_content: currentContent, session_id: sessionId }),
   })
     .then((res) => {
       if (!res.ok) throw new Error(res.statusText);
@@ -953,13 +955,19 @@ function parseSSEStream(
 export function streamGenerateDoc(
   productId: number,
   requirementId: number,
-  callbacks: Partial<Record<DocWorkflowEventType, (data: unknown) => void>>
+  callbacks: Partial<Record<DocWorkflowEventType, (data: unknown) => void>>,
+  userOverview?: string,
 ): DocWorkflowStreamHandle {
   const ac = new AbortController();
+  const hasBody = !!userOverview;
   fetch(`/api/products/${productId}/requirements/${requirementId}/doc/generate`, {
     method: "POST",
     signal: ac.signal,
-    headers: { Accept: "text/event-stream" },
+    headers: {
+      Accept: "text/event-stream",
+      ...(hasBody ? { "Content-Type": "application/json" } : {}),
+    },
+    body: hasBody ? JSON.stringify({ user_overview: userOverview }) : undefined,
   })
     .then((res) => {
       if (!res.ok) throw new Error(res.statusText);
@@ -967,6 +975,72 @@ export function streamGenerateDoc(
     })
     .catch(() => {});
   return { abort: () => ac.abort() };
+}
+
+export function streamPreGenerateChat(
+  productId: number,
+  requirementId: number,
+  message: string,
+  sessionId: string | undefined,
+  callbacks: Partial<Record<DocChatEventType, (data: unknown) => void>>
+): DocChatStreamHandle {
+  const ac = new AbortController();
+  fetch(`/api/products/${productId}/requirements/${requirementId}/doc/pre-generate-chat`, {
+    method: "POST",
+    signal: ac.signal,
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ message, session_id: sessionId }),
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(res.statusText);
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      function pump() {
+        if (!reader) return;
+        reader.read().then(({ done, value }) => {
+          if (done) return;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          let eventType: string = "message";
+          for (const line of lines) {
+            if (line.startsWith("event:")) eventType = line.slice(6).trim();
+            else if (line.startsWith("data:")) {
+              const raw = line.slice(5).trim();
+              try {
+                const data = raw ? JSON.parse(raw) : {};
+                const fn = callbacks[eventType as DocChatEventType];
+                if (fn) fn(data);
+              } catch {
+                // ignore
+              }
+            }
+          }
+          pump();
+        });
+      }
+      pump();
+    })
+    .catch(() => {
+      callbacks.error?.({ message: "Request failed" });
+    });
+  return { abort: () => ac.abort() };
+}
+
+export interface DocGenerationStatus {
+  generation_status: string | null;
+  generation_started_at: string | null;
+  generation_error: string | null;
+}
+
+export function getDocGenerationStatus(
+  productId: number,
+  requirementId: number
+): Promise<DocGenerationStatus> {
+  return request<DocGenerationStatus>(
+    `/api/products/${productId}/requirements/${requirementId}/doc/generation-status`
+  );
 }
 
 export function streamGenerateChildrenDocs(
@@ -1184,10 +1258,11 @@ export function streamAgentChat(
     onContentStart?: () => void;
     onSubagentToken?: (text: string) => void;
     onSubagentToolEvent?: (event: SSEEvent) => void;
-    onDone?: (data: { content: string; token_in?: number; token_out?: number }) => void;
+    onDone?: (data: { content: string; token_in?: number; token_out?: number; modified_doc?: string; pre_change_content?: string }) => void;
     onError?: (error: string) => void;
     onRecursionLimit?: (data: { content: string; token_in?: number; token_out?: number; message: string }) => void;
-  }
+  },
+  extraBody?: Record<string, unknown>,
 ): AbortController {
   const controller = new AbortController();
 
@@ -1200,6 +1275,7 @@ export function streamAgentChat(
           conversation_id: conversationId,
           message,
           stream: true,
+          ...extraBody,
         }),
         signal: controller.signal,
       });

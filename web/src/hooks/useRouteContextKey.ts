@@ -17,6 +17,11 @@ export function useRouteContextKey(): {
     return { routeContextKey: "product_projects", projectId: Number(productProjectMatch[1]) };
   }
 
+  // 需求文档编辑
+  if (pathname.match(/^\/products\/\d+\/requirements\/\d+\/doc/)) {
+    return { routeContextKey: "product_requirement_doc", projectId: null };
+  }
+
   // 产品内版本级需求
   if (pathname.match(/^\/products\/\d+\/versions\/\d+\/requirements/)) {
     return { routeContextKey: "product_requirements", projectId: null };

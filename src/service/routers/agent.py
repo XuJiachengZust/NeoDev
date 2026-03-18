@@ -48,6 +48,7 @@ class ChatRequest(BaseModel):
     conversation_id: int
     message: str
     stream: bool = True
+    doc_context: dict | None = None  # {"requirement_id": int, "current_content": str}
 
 
 class NewConversationRequest(BaseModel):
@@ -192,6 +193,7 @@ async def chat(body: ChatRequest, db=Depends(get_db)):
                 conv.get("route_context_key", ""),
                 thread_id, body.message, session_id=session_id,
                 version_id=conv.get("version_id"),
+                doc_context_input=body.doc_context,
             )
         else:
             gen = _stream_chat(
@@ -282,8 +284,13 @@ async def _stream_product_chat(
     db, conversation_id: int, product_id: int, route_context_key: str,
     thread_id: str, message: str, session_id: str | None = None,
     version_id: int | None = None,
+    doc_context_input: dict | None = None,
 ):
-    """产品级 SSE 流式生成器。"""
+    """产品级 SSE 流式生成器。
+
+    当 doc_context_input 存在时（含 requirement_id + current_content），
+    自动构建完整 doc_context 传给 run_product_agent_stream 进入文档编辑模式。
+    """
     from service.agent_factory import run_product_agent_stream
 
     # 获取产品信息
@@ -291,6 +298,7 @@ async def _stream_product_chat(
     product_name = product["name"] if product else "Unknown"
     project_names = None
     project_repo_map: dict[str, str] = {}
+    projects = None
     if product:
         projects = product_repository.list_projects(db, product_id)
         if projects:
@@ -313,12 +321,53 @@ async def _stream_product_chat(
                 for b in branches
             ]
 
-    # 构建项目名 → ID 映射（供 nexus 子智能体使用）
+    # 构建项目名 → ID 映射（供 nexus 子智能体使用，复用上面的 projects 查询结果）
     project_id_map: dict[str, int] | None = None
-    if product:
-        projects = product_repository.list_projects(db, product_id)
-        if projects:
-            project_id_map = {p["name"]: p["id"] for p in projects}
+    if product and projects:
+        project_id_map = {p["name"]: p["id"] for p in projects}
+
+    # 构建文档编辑 doc_context（如有）
+    doc_context = None
+    if doc_context_input and doc_context_input.get("requirement_id"):
+        try:
+            from service.services import requirement_doc_service as doc_service
+            from service.services import product_requirement_service as requirement_service
+            from service.dependencies import get_requirement_doc_storage
+
+            requirement_id = int(doc_context_input["requirement_id"])
+            current_content = doc_context_input.get("current_content") or ""
+
+            req = requirement_service.get_requirement(db, requirement_id)
+            if req and req.get("product_id") == product_id:
+                storage = get_requirement_doc_storage()
+                ctx = doc_service.get_generation_context(db, storage, product_id, requirement_id)
+                if ctx:
+                    current_req = ctx["current_requirement"]
+                    parent_doc_content = ctx.get("parent_doc_content")
+                    sibling_requirements = ctx.get("sibling_requirements") or []
+
+                    # 如有版本 ID，从需求中获取
+                    req_version_id = current_req.get("version_id")
+                    req_version_name = version_name
+                    if req_version_id and not version_id:
+                        v = product_version_repository.find_by_id(db, req_version_id)
+                        if v:
+                            req_version_name = v.get("version_name")
+
+                    doc_context = {
+                        "level": current_req.get("level") or "story",
+                        "requirement_title": current_req.get("title") or "",
+                        "requirement_description": current_req.get("description"),
+                        "parent_doc": parent_doc_content,
+                        "sibling_titles": [s.get("title") or "" for s in sibling_requirements],
+                        "product_name": product_name,
+                        "version_name": req_version_name,
+                        "existing_doc": current_content or None,
+                        "code_context": None,
+                        "graph_context": None,
+                    }
+        except Exception:
+            logger.warning("构建 doc_context 失败", exc_info=True)
 
     start_time = time.time()
 
@@ -332,6 +381,7 @@ async def _stream_product_chat(
             version_name=version_name,
             branch_mappings=branch_mappings,
             project_id_map=project_id_map,
+            doc_context=doc_context,
         ):
             sse_data = json.dumps(event, ensure_ascii=False)
             yield f"data: {sse_data}\n\n"

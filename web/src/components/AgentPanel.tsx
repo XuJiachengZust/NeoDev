@@ -22,6 +22,7 @@ const CONTEXT_LABELS: Record<string, string> = {
   product_projects: "产品项目",
   product_versions: "产品版本",
   product_requirements: "版本需求",
+  product_requirement_doc: "文档编辑",
   product_bugs: "版本Bug",
 };
 

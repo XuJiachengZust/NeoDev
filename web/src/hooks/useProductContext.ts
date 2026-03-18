@@ -11,6 +11,7 @@ export function useProductContext(): {
   productId: number | null;
   versionId: number | null;
   routeHint: string;
+  requirementId: number | null;
 } {
   const [searchParams] = useSearchParams();
   const dashMatch = useMatch("/products/:productId/dashboard");
@@ -21,10 +22,11 @@ export function useProductContext(): {
   const verReqMatch = useMatch("/products/:productId/versions/:versionId/requirements");
   const verBugMatch = useMatch("/products/:productId/versions/:versionId/bugs");
   const verDetailMatch = useMatch("/products/:productId/versions/:versionId");
+  const docMatch = useMatch("/products/:productId/requirements/:requirementId/doc");
   const baseMatch = useMatch("/products/:productId");
 
-  const match = dashMatch || projMatch || projDetailMatch || verMatch || verOverviewMatch || verReqMatch || verBugMatch || verDetailMatch || baseMatch;
-  if (!match) return { productId: null, versionId: null, routeHint: "default" };
+  const match = dashMatch || projMatch || projDetailMatch || verMatch || verOverviewMatch || verReqMatch || verBugMatch || verDetailMatch || docMatch || baseMatch;
+  if (!match) return { productId: null, versionId: null, routeHint: "default", requirementId: null };
 
   const productId = match.params.productId ? Number(match.params.productId) : null;
 
@@ -36,11 +38,15 @@ export function useProductContext(): {
   const queryVersionId = searchParams.get("versionId");
   const queryVerId = queryVersionId ? Number(queryVersionId) : null;
 
-  if (dashMatch) return { productId, versionId: null, routeHint: "product_dashboard" };
-  if (projMatch || projDetailMatch) return { productId, versionId: queryVerId, routeHint: "product_projects" };
-  if (verOverviewMatch || verMatch || verDetailMatch) return { productId, versionId, routeHint: "product_versions" };
-  if (verReqMatch) return { productId, versionId, routeHint: "product_requirements" };
-  if (verBugMatch) return { productId, versionId, routeHint: "product_bugs" };
+  if (docMatch) {
+    const reqId = docMatch.params.requirementId ? Number(docMatch.params.requirementId) : null;
+    return { productId, versionId: queryVerId, routeHint: "product_requirement_doc", requirementId: reqId };
+  }
+  if (dashMatch) return { productId, versionId: null, routeHint: "product_dashboard", requirementId: null };
+  if (projMatch || projDetailMatch) return { productId, versionId: queryVerId, routeHint: "product_projects", requirementId: null };
+  if (verOverviewMatch || verMatch || verDetailMatch) return { productId, versionId, routeHint: "product_versions", requirementId: null };
+  if (verReqMatch) return { productId, versionId, routeHint: "product_requirements", requirementId: null };
+  if (verBugMatch) return { productId, versionId, routeHint: "product_bugs", requirementId: null };
 
-  return { productId, versionId: null, routeHint: "product_dashboard" };
+  return { productId, versionId: null, routeHint: "product_dashboard", requirementId: null };
 }

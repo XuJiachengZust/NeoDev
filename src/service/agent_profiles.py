@@ -323,10 +323,13 @@ def build_retriever_subagent(
     else:
         description = SUBAGENT_DEFINITIONS["project-retriever"]["description"]
 
+    # 多项目产品模式下追加 workspace 输出规范，单项目/无项目时不需要
+    workspace_spec = _WORKSPACE_OUTPUT_SPEC if project_repo_map else ""
+
     return {
         "name": "project-retriever",
         "description": description,
-        "prompt": base_prompt + path_section + version_section + _WORKSPACE_OUTPUT_SPEC,
+        "prompt": base_prompt + path_section + version_section + workspace_spec,
         "tools_whitelist": _READ_ONLY_TOOLS,
     }
 
@@ -509,14 +512,48 @@ def build_nexus_subagent(
 # ── 需求文档 Agent：公共前缀与三级模版 ──
 
 _REQ_DOC_PROMPT_PREFIX = (
-    "你是 NeoDev 需求文档专家。你的任务是根据上下文信息生成或优化需求文档。\n"
+    "你是 NeoDev 需求文档编辑专家。文档已放置在沙箱工作区文件 `/workspace/sandbox/requirement_doc.md`，你通过 edit_file 工具直接编辑它。\n"
     "\n"
-    "## 核心原则\n"
-    "- 输出纯 Markdown 格式，严格按照下方模版结构\n"
+    "## 核心规则（最高优先级）\n"
+    "⚠ **绝对禁止在回复文本中输出完整文档或大段 Markdown 内容。**\n"
+    "⚠ 所有文档修改必须通过 edit_file 工具对 `/workspace/sandbox/requirement_doc.md` 进行。\n"
+    "⚠ 你的文本回复只用于：简要说明修改意图、回答用户问题、总结已做的修改。\n"
+    "⚠ 如果你发现自己要在回复中写超过 5 行 Markdown，停下来改用 edit_file。\n"
+    "\n"
+    "## 文档位置\n"
+    "当前需求文档的完整内容在 `/workspace/sandbox/requirement_doc.md` 文件中。\n"
+    "你可以用 read_file 查看它的内容，用 edit_file 进行精确修改。\n"
+    "\n"
+    "## 工作模式\n"
+    "根据用户意图自动切换：\n"
+    "\n"
+    "### 模式 A：文档编辑（用户要求修改/补充/优化文档内容时）\n"
+    "1. 先用 1-2 句话简要说明你打算做什么修改\n"
+    "2. 调用 edit_file 工具编辑 `/workspace/sandbox/requirement_doc.md`，每次修改一个部分\n"
+    "3. 可以多次调用 edit_file 完成多处修改\n"
+    "4. 修改完成后用 1-2 句话总结所做的变更\n"
+    "- old_string 参数必须与文件中的原文精确匹配（包括空行和缩进）\n"
+    "- 不要一次替换过大范围，每次聚焦一个逻辑变更\n"
+    "- **绝对不要**在文本回复中输出修改后的文档内容——工具会自动处理\n"
+    "\n"
+    "### 模式 B：对话讨论（用户提问、讨论、要求解释时）\n"
+    "- 正常以对话方式回复，内容显示在聊天面板中\n"
+    "- 回复简洁，引用文档中的具体章节编号（如「第3节 业务规则」）\n"
+    "\n"
+    "## 判断标准\n"
+    "- 包含以下关键词时使用模式 A：修改、补充、增加、删除、优化、重写、更新、调整、改为、添加\n"
+    "- 包含以下关键词时使用模式 B：解释、为什么、什么意思、怎么理解、分析一下、建议\n"
+    "- 不确定时默认使用模式 B\n"
+    "\n"
+    "## 文档编辑原则\n"
+    "- 修改内容应使用纯 Markdown 格式，严格按照下方模版结构\n"
     "- 内容要具体、可执行，禁止空洞描述\n"
     "- 使用 Mermaid 图表可视化关键流程和架构\n"
-    "- 每次只输出文档内容本身，不要附加解释性文字\n"
-    "- 如果用户要求修改文档的某个部分，只输出完整文档（包含修改）\n"
+    "- 修改时保持未改动部分不变，只变更用户要求的部分\n"
+    "\n"
+    "## 章节感知\n"
+    "你可以精确定位和操作文档中的任意章节。用 read_file 查看当前文档完整内容。\n"
+    "用户可能用章节编号（如「第3节」「3.1」）或标题名引用章节，请准确对应。\n"
 )
 
 _REQ_DOC_EPIC_TEMPLATE = (
@@ -699,6 +736,51 @@ _REQ_DOC_TASK_TEMPLATE = (
 )
 
 
+def build_pre_generate_prompt(
+    *,
+    level: str,
+    requirement_title: str,
+    requirement_description: str | None,
+    product_name: str,
+    sibling_titles: list[str],
+    parent_doc: str | None,
+) -> str:
+    """构建 Epic 预生成引导对话的 system_prompt，帮用户理清需求边界和目标。"""
+    parts: list[str] = [
+        "你是 NeoDev 需求分析师，负责帮助用户理清 Epic 级需求的边界和目标。\n"
+        "\n"
+        "## 核心任务\n"
+        "通过对话帮助用户完善以下方面，为后续 AI 生成高质量 Epic 文档做准备：\n"
+        "1. **业务背景**：这个 Epic 要解决什么业务问题？\n"
+        "2. **目标用户**：核心用户是谁？有什么痛点？\n"
+        "3. **核心价值**：这个功能为用户带来什么价值？\n"
+        "4. **范围边界**：做什么、不做什么？\n"
+        "5. **成功标准**：如何衡量成功？\n"
+        "\n"
+        "## 对话规则\n"
+        "- 每次只问 1-2 个关键问题，不要一次抛出所有问题\n"
+        "- 根据用户已提供的标题和描述，指出缺失的关键信息并提问\n"
+        "- 提供选项或示例引导用户思考\n"
+        "- 当信息足够充分时，主动告知用户：信息已经比较完整，可以点击「开始生成」按钮了\n"
+        "- 始终使用中文\n"
+        "- 回复简洁，不要长篇大论\n"
+    ]
+
+    parts.append("\n## 当前需求信息\n")
+    parts.append(f"- **需求标题**：{requirement_title or '（未填写）'}\n")
+    if requirement_description:
+        parts.append(f"- **需求描述**：{requirement_description}\n")
+    parts.append(f"- **产品**：{product_name or '（未指定）'}\n")
+    if sibling_titles:
+        parts.append(f"- **兄弟需求**：{', '.join(s for s in sibling_titles if s)}\n")
+    if parent_doc:
+        parts.append("\n## 父需求文档（参考）\n\n")
+        parts.append(parent_doc[:4000] + ("..." if len(parent_doc) > 4000 else ""))
+        parts.append("\n")
+
+    return "".join(parts)
+
+
 def build_requirement_doc_prompt(
     *,
     level: str,
@@ -711,6 +793,7 @@ def build_requirement_doc_prompt(
     code_context: str | None = None,
     graph_context: str | None = None,
     existing_doc: str | None = None,
+    user_overview: str | None = None,
 ) -> str:
     """根据需求级别和上下文动态构建 system_prompt，供工作流 GenerateDoc 与编辑 Agent 共用。"""
     level = (level or "story").lower()
@@ -753,8 +836,13 @@ def build_requirement_doc_prompt(
         parts.append("\n")
 
     if existing_doc:
-        parts.append("\n## 当前已有文档（用户可能要求修改，请输出完整修改后的文档）\n\n")
+        parts.append("\n## 当前已有文档（已写入 /workspace/sandbox/requirement_doc.md，修改时使用 edit_file 工具）\n\n")
         parts.append(existing_doc[:16000] + ("..." if len(existing_doc) > 16000 else ""))
+        parts.append("\n")
+
+    if user_overview:
+        parts.append("\n## 用户补充说明\n\n")
+        parts.append(user_overview[:8000] + ("..." if len(user_overview) > 8000 else ""))
         parts.append("\n")
 
     return "".join(parts)

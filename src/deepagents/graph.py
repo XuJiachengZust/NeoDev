@@ -65,6 +65,7 @@ def create_deep_agent(
     workspace_routing: dict[str, SandboxWorkspaceBackend] | None = None,
     workspace_path_prefix: str = "/workspace/",
     interrupt_on: dict[str, bool | InterruptOnConfig] | None = None,
+    general_purpose_agent: bool = True,
     debug: bool = False,
     name: str | None = None,
     cache: BaseCache | None = None,
@@ -243,7 +244,7 @@ def create_deep_agent(
                 subagents=subagents if subagents is not None else [],
                 default_middleware=subagent_middleware,
                 default_interrupt_on=interrupt_on,
-                general_purpose_agent=True,
+                general_purpose_agent=general_purpose_agent,
             ),
             SummarizationMiddleware(
                 model=model,

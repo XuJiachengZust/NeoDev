@@ -103,6 +103,7 @@ button.xs { padding: 2px 8px; font-size: 11px; }
   margin: 0;
   padding: 24px 20px 24px;
   min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
@@ -1437,24 +1438,39 @@ button.secondary:hover {
 }
 
 /* ── 需求文档页面 ── */
-.req-doc-page {
-  display: flex;
-  height: calc(100vh - 56px);
+/* 文档页全出血：父容器去掉 padding 和滚动 */
+.app-main:has(.req-doc-page) {
+  padding: 0;
   overflow: hidden;
 }
+.req-doc-page {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 主编辑区 */
 .req-doc-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  overflow: auto;
-  padding: 16px 24px;
+  overflow: hidden;
+}
+.req-doc-sticky-header {
+  flex-shrink: 0;
+  padding: 16px 24px 0;
+  background: var(--color-bg);
+  border-bottom: 1px solid var(--color-border);
+  max-height: 140px;
+  overflow: hidden;
 }
 .req-doc-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 .req-doc-info {
@@ -1462,22 +1478,74 @@ button.secondary:hover {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  flex-wrap: wrap;
+  overflow: hidden;
+}
+.req-doc-info strong {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 400px;
+  display: inline-block;
 }
 .req-doc-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 12px;
+  padding-bottom: 12px;
   flex-wrap: wrap;
 }
-.req-doc-view-mode { display: flex; gap: 8px; }
-.req-doc-actions { display: flex; gap: 8px; }
-.req-doc-editor {
+.req-doc-view-mode { display: flex; gap: 4px; }
+.req-doc-actions { display: flex; gap: 8px; align-items: center; }
+.req-doc-dirty-badge {
+  font-size: 11px;
+  color: var(--color-warning, #d29922);
+  background: rgba(210, 153, 34, 0.12);
+  padding: 2px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+/* 生成进度条 */
+.req-doc-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0 10px;
+  font-size: 12px;
+  color: var(--color-primary);
+}
+.req-doc-progress-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: req-doc-pulse 1s ease-in-out infinite;
+}
+@keyframes req-doc-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 可滚动内容区 */
+.req-doc-content-scroll {
   flex: 1;
-  min-height: 320px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+}
+/* 预览/diff 模式需要在 content-scroll 内滚动 */
+.req-doc-content-scroll--scrollable {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.req-doc-editor {
   width: 100%;
+  flex: 1;
+  min-height: 0;
   padding: 12px 16px;
   font-family: var(--font-mono, "JetBrains Mono", monospace);
   font-size: 14px;
@@ -1486,56 +1554,67 @@ button.secondary:hover {
   border-radius: var(--radius-input);
   background: var(--color-bg);
   color: var(--color-text);
-  resize: vertical;
+  resize: none;
+  box-sizing: border-box;
+  overflow-y: auto;
 }
 .req-doc-editor:focus {
   outline: none;
   border-color: var(--color-primary);
 }
-.req-doc-preview,
-.req-doc-diff {
-  flex: 1;
+.req-doc-preview {
   min-height: 200px;
   padding: 16px;
-  overflow: auto;
+}
+.req-doc-diff {
+  min-height: 200px;
 }
 .req-doc-versions {
-  padding: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
 }
 .req-doc-versions select {
   margin-left: 8px;
   margin-right: 12px;
 }
-.req-doc-agent-panel {
-  width: 380px;
-  min-width: 320px;
-  border-left: 1px solid var(--color-border);
-  display: flex;
-  flex-direction: column;
-  background: var(--color-bg-subtle);
+
+/* 聊天消息（预生成弹窗复用） */
+.req-doc-chat-msg {
+  margin-bottom: 12px;
 }
-.req-doc-agent-header {
-  padding: 12px 16px;
+.req-doc-chat-role {
+  font-size: 11px;
   font-weight: 600;
-  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
-.req-doc-agent-messages {
-  flex: 1;
-  overflow: auto;
-  padding: 12px 16px;
+.req-doc-chat-user .req-doc-chat-role {
+  color: var(--color-primary);
 }
-.req-doc-agent-reply {
-  font-size: var(--text-caption);
+.req-doc-chat-assistant .req-doc-chat-role {
+  color: var(--color-ai, #B026FF);
 }
-.req-doc-agent-reply .md-renderer {
+.req-doc-chat-user .req-doc-chat-body {
+  font-size: 13px;
+  padding: 6px 10px;
+  background: rgba(0, 240, 255, 0.06);
+  border-radius: var(--radius-input);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+}
+.req-doc-chat-assistant .req-doc-chat-body {
   font-size: 13px;
 }
-.req-doc-agent-input-wrap {
-  padding: 12px 16px;
-  border-top: 1px solid var(--color-border);
+.req-doc-chat-assistant .req-doc-chat-body .md-renderer {
+  font-size: 13px;
+}
+.req-doc-streaming-indicator {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-ai, #B026FF);
+  padding: 4px 0;
 }
 .req-doc-agent-input {
   width: 100%;
@@ -1553,6 +1632,35 @@ button.secondary:hover {
   border-color: var(--color-primary);
 }
 
+/* 审阅模式 */
+.req-doc-review {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.req-doc-review-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(176, 38, 255, 0.08);
+  border-bottom: 1px solid rgba(176, 38, 255, 0.25);
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--color-ai, #B026FF);
+}
+.req-doc-review-toolbar > div {
+  display: flex;
+  gap: 8px;
+}
+.req-doc-review .markdown-diff-container {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
 /* 需求树文档状态指示：有文档绿色 ●，无文档灰色 ○ */
 .req-doc-status {
   font-size: 12px;
@@ -1564,6 +1672,107 @@ button.secondary:hover {
 }
 .req-tree-item[data-has-doc="true"] .req-doc-status {
   color: #3fb950;
+}
+
+/* ── Diff Reviewer (Hunk 级审阅) ── */
+
+.diff-reviewer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(176, 38, 255, 0.08);
+  border-bottom: 1px solid rgba(176, 38, 255, 0.25);
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--color-ai, #B026FF);
+  flex-wrap: wrap;
+}
+.diff-reviewer-stats {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.diff-reviewer-stat {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill, 999px);
+}
+.diff-reviewer-stat.accepted {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+}
+.diff-reviewer-stat.rejected {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+.diff-reviewer-stat.pending {
+  background: rgba(176, 38, 255, 0.12);
+  color: var(--color-ai, #B026FF);
+}
+.diff-reviewer-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Hunk block */
+.diff-hunk-block {
+  position: relative;
+  border-left: 3px solid var(--color-ai, #B026FF);
+  margin: 4px 0;
+  padding-left: 4px;
+  transition: border-color 0.15s;
+}
+.diff-hunk-block.accepted {
+  border-left-color: #3fb950;
+}
+.diff-hunk-block.rejected {
+  border-left-color: #f85149;
+  opacity: 0.5;
+}
+
+/* Hunk action buttons */
+.diff-hunk-actions {
+  position: absolute;
+  right: 4px;
+  top: 2px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 1;
+}
+.diff-hunk-block:hover .diff-hunk-actions {
+  opacity: 1;
+}
+.diff-hunk-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: rgba(13, 13, 18, 0.9);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  padding: 0;
+}
+.diff-hunk-btn.accept:hover,
+.diff-hunk-btn.accept.active {
+  color: #3fb950;
+  border-color: #3fb950;
+  background: rgba(63, 185, 80, 0.15);
+}
+.diff-hunk-btn.reject:hover,
+.diff-hunk-btn.reject.active {
+  color: #f85149;
+  border-color: #f85149;
+  background: rgba(248, 81, 73, 0.15);
 }
 
 /* Markdown Diff 红绿标注（与 MarkdownDiffRenderer 一致） */

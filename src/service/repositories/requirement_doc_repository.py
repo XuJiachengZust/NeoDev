@@ -69,6 +69,51 @@ def batch_has_doc(conn, requirement_ids: list[int]) -> dict[int, bool]:
     return {rid: (rid in has_set) for rid in requirement_ids}
 
 
+def update_generation_status(
+    conn,
+    requirement_id: int,
+    status: str,
+    error: str | None = None,
+) -> None:
+    """更新生成状态（running / completed / failed）。如果元数据行不存在则先创建。"""
+    with conn.cursor() as cur:
+        if status == "running":
+            cur.execute(
+                """
+                INSERT INTO requirement_doc_meta (requirement_id, version, generation_status, generation_started_at, generation_error)
+                VALUES (%s, 0, %s, now(), NULL)
+                ON CONFLICT (requirement_id) DO UPDATE SET
+                    generation_status = EXCLUDED.generation_status,
+                    generation_started_at = now(),
+                    generation_error = NULL,
+                    updated_at = now()
+                """,
+                (requirement_id, status),
+            )
+        else:
+            cur.execute(
+                """
+                UPDATE requirement_doc_meta
+                SET generation_status = %s,
+                    generation_error = %s,
+                    updated_at = now()
+                WHERE requirement_id = %s
+                """,
+                (status, error, requirement_id),
+            )
+
+
+def get_generation_status(conn, requirement_id: int) -> dict | None:
+    """获取生成状态信息。"""
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            "SELECT generation_status, generation_started_at, generation_error FROM requirement_doc_meta WHERE requirement_id = %s",
+            (requirement_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 def check_children_have_docs(conn, requirement_id: int) -> bool:
     """
     检查该需求的所有子需求是否都有文档。

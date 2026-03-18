@@ -57,6 +57,13 @@ function getOrCreateSessionId(): string {
   return id;
 }
 
+export interface DocContextOverlay {
+  requirementId: number;
+  getCurrentContent: () => string;
+  onDocSnapshot: (content: string) => void;
+  onModifiedDoc: (modified: string, preChange: string) => void;
+}
+
 interface AgentSessionState {
   sessionId: string;
   currentConversationId: number | null;
@@ -86,6 +93,7 @@ interface AgentSessionState {
   createNewConversation: () => Promise<void>;
   switchConversation: (conversationId: number) => Promise<void>;
   loadConversations: () => Promise<void>;
+  setDocContext: (ctx: DocContextOverlay | null) => void;
 }
 
 const AgentSessionContext = createContext<AgentSessionState | null>(null);
@@ -110,6 +118,11 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   const [recursionLimitHit, setRecursionLimitHit] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
+  const docContextRef = useRef<DocContextOverlay | null>(null);
+
+  const setDocContext = useCallback((ctx: DocContextOverlay | null) => {
+    docContextRef.current = ctx;
+  }, []);
 
   const resolve = useCallback(
     async (
@@ -394,6 +407,15 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
 
       let partialContent = "";
 
+      // 构建文档编辑 extraBody
+      const docCtx = docContextRef.current;
+      const extraBody = docCtx ? {
+        doc_context: {
+          requirement_id: docCtx.requirementId,
+          current_content: docCtx.getCurrentContent(),
+        },
+      } : undefined;
+
       const controller = streamAgentChat(conversationId, message, {
         onToken: (text) => {
           partialContent += text;
@@ -422,6 +444,13 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
                 tool_calls: [data],
               } as AgentMessage,
             ]);
+          }
+          // 文档编辑模式：edit_file 后实时更新编辑器
+          if (event.event === "tool_end") {
+            const d = event.data as { doc_snapshot?: string };
+            if (d.doc_snapshot && docContextRef.current) {
+              docContextRef.current.onDocSnapshot(d.doc_snapshot);
+            }
           }
         },
         onSubagentToken: (text) => {
@@ -465,6 +494,10 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
           }
         },
         onDone: (data) => {
+          // 文档编辑模式：done 时进入审阅
+          if (data.modified_doc && docContextRef.current) {
+            docContextRef.current.onModifiedDoc(data.modified_doc, data.pre_change_content ?? "");
+          }
           setMessages((prev) => {
             const lastIdx = findLastIndex(prev, (m) => m.role === "assistant" && m.id == null);
             if (lastIdx >= 0) {
@@ -472,7 +505,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
               updated[lastIdx] = {
                 ...updated[lastIdx],
                 content: partialContent || updated[lastIdx].content,
-                id: -1,  // 标记为已完成，防止后续消息写入此气泡
+                id: -1,
                 token_in: data.token_in,
                 token_out: data.token_out,
                 created_at: new Date().toISOString(),
@@ -497,7 +530,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
               updated[lastIdx] = {
                 ...updated[lastIdx],
                 content: partialContent || updated[lastIdx].content,
-                id: -1,  // 标记为已完成
+                id: -1,
                 token_in: data.token_in,
                 token_out: data.token_out,
                 created_at: new Date().toISOString(),
@@ -510,7 +543,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
           setStreaming(false);
           abortRef.current = null;
         },
-      });
+      }, extraBody);
 
       abortRef.current = controller;
     },
@@ -549,6 +582,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       createNewConversation,
       switchConversation,
       loadConversations,
+      setDocContext,
     }),
     [
       sessionId,
@@ -574,6 +608,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       createNewConversation,
       switchConversation,
       loadConversations,
+      setDocContext,
     ]
   );
 

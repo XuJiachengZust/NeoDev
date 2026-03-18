@@ -108,22 +108,25 @@ function MermaidBlock({ chart }: { chart: string }) {
     let cancelled = false;
     const elId = `mermaid${uniqueId}`;
 
-    (async () => {
+    const run = async () => {
       try {
-        const { svg } = await mermaid.render(elId, chart.trim());
+        const result = await mermaid.render(elId, chart.trim());
+        if (!result?.svg) throw new Error("empty svg");
         if (!cancelled) {
-          setSvgHtml(svg);
+          setSvgHtml(result.svg);
           setError(false);
-          if (containerRef.current) containerRef.current.innerHTML = svg;
+          if (containerRef.current) containerRef.current.innerHTML = result.svg;
         }
       } catch {
         // 清理 mermaid 注入的错误 DOM 元素
-        document.getElementById(`d${elId}`)?.remove();
+        try { document.getElementById(`d${elId}`)?.remove(); } catch { /* ignore */ }
         if (!cancelled) {
           setError(true);
         }
       }
-    })();
+    };
+
+    try { run(); } catch { if (!cancelled) setError(true); }
 
     return () => { cancelled = true; };
   }, [chart, uniqueId]);
@@ -159,19 +162,31 @@ function MermaidBlock({ chart }: { chart: string }) {
   );
 }
 
+/** 递归提取 React 节点中的纯文本（rehype-highlight 会将代码转为嵌套 span） */
+function extractText(node: React.ReactNode): string {
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (node == null || typeof node === "boolean") return "";
+  if (Array.isArray(node)) return node.map(extractText).join("");
+  if (typeof node === "object" && "props" in node) {
+    return extractText((node as React.ReactElement).props.children);
+  }
+  return "";
+}
+
 /** 自定义 code 块：mermaid 语言走图表渲染，其余走 highlight.js */
 function CodeBlock({ className, children, ...props }: ComponentPropsWithoutRef<"code"> & { node?: unknown }) {
   const { node: _node, ...rest } = props;
   const match = /language-(\w+)/.exec(className || "");
   const lang = match?.[1];
-  const code = String(children).replace(/\n$/, "");
 
   // 行内 code
-  if (!className && !code.includes("\n")) {
+  if (!className && !String(children).includes("\n")) {
     return <code className="md-inline-code" {...rest}>{children}</code>;
   }
 
   if (lang === "mermaid") {
+    const code = extractText(children).replace(/\n$/, "");
     return <MermaidBlock chart={code} />;
   }
 
@@ -197,6 +212,14 @@ const MERMAID_START_RE = new RegExp(
 );
 
 function wrapBareMermaid(content: string): string {
+  try {
+  return _wrapBareMermaidInner(content);
+  } catch {
+    return content;
+  }
+}
+
+function _wrapBareMermaidInner(content: string): string {
   // 已经在围栏代码块内的不处理
   // 策略：按行扫描，如果一行匹配 mermaid 关键词且不在 ``` 围栏内，
   // 向下收集连续的非空行（或空行后还有缩进/图表语法的行）包裹起来
@@ -265,17 +288,25 @@ interface MarkdownRendererProps {
 
 export function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
   const processed = wrapBareMermaid(content);
-  return (
-    <div className={`md-renderer ${className ?? ""}`}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
-        components={{
-          code: CodeBlock,
-        }}
-      >
-        {processed}
-      </ReactMarkdown>
-    </div>
-  );
+  try {
+    return (
+      <div className={`md-renderer ${className ?? ""}`}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeHighlight]}
+          components={{
+            code: CodeBlock,
+          }}
+        >
+          {processed}
+        </ReactMarkdown>
+      </div>
+    );
+  } catch {
+    return (
+      <div className={`md-renderer ${className ?? ""}`}>
+        <pre style={{ whiteSpace: "pre-wrap" }}>{content}</pre>
+      </div>
+    );
+  }
 }

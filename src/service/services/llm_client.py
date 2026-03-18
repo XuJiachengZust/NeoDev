@@ -1,6 +1,7 @@
 """LLM 调用：支持 chat/embeddings，含基础重试与响应校验。"""
 
 import os
+import ssl
 import time
 from typing import Any
 
@@ -11,6 +12,13 @@ _ENV_BASE = "OPENAI_BASE"
 _ENV_MODEL_CHAT = "OPENAI_MODEL_CHAT"
 _ENV_MODEL_EMBEDDING = "OPENAI_MODEL_EMBEDDING"
 _ENV_MAX_RETRIES = "OPENAI_REQUEST_MAX_RETRIES"
+def _ssl_context() -> ssl.SSLContext:
+    """跳过 SSL 验证以兼容内网代理（自签名证书 / 弱密钥）。"""
+    ctx = ssl.SSLContext()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
+    return ctx
 
 _DEFAULT_BASE = "https://api.openai.com/v1"
 _DEFAULT_MODEL_CHAT = "gpt-4o-mini"
@@ -90,7 +98,7 @@ def chat_completion(prompt: str, system_prompt: str | None = None, max_tokens: i
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
 
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=60.0, verify=_ssl_context()) as client:
         data = _post_json_with_retry(
             client=client,
             url=f"{cfg['base_url']}/chat/completions",
@@ -119,7 +127,7 @@ def probe_chat(timeout: float = 10.0) -> tuple[bool, str]:
     if not cfg["api_key"]:
         return False, "OPENAI_API_KEY 未设置"
     try:
-        with httpx.Client(timeout=timeout) as client:
+        with httpx.Client(timeout=timeout, verify=_ssl_context()) as client:
             resp = client.post(
                 f"{cfg['base_url']}/chat/completions",
                 headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"},
@@ -137,7 +145,7 @@ def probe_embedding(timeout: float = 10.0) -> tuple[bool, str]:
     if not cfg["api_key"]:
         return False, "OPENAI_API_KEY 未设置"
     try:
-        with httpx.Client(timeout=timeout) as client:
+        with httpx.Client(timeout=timeout, verify=_ssl_context()) as client:
             resp = client.post(
                 f"{cfg['base_url']}/embeddings",
                 headers={"Authorization": f"Bearer {cfg['api_key']}", "Content-Type": "application/json"},
@@ -155,7 +163,7 @@ def embedding_completion(text: str) -> list[float]:
     if not cfg["api_key"]:
         raise ValueError("OPENAI_API_KEY 未设置，无法调用 embedding")
     payload = {"model": cfg["model_embedding"], "input": text}
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=60.0, verify=_ssl_context()) as client:
         data = _post_json_with_retry(
             client=client,
             url=f"{cfg['base_url']}/embeddings",

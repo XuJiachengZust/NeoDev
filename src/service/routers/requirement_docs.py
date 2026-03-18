@@ -137,7 +137,7 @@ def get_generation_context(
     return doc_service.get_generation_context(db, storage, product_id, requirement_id)
 
 
-@router.post("/{product_id}/requirements/{requirement_id}/doc/chat")
+@router.post("/{product_id}/requirements/{requirement_id}/doc/chat", deprecated=True)
 async def doc_chat(
     product_id: int,
     requirement_id: int,
@@ -145,11 +145,12 @@ async def doc_chat(
     db=Depends(get_db),
     storage: RequirementDocStorage = Depends(get_requirement_doc_storage),
 ):
-    """文档编辑 Agent 流式对话（SSE）。body: { message: string }。"""
+    """[已废弃] 文档编辑 Agent 流式对话。请改用 /api/agent/chat + doc_context。"""
     _check_product_and_requirement(db, product_id, requirement_id)
     message = (body or {}).get("message") or ""
     if not message.strip():
         raise HTTPException(status_code=400, detail="message is required")
+    session_id = (body or {}).get("session_id") or "default"
 
     ctx = doc_service.get_generation_context(db, storage, product_id, requirement_id)
     if not ctx:
@@ -159,7 +160,9 @@ async def doc_chat(
     current = ctx["current_requirement"]
     parent_doc_content = ctx.get("parent_doc_content")
     sibling_requirements = ctx.get("sibling_requirements") or []
-    existing_doc = storage.read(product_id, requirement_id) or ""
+    # 优先使用前端传来的当前编辑器内容（可能有未保存改动），否则从存储读取
+    current_content = (body or {}).get("current_content")
+    existing_doc = current_content if current_content is not None else (storage.read(product_id, requirement_id) or "")
 
     product_name = product.get("name") or "Unknown"
     project_repo_map = {}
@@ -194,21 +197,22 @@ async def doc_chat(
         "graph_context": None,
     }
 
-    thread_id = f"doc-{product_id}-{requirement_id}"
+    thread_id = f"doc-{product_id}-{requirement_id}-{session_id}"
 
     async def event_stream():
         try:
-            from service.agent_factory import run_doc_editor_agent_stream
+            from service.agent_factory import run_product_agent_stream
 
-            async for ev in run_doc_editor_agent_stream(
+            async for ev in run_product_agent_stream(
+                product_name=product_name,
                 thread_id=thread_id,
                 user_message=message.strip(),
-                doc_context=doc_context,
-                session_id=None,
+                session_id=session_id,
                 project_repo_map=project_repo_map or None,
-                project_id_map=project_id_map,
                 version_name=version_name,
                 branch_mappings=branch_mappings,
+                project_id_map=project_id_map,
+                doc_context=doc_context,
             ):
                 event_type = ev.get("event", "message")
                 data = ev.get("data", ev)
@@ -235,19 +239,111 @@ def _sse_message(ev: dict) -> str:
     return f"event: {event_type}\ndata: {data_str}\n\n"
 
 
-@router.post("/{product_id}/requirements/{requirement_id}/doc/generate")
-def generate_doc(
+@router.get("/{product_id}/requirements/{requirement_id}/doc/generation-status")
+def get_generation_status(
     product_id: int,
     requirement_id: int,
     db=Depends(get_db),
+):
+    """获取文档生成状态。"""
+    _check_product_and_requirement(db, product_id, requirement_id)
+    try:
+        from service.repositories import requirement_doc_repository as doc_repo
+        status = doc_repo.get_generation_status(db, requirement_id)
+        if not status:
+            return {"generation_status": None, "generation_started_at": None, "generation_error": None}
+        return status
+    except Exception:
+        logger.debug("get_generation_status failed, migration 016 may not be applied")
+        db.rollback()
+        return {"generation_status": None, "generation_started_at": None, "generation_error": None}
+
+
+@router.post("/{product_id}/requirements/{requirement_id}/doc/pre-generate-chat")
+async def pre_generate_chat(
+    product_id: int,
+    requirement_id: int,
+    body: dict,
+    db=Depends(get_db),
     storage: RequirementDocStorage = Depends(get_requirement_doc_storage),
 ):
-    """触发工作流生成当前需求文档（SSE 流式）。"""
+    """Epic 预生成引导对话（SSE 流式）。body: { message: string, session_id?: string }。"""
     _check_product_and_requirement(db, product_id, requirement_id)
+    message = (body or {}).get("message") or ""
+    if not message.strip():
+        raise HTTPException(status_code=400, detail="message is required")
+    session_id = (body or {}).get("session_id") or "default"
 
-    def event_stream():
-        for ev in run_doc_workflow_stream(db, storage, product_id, requirement_id):
-            yield _sse_message(ev)
+    ctx = doc_service.get_generation_context(db, storage, product_id, requirement_id)
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Requirement or product not found")
+
+    product = ctx["product"]
+    current = ctx["current_requirement"]
+    parent_doc_content = ctx.get("parent_doc_content")
+    sibling_requirements = ctx.get("sibling_requirements") or []
+
+    doc_context = {
+        "level": current.get("level") or "epic",
+        "requirement_title": current.get("title") or "",
+        "requirement_description": current.get("description"),
+        "parent_doc": parent_doc_content,
+        "sibling_titles": [s.get("title") or "" for s in sibling_requirements],
+        "product_name": product.get("name") or "Unknown",
+    }
+
+    thread_id = f"pre-gen-{product_id}-{requirement_id}-{session_id}"
+
+    async def event_stream():
+        try:
+            from service.agent_factory import run_pre_generate_agent_stream
+
+            async for ev in run_pre_generate_agent_stream(
+                thread_id=thread_id,
+                user_message=message.strip(),
+                doc_context=doc_context,
+            ):
+                event_type = ev.get("event", "message")
+                data = ev.get("data", ev)
+                yield f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.exception("Pre-generate chat stream error")
+            yield f"event: error\ndata: {json.dumps({'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/{product_id}/requirements/{requirement_id}/doc/generate")
+async def generate_doc(
+    product_id: int,
+    requirement_id: int,
+    body: dict | None = None,
+    db=Depends(get_db),
+    storage: RequirementDocStorage = Depends(get_requirement_doc_storage),
+):
+    """触发工作流生成当前需求文档（SSE 流式）。body (optional): { user_overview?: string }。"""
+    _check_product_and_requirement(db, product_id, requirement_id)
+    user_overview = (body or {}).get("user_overview") if body else None
+
+    try:
+        from service.repositories import requirement_doc_repository as doc_repo
+        doc_repo.update_generation_status(db, requirement_id, "running")
+        db.commit()
+    except Exception:
+        logger.warning("Failed to persist generation_status=running (migration 016 may not be applied)", exc_info=True)
+        db.rollback()
+
+    async def event_stream():
+        try:
+            for ev in run_doc_workflow_stream(db, storage, product_id, requirement_id, user_overview=user_overview):
+                yield _sse_message(ev)
+        except Exception as e:
+            logger.exception("generate_doc event_stream error")
+            yield _sse_message({"event": "workflow_done", "data": {"requirement_id": requirement_id, "status": "failed", "error": str(e), "version": None}})
 
     return StreamingResponse(
         event_stream(),
@@ -266,8 +362,14 @@ async def generate_children_docs(
     """触发批量生成子级文档工作流（SSE 流式）。"""
     _check_product_and_requirement(db, product_id, requirement_id)
 
+    # 从父需求获取 version_id，传递给子需求创建
+    parent_req = requirement_service.get_requirement(db, requirement_id)
+    parent_version_id = parent_req.get("version_id") if parent_req else None
+
     async def event_stream():
-        async for ev in run_generate_children_stream(db, storage, product_id, requirement_id):
+        async for ev in run_generate_children_stream(
+            db, storage, product_id, requirement_id, version_id=parent_version_id,
+        ):
             yield _sse_message(ev)
 
     return StreamingResponse(

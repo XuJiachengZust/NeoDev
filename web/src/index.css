@@ -46,6 +46,7 @@ body {
   background: var(--color-bg);
   color: var(--color-text);
   min-height: 100vh;
+  overflow: hidden;
 }
 
 code, .mono {
