@@ -1,0 +1,2 @@
+# 内网启动脚本强制 LF，避免 Linux 下 CRLF 报错
+docker/images/start.sh text eol=lf

@@ -419,16 +419,11 @@ _LLM_MAX_RETRIES = 2
 
 def _init_llm():
     """初始化 LLM，未配置时返回 None。"""
-    base = os.environ.get("OPENAI_BASE", "").strip()
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
         return None
-    if base:
-        os.environ.setdefault("OPENAI_API_BASE", base)
-    model_name = os.environ.get("OPENAI_MODEL_CHAT", "gpt-4o-mini")
-    model_spec = f"openai:{model_name}"
-    from langchain.chat_models import init_chat_model
-    return init_chat_model(model_spec)
+    from service.agent_factory import _create_chat_model
+    return _create_chat_model()
 
 
 def _build_llm_messages(system_prompt: str):
@@ -456,12 +451,14 @@ def _invoke_llm_for_doc(system_prompt: str, title: str) -> str | None:
                     return content.strip()
             except Exception as e:
                 last_error = e
+                logger.warning("LLM 生成文档异常 (尝试 %d/%d): %s", attempt + 1, _LLM_MAX_RETRIES + 1, e, exc_info=True)
                 if attempt < _LLM_MAX_RETRIES:
                     time.sleep(2 ** attempt)
         if last_error:
-            logger.warning("LLM 生成文档失败 (重试 %d 次): %s", _LLM_MAX_RETRIES, last_error)
+            logger.error("LLM 生成文档最终失败 (重试 %d 次): %s", _LLM_MAX_RETRIES, last_error)
         return None
-    except Exception:
+    except Exception as e:
+        logger.error("LLM 初始化或构建消息失败: %s", e, exc_info=True)
         return None
 
 
@@ -484,12 +481,13 @@ def _invoke_llm_for_doc_stream(system_prompt: str) -> Iterator[str]:
                 if has_content:
                     return
             except Exception as e:
+                logger.warning("LLM 流式生成异常 (尝试 %d/%d): %s", attempt + 1, _LLM_MAX_RETRIES + 1, e, exc_info=True)
                 if attempt < _LLM_MAX_RETRIES:
                     time.sleep(2 ** attempt)
                 else:
-                    logger.warning("LLM 流式生成失败 (重试 %d 次): %s", _LLM_MAX_RETRIES, e)
-    except Exception:
-        pass
+                    logger.error("LLM 流式生成最终失败 (重试 %d 次): %s", _LLM_MAX_RETRIES, e)
+    except Exception as e:
+        logger.error("LLM 流式初始化或构建消息失败: %s", e, exc_info=True)
 
 
 def _save_draft(state: DocWorkflowState) -> dict[str, Any]:
@@ -512,12 +510,14 @@ def _save_draft(state: DocWorkflowState) -> dict[str, Any]:
         conn.commit()
         return {"status": "completed", "error": None}
     except Exception as e:
+        logger.error("保存草稿失败 (requirement_id=%s): %s", requirement_id, e, exc_info=True)
         try:
             conn.rollback()
             from service.repositories import requirement_doc_repository as doc_repo
             doc_repo.update_generation_status(conn, requirement_id, "failed", error=str(e))
             conn.commit()
-        except Exception:
+        except Exception as inner_e:
+            logger.error("更新失败状态时异常 (requirement_id=%s): %s", requirement_id, inner_e, exc_info=True)
             try:
                 conn.rollback()
             except Exception:
@@ -739,12 +739,13 @@ def run_doc_workflow_stream(
             },
         }
     except Exception as e:
+        logger.error("文档生成工作流异常 (requirement_id=%s): %s", requirement_id, e, exc_info=True)
         try:
             from service.repositories import requirement_doc_repository as doc_repo
             doc_repo.update_generation_status(conn, requirement_id, "failed", error=str(e))
             conn.commit()
-        except Exception:
-            pass
+        except Exception as inner_e:
+            logger.error("更新失败状态时异常 (requirement_id=%s): %s", requirement_id, inner_e, exc_info=True)
         yield {
             "event": "workflow_done",
             "data": {

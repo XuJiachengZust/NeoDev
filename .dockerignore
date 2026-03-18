@@ -1,0 +1,30 @@
+# Git / IDE
+.git
+.idea
+.cursor
+.claude
+.vscode
+*.pyc
+__pycache__
+
+# 虚拟环境
+.venv
+venv
+*.egg-info
+
+# 前端 node_modules（由构建阶段 npm ci 安装）
+web/node_modules
+web/dist
+
+# 沙箱 & 本地数据
+.sandboxes
+.pytest_cache
+tests/
+
+# 环境文件（通过 docker-compose env_file 注入）
+.env
+.env.local
+
+# 文档
+docs/
+*.md

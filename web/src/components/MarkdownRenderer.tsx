@@ -98,7 +98,7 @@ function MermaidZoomOverlay({ svgHtml, onClose }: { svgHtml: string; onClose: ()
 /** Mermaid 图表渲染块 */
 function MermaidBlock({ chart }: { chart: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const uniqueId = useId().replace(/:/g, "_");
+  const uniqueId = useId().replace(/[^a-zA-Z0-9]/g, "_");
   const [svgHtml, setSvgHtml] = useState("");
   const [zoomed, setZoomed] = useState(false);
   const [error, setError] = useState(false);
@@ -106,19 +106,27 @@ function MermaidBlock({ chart }: { chart: string }) {
   useEffect(() => {
     if (!containerRef.current || !chart.trim()) return;
     let cancelled = false;
-    const elId = `mermaid${uniqueId}`;
+    const elId = `mermaid${uniqueId}_${Date.now()}`;
 
     const run = async () => {
       try {
-        const result = await mermaid.render(elId, chart.trim());
+        // 在 mermaid v10+ 中，传入容器元素作为第三个参数以确保正确渲染
+        const container = containerRef.current!;
+        container.innerHTML = "";
+        const result = await mermaid.render(elId, chart.trim(), container);
         if (!result?.svg) throw new Error("empty svg");
         if (!cancelled) {
           setSvgHtml(result.svg);
           setError(false);
-          if (containerRef.current) containerRef.current.innerHTML = result.svg;
+          // mermaid 已将 SVG 写入 container，只在未写入时手动设置
+          if (container.innerHTML === "") {
+            container.innerHTML = result.svg;
+          }
         }
-      } catch {
-        // 清理 mermaid 注入的错误 DOM 元素
+      } catch (e) {
+        console.warn("[MermaidBlock] render failed:", e);
+        // 清理 mermaid 可能注入的错误 DOM 元素
+        try { document.getElementById(elId)?.remove(); } catch { /* ignore */ }
         try { document.getElementById(`d${elId}`)?.remove(); } catch { /* ignore */ }
         if (!cancelled) {
           setError(true);
@@ -126,7 +134,7 @@ function MermaidBlock({ chart }: { chart: string }) {
       }
     };
 
-    try { run(); } catch { if (!cancelled) setError(true); }
+    run().catch((e) => { console.warn("[MermaidBlock] run failed:", e); if (!cancelled) setError(true); });
 
     return () => { cancelled = true; };
   }, [chart, uniqueId]);
@@ -174,6 +182,17 @@ function extractText(node: React.ReactNode): string {
   return "";
 }
 
+/** 解码 HTML 实体（处理 rehype 可能引入的 &gt; &lt; &amp; 等） */
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ");
+}
+
 /** 自定义 code 块：mermaid 语言走图表渲染，其余走 highlight.js */
 function CodeBlock({ className, children, ...props }: ComponentPropsWithoutRef<"code"> & { node?: unknown }) {
   const { node: _node, ...rest } = props;
@@ -186,7 +205,9 @@ function CodeBlock({ className, children, ...props }: ComponentPropsWithoutRef<"
   }
 
   if (lang === "mermaid") {
-    const code = extractText(children).replace(/\n$/, "");
+    const raw = decodeHtmlEntities(extractText(children).replace(/\n$/, ""));
+    // mermaid 将 " 视为字符串定界符，节点标签内的双引号需转为 #quot;
+    const code = raw.replace(/"/g, "#quot;");
     return <MermaidBlock chart={code} />;
   }
 
@@ -293,7 +314,7 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
       <div className={`md-renderer ${className ?? ""}`}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeHighlight]}
+          rehypePlugins={[[rehypeHighlight, { ignoredLanguages: ["mermaid"] }]]}
           components={{
             code: CodeBlock,
           }}
