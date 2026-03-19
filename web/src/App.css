@@ -1507,6 +1507,23 @@ button.secondary:hover {
 }
 
 /* 生成进度条 */
+.req-doc-split-suggestions {
+  margin: 16px 0 0;
+  padding: 16px;
+  border: 1px solid var(--color-primary);
+  border-radius: 8px;
+  background: rgba(0, 240, 255, 0.04);
+}
+.req-doc-split-suggestions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
 .req-doc-progress {
   display: flex;
   align-items: center;
@@ -1788,4 +1805,79 @@ button.secondary:hover {
 }
 .diff-unchanged {
   color: var(--color-text-muted);
+}
+
+/* ── 子级文档批量生成进度面板 ── */
+.children-gen-panel {
+  margin-left: 24px;
+  margin-bottom: 4px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--color-primary);
+  background: rgba(0, 240, 255, 0.04);
+  border-radius: 0 var(--radius-input) var(--radius-input) 0;
+}
+.children-gen-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--color-primary);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.children-gen-failed-count { color: var(--color-alert); }
+.children-gen-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.children-gen-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  padding: 2px 0;
+}
+.children-gen-item.running   { color: var(--color-text); }
+.children-gen-item.completed { color: #00ff80; }
+.children-gen-item.failed    { color: var(--color-alert); }
+.children-gen-icon {
+  display: flex;
+  align-items: center;
+  width: 14px;
+  flex-shrink: 0;
+}
+.children-gen-dot    { font-size: 11px; }
+.children-gen-dot.ok  { color: #00ff80; }
+.children-gen-dot.err { color: var(--color-alert); }
+.children-gen-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.children-gen-new-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  background: rgba(0, 240, 255, 0.12);
+  color: var(--color-primary);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  flex-shrink: 0;
+}
+.children-gen-step {
+  font-size: 11px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+.children-gen-error {
+  font-size: 11px;
+  color: var(--color-alert);
+  flex-shrink: 0;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

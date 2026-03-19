@@ -65,6 +65,7 @@ services:
       NEO4J_PASSWORD: password123
       REPO_CLONE_BASE: /data/repos
       AGENT_SANDBOX_ROOT: /data/sandboxes
+      REQUIREMENT_DOCS_ROOT: /data/requirement_docs
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-your-key}
       OPENAI_BASE: ${OPENAI_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       OPENAI_MODEL_CHAT: ${OPENAI_MODEL_CHAT:-deepseek-v3.2}
@@ -73,6 +74,7 @@ services:
     volumes:
       - repo_data:/data/repos
       - sandbox_data:/data/sandboxes
+      - doc_data:/data/requirement_docs
     expose:
       - "8000"
 
@@ -96,3 +98,5 @@ volumes:
     name: neodev-repo-data
   sandbox_data:
     name: neodev-sandbox-data
+  doc_data:
+    name: neodev-doc-data

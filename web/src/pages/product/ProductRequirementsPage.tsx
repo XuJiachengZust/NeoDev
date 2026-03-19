@@ -23,6 +23,72 @@ const CHILD_LABEL: Record<string, string> = {
   story: "+Task",
 };
 
+const STEP_LABELS: Record<string, string> = {
+  collect_context: "收集上下文",
+  code_search:     "代码检索",
+  graph_search:    "图谱检索",
+  synthesize:      "合并结果",
+  generate_doc:    "生成文档",
+  save_draft:      "保存草稿",
+};
+
+type ChildGenStatus = "pending" | "running" | "completed" | "failed";
+
+interface ChildProgressEntry {
+  reqId: number;
+  title: string;
+  isNew: boolean;
+  status: ChildGenStatus;
+  currentStep?: string | null;
+  error?: string;
+}
+
+function ChildrenProgressPanel({
+  entries,
+  onAbort,
+}: {
+  entries: ChildProgressEntry[];
+  onAbort: () => void;
+}) {
+  const completed = entries.filter((e) => e.status === "completed").length;
+  const failed    = entries.filter((e) => e.status === "failed").length;
+  const total     = entries.length;
+
+  return (
+    <div className="children-gen-panel">
+      <div className="children-gen-header">
+        <span>
+          批量生成子级文档 · {completed}/{total} 完成
+          {failed > 0 && <span className="children-gen-failed-count"> · {failed} 失败</span>}
+        </span>
+        <button type="button" className="secondary xs" onClick={onAbort}>中止</button>
+      </div>
+      <div className="children-gen-list">
+        {entries.map((entry) => (
+          <div key={entry.reqId} className={`children-gen-item ${entry.status}`}>
+            <span className="children-gen-icon">
+              {entry.status === "pending"   && <span className="children-gen-dot">○</span>}
+              {entry.status === "running"   && <span className="req-doc-progress-dot" />}
+              {entry.status === "completed" && <span className="children-gen-dot ok">✓</span>}
+              {entry.status === "failed"    && <span className="children-gen-dot err">✗</span>}
+            </span>
+            <span className="children-gen-title">{entry.title}</span>
+            {entry.isNew && <span className="children-gen-new-badge">新建</span>}
+            {entry.status === "running" && entry.currentStep && (
+              <span className="children-gen-step">
+                {STEP_LABELS[entry.currentStep] ?? entry.currentStep}
+              </span>
+            )}
+            {entry.status === "failed" && entry.error && (
+              <span className="children-gen-error">{entry.error}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ProductRequirementsPage() {
   const { productId, versionId } = useVersionPageContext();
   const [requirements, setRequirements] = useState<ProductRequirement[]>([]);
@@ -39,7 +105,10 @@ export function ProductRequirementsPage() {
 
   // 折叠状态
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
-  const [generatingChildrenId, setGeneratingChildrenId] = useState<number | null>(null);
+
+  // 批量生成子级文档状态
+  const [generatingParentId, setGeneratingParentId] = useState<number | null>(null);
+  const [childrenProgress, setChildrenProgress] = useState<ChildProgressEntry[]>([]);
   const generateChildrenAbortRef = useRef<{ abort: () => void } | null>(null);
 
   const toggleCollapse = (id: number) =>
@@ -60,6 +129,14 @@ export function ProductRequirementsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // 静默刷新需求树（has_doc 更新），不触发 loading spinner
+  const silentLoad = async () => {
+    try {
+      const reqs = await listProductRequirementsTree(productId, versionId);
+      setRequirements(reqs);
+    } catch { /* ignore */ }
   };
 
   useEffect(() => {
@@ -127,24 +204,76 @@ export function ProductRequirementsPage() {
   };
 
   const handleGenerateChildren = async (parentId: number) => {
+    if (generatingParentId !== null) return;  // 全局互锁
     try {
       const { can_generate_children } = await canGenerateChildren(productId, parentId);
       if (!can_generate_children) {
         setError("请先完成当前需求文档后再生成子级文档");
         return;
       }
-      setGeneratingChildrenId(parentId);
+      setGeneratingParentId(parentId);
+      setChildrenProgress([]);
       setError(null);
+      // 自动展开父节点，确保进度面板可见
+      setCollapsed((prev) => { const n = new Set(prev); n.delete(parentId); return n; });
+
       generateChildrenAbortRef.current = streamGenerateChildrenDocs(productId, parentId, {
+        decompose_done: (data) => {
+          const d = data as { children: { requirement_id: number; title: string; is_new: boolean }[] };
+          setChildrenProgress(
+            d.children.map((c) => ({
+              reqId: c.requirement_id,
+              title: c.title ?? `需求 #${c.requirement_id}`,
+              isNew: c.is_new,
+              status: "pending",
+            }))
+          );
+        },
+        child_start: (data) => {
+          const { requirement_id } = data as { requirement_id: number };
+          setChildrenProgress((prev) =>
+            prev.map((c) => c.reqId === requirement_id ? { ...c, status: "running", currentStep: null } : c)
+          );
+        },
+        child_progress: (data) => {
+          const d = data as { requirement_id: number; step?: string; status?: string };
+          if (d.status === "running" && d.step) {
+            setChildrenProgress((prev) =>
+              prev.map((c) => c.reqId === d.requirement_id ? { ...c, currentStep: d.step! } : c)
+            );
+          }
+        },
+        child_done: (data) => {
+          const { requirement_id, status, error } = data as {
+            requirement_id: number; status: string; error?: string;
+          };
+          setChildrenProgress((prev) =>
+            prev.map((c) =>
+              c.reqId === requirement_id
+                ? { ...c, status: status === "completed" ? "completed" : "failed", currentStep: null, error }
+                : c
+            )
+          );
+          silentLoad();  // 每个子文档完成后立即更新需求树 has_doc 状态
+        },
         workflow_done: () => {
-          setGeneratingChildrenId(null);
-          load();
+          setGeneratingParentId(null);
+          setChildrenProgress([]);
           generateChildrenAbortRef.current = null;
+          load();  // 全部完成后完整刷新
         },
       });
     } catch (e) {
+      setGeneratingParentId(null);
       setError(e instanceof Error ? e.message : "校验失败");
     }
+  };
+
+  const abortGeneration = () => {
+    generateChildrenAbortRef.current?.abort();
+    setGeneratingParentId(null);
+    setChildrenProgress([]);
+    generateChildrenAbortRef.current = null;
   };
 
   // 构建树
@@ -275,10 +404,16 @@ export function ProductRequirementsPage() {
                   hasChildren={childStories.length > 0}
                   isCollapsed={isEpicCollapsed}
                   onToggleCollapse={() => toggleCollapse(epic.id)}
-                  generatingChildrenId={generatingChildrenId}
+                  generatingParentId={generatingParentId}
                 />
                 {!isEpicCollapsed && (
                   <>
+                    {generatingParentId === epic.id && childrenProgress.length > 0 && (
+                      <ChildrenProgressPanel
+                        entries={childrenProgress}
+                        onAbort={abortGeneration}
+                      />
+                    )}
                     {renderInlineForm(epic.id, "story")}
                     {childStories.map((story) => {
                       const childTasks = tasks.filter((t) => t.parent_id === story.id);
@@ -295,10 +430,16 @@ export function ProductRequirementsPage() {
                             hasChildren={childTasks.length > 0}
                             isCollapsed={isStoryCollapsed}
                             onToggleCollapse={() => toggleCollapse(story.id)}
-                            generatingChildrenId={generatingChildrenId}
+                            generatingParentId={generatingParentId}
                           />
                           {!isStoryCollapsed && (
                             <>
+                              {generatingParentId === story.id && childrenProgress.length > 0 && (
+                                <ChildrenProgressPanel
+                                  entries={childrenProgress}
+                                  onAbort={abortGeneration}
+                                />
+                              )}
                               {renderInlineForm(story.id, "task")}
                               {childTasks.map((task) => (
                                 <RequirementRow
@@ -307,7 +448,7 @@ export function ProductRequirementsPage() {
                                   productId={productId}
                                   onStatusChange={handleStatusChange}
                                   onDelete={handleDelete}
-                                  generatingChildrenId={generatingChildrenId}
+                                  generatingParentId={generatingParentId}
                                 />
                               ))}
                             </>
@@ -338,10 +479,16 @@ export function ProductRequirementsPage() {
                     hasChildren={childTasks.length > 0}
                     isCollapsed={isStoryCollapsed}
                     onToggleCollapse={() => toggleCollapse(story.id)}
-                    generatingChildrenId={generatingChildrenId}
+                    generatingParentId={generatingParentId}
                   />
                   {!isStoryCollapsed && (
                     <>
+                      {generatingParentId === story.id && childrenProgress.length > 0 && (
+                        <ChildrenProgressPanel
+                          entries={childrenProgress}
+                          onAbort={abortGeneration}
+                        />
+                      )}
                       {renderInlineForm(story.id, "task")}
                       {childTasks.map((task) => (
                         <RequirementRow
@@ -350,7 +497,7 @@ export function ProductRequirementsPage() {
                           productId={productId}
                           onStatusChange={handleStatusChange}
                           onDelete={handleDelete}
-                          generatingChildrenId={generatingChildrenId}
+                          generatingParentId={generatingParentId}
                         />
                       ))}
                     </>
@@ -367,7 +514,7 @@ export function ProductRequirementsPage() {
                 productId={productId}
                 onStatusChange={handleStatusChange}
                 onDelete={handleDelete}
-                generatingChildrenId={generatingChildrenId}
+                generatingParentId={generatingParentId}
               />
             ))}
         </div>
@@ -386,7 +533,7 @@ function RequirementRow({
   hasChildren,
   isCollapsed,
   onToggleCollapse,
-  generatingChildrenId,
+  generatingParentId,
 }: {
   req: ProductRequirement;
   productId: number;
@@ -397,12 +544,13 @@ function RequirementRow({
   hasChildren?: boolean;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
-  generatingChildrenId?: number | null;
+  generatingParentId?: number | null;
 }) {
   const childLevel = CHILD_LEVEL[req.level];
   const childLabel = CHILD_LABEL[req.level];
   const docUrl = `/products/${productId}/requirements/${req.id}/doc`;
-  const isGenerating = generatingChildrenId === req.id;
+  const isGenerating = generatingParentId === req.id;
+  const isAnyGenerating = generatingParentId !== null;
 
   return (
     <div className={`req-tree-item ${req.level}`} data-has-doc={req.has_doc ? "true" : undefined}>
@@ -449,7 +597,7 @@ function RequirementRow({
           type="button"
           className="secondary xs"
           onClick={() => onGenerateChildren(req.id)}
-          disabled={isGenerating}
+          disabled={isAnyGenerating}
           title="批量生成子级需求文档"
         >
           {isGenerating ? "生成中…" : "生成子级文档"}

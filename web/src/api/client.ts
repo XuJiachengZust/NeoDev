@@ -899,8 +899,10 @@ export function streamDocEditorChat(
   return { abort: () => ac.abort() };
 }
 
-/** 工作流 SSE 事件类型：workflow_step | token | workflow_done | decompose_done | child_done */
-export type DocWorkflowEventType = "workflow_step" | "token" | "workflow_done" | "decompose_done" | "child_done";
+/** 工作流 SSE 事件类型 */
+export type DocWorkflowEventType =
+  | "workflow_step" | "token" | "workflow_done" | "split_suggestions"
+  | "decompose_done" | "child_start" | "child_progress" | "child_done";
 
 export interface DocWorkflowStreamHandle {
   abort(): void;

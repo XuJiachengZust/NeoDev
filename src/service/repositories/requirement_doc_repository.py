@@ -114,6 +114,23 @@ def get_generation_status(conn, requirement_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+def mark_pending_batch(conn, requirement_ids: list[int]) -> None:
+    """批量为子需求创建 pending 状态的 doc_meta 行（若已存在则不覆盖）。"""
+    if not requirement_ids:
+        return
+    with conn.cursor() as cur:
+        for rid in requirement_ids:
+            cur.execute(
+                """
+                INSERT INTO requirement_doc_meta
+                    (requirement_id, version, generation_status, generation_started_at)
+                VALUES (%s, 0, 'pending', now())
+                ON CONFLICT (requirement_id) DO NOTHING
+                """,
+                (rid,),
+            )
+
+
 def check_children_have_docs(conn, requirement_id: int) -> bool:
     """
     检查该需求的所有子需求是否都有文档。

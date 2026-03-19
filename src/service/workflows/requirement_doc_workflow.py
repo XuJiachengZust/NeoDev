@@ -37,16 +37,19 @@ class DocWorkflowState(TypedDict, total=False):
 
     parent_doc_content: str | None
     generation_seed: str | None
+    final_goal: str | None          # 当前需求的最终目标（从父文档提取或 Epic 自身目标）
     sibling_titles: list[str]
     product_name: str
     version_name: str | None
     project_repo_map: dict[str, str]  # 项目名 → 仓库路径
     project_id_map: dict[str, int]    # 项目名 → 项目 ID
+    branch_map: dict[str, str]        # 项目名 → 分支（从版本分支映射获取）
     user_overview: str | None
 
     code_search_results: str
     graph_search_results: str
     generated_content: str
+    split_suggestions: str | None  # 拆分建议（Epic→Story / Story→Task）
     status: str  # "running" | "completed" | "failed"
     error: str | None
 
@@ -59,10 +62,13 @@ class DocWorkflowState(TypedDict, total=False):
 
 
 def _extract_split_section(content: str | None, section_marker: str) -> str:
-    """从父文档中提取「Story 拆分建议」或「Task 拆分建议」章节正文。"""
+    """从父文档中提取「Story 拆分建议」或「Task 拆分建议」章节正文。
+    章节标题固定为 '## Story 拆分建议' 或 '## Task 拆分建议'，精确匹配。
+    """
     if not content or not section_marker:
         return ""
-    pattern = rf"##\s*{re.escape(section_marker)}\s*\n(.*?)(?=\n##\s|\n#\s|\Z)"
+    # 精确匹配固定标题，同时兼容带序号的旧文档
+    pattern = rf"##\s*(?:\d+[\.\、]?\s*)?{re.escape(section_marker)}\s*\n(.*?)(?=\n##\s|\n#\s|\Z)"
     match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
     return match.group(1).strip() if match else ""
 
@@ -109,6 +115,38 @@ def extract_generation_seed(
     return _match_generation_seed(section, child_title)
 
 
+def extract_final_goal(
+    parent_doc_content: str | None,
+    level: str,
+    child_title: str,
+) -> str:
+    """
+    从父文档的「Story 最终目标」或「Task 最终目标」章节中，
+    找到与 child_title 匹配的一行，提取其目标描述。
+    Epic 无父文档，返回空字符串。
+    """
+    if not parent_doc_content or not child_title:
+        return ""
+    if level == "story":
+        section = _extract_split_section(parent_doc_content, "Story 最终目标")
+    elif level == "task":
+        section = _extract_split_section(parent_doc_content, "Task 最终目标")
+    else:
+        return ""
+    if not section:
+        return ""
+    # 逐行匹配：找含 child_title 关键词的行，提取冒号后的目标描述
+    for line in section.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if child_title in line or (child_title and child_title[:10] in line):
+            # 提取冒号后的内容作为目标
+            parts = re.split(r"[：:]", line, maxsplit=1)
+            return parts[1].strip() if len(parts) > 1 else line
+    return ""
+
+
 # ── 节点 ──
 
 
@@ -141,6 +179,15 @@ def _collect_context(state: DocWorkflowState) -> dict[str, Any]:
         current.get("title") or "",
     )
 
+    # 最终目标（从父文档目标章节提取；Epic 无父文档则用需求描述）
+    final_goal = extract_final_goal(
+        parent_doc_content,
+        level,
+        current.get("title") or "",
+    )
+    if not final_goal and level == "epic":
+        final_goal = current.get("description") or ""
+
     # 项目名 → 仓库路径 / 项目 ID
     projects = product_repo.list_projects(conn, product_id)
     project_repo_map = {p["name"]: p["repo_path"] for p in projects if p.get("name") and p.get("repo_path")}
@@ -148,10 +195,13 @@ def _collect_context(state: DocWorkflowState) -> dict[str, Any]:
 
     version_id = current.get("version_id")
     version_name: str | None = None
+    branch_map: dict[str, str] = {}
     if version_id:
         ver = version_repo.find_by_id(conn, version_id)
         if ver:
             version_name = ver.get("version_name")
+        branches = version_repo.list_branches(conn, version_id)
+        branch_map = {b["project_name"]: b["branch"] for b in branches if b.get("branch")}
 
     return {
         "level": level,
@@ -159,11 +209,13 @@ def _collect_context(state: DocWorkflowState) -> dict[str, Any]:
         "requirement_description": current.get("description"),
         "parent_doc_content": parent_doc_content,
         "generation_seed": generation_seed or None,
+        "final_goal": final_goal or None,
         "sibling_titles": [s.get("title") or "" for s in siblings],
         "product_name": product.get("name") or "",
         "version_name": version_name,
         "project_repo_map": project_repo_map,
         "project_id_map": project_id_map,
+        "branch_map": branch_map,
         "code_search_results": "",
         "graph_search_results": "",
         "status": "running",
@@ -198,16 +250,16 @@ def _extract_search_keywords(title: str, description: str | None) -> list[str]:
     return keywords
 
 
-def _grep_in_repo(repo_path: str, keyword: str, max_results: int = 5) -> str:
-    """使用 git grep 在仓库中检索关键词，返回匹配行摘要。"""
+def _grep_in_repo(repo_path: str, keyword: str, branch: str | None = None, max_results: int = 5) -> str:
+    """使用 git grep 在仓库中检索关键词，返回匹配行摘要。支持指定分支（treeish）。"""
     repo = Path(repo_path)
     if not repo.is_dir():
         return ""
     try:
-        r = subprocess.run(
-            ["git", "grep", "-n", "-I", "--max-count", str(max_results), keyword],
-            cwd=repo, capture_output=True, text=True, timeout=15,
-        )
+        cmd = ["git", "grep", "-n", "-I", "--max-count", str(max_results), keyword]
+        if branch:
+            cmd.append(branch)
+        r = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=15)
         if r.returncode == 0 and r.stdout.strip():
             lines = r.stdout.strip().splitlines()[:max_results]
             return "\n".join(f"  {ln}" for ln in lines)
@@ -235,10 +287,12 @@ def _code_search(state: DocWorkflowState) -> dict[str, Any]:
     max_per_kw = 8 if level == "task" else 3
     max_keywords = 6 if level == "task" else 3
     results: list[str] = []
+    branch_map = state.get("branch_map") or {}
 
     for project_name, repo_path in project_repo_map.items():
+        branch = branch_map.get(project_name)
         for kw in keywords[:max_keywords]:
-            matches = _grep_in_repo(repo_path, kw, max_results=max_per_kw)
+            matches = _grep_in_repo(repo_path, kw, branch=branch, max_results=max_per_kw)
             if matches:
                 results.append(f"### {project_name} — `{kw}`\n{matches}")
 
@@ -387,6 +441,7 @@ def _generate_doc(state: DocWorkflowState) -> dict[str, Any]:
         code_context=code or None,
         graph_context=graph or None,
         existing_doc=None,
+        final_goal=state.get("final_goal"),
     )
 
     generated_content = _invoke_llm_for_doc(prompt, title)
@@ -525,6 +580,82 @@ def _save_draft(state: DocWorkflowState) -> dict[str, Any]:
         return {"status": "failed", "error": str(e)}
 
 
+def _generate_split_suggestions(state: DocWorkflowState) -> dict[str, Any]:
+    """
+    为 Epic/Story 生成拆分建议（独立 LLM 调用）。
+    Epic → Story 拆分建议；Story → Task 拆分建议；Task 跳过。
+    章节标题由代码固定拼接，LLM 只输出列表内容。
+    结果追加到文档末尾并重新保存。
+    """
+    level = (state.get("level") or "epic").lower()
+    if level not in ("epic", "story"):
+        return {"split_suggestions": None}
+
+    # 固定章节标题
+    section_heading = "## Story 拆分建议" if level == "epic" else "## Task 拆分建议"
+    child_level = "Story" if level == "epic" else "Task"
+
+    # 如果文档中已有固定章节标题，跳过
+    content = state.get("generated_content") or ""
+    if section_heading in content:
+        return {"split_suggestions": None}
+
+    title = state.get("requirement_title") or ""
+    desc = state.get("requirement_description") or ""
+
+    final_goal = state.get("final_goal") or ""
+
+    system_prompt = (
+        f"你是一位敏捷需求拆分专家。根据以下需求信息，生成{child_level}拆分建议列表。\n"
+        f"输出格式严格要求：每条一行，格式为「- {child_level}标题：一句话最终目标描述」，标题和目标必须在同一行，不允许换行。\n"
+        f"目标描述要从用户/业务价值角度描述，说明该{child_level}完成后能达到什么结果。\n"
+        f"不要输出标题、前言、序号或其他任何内容，只输出列表。\n\n"
+        f"需求标题：{title}\n"
+        f"需求描述：{desc or '（无）'}\n"
+        f"产品：{state.get('product_name') or ''}\n"
+        + (f"本需求最终目标：{final_goal}\n" if final_goal else "")
+    )
+    if content:
+        system_prompt += f"\n已生成的文档摘要（前2000字）：\n{content[:2000]}\n"
+
+    try:
+        suggestions = _invoke_llm_for_doc(system_prompt, title)
+    except Exception:
+        suggestions = None
+
+    if not suggestions:
+        return {"split_suggestions": None}
+
+    # 追加到文档末尾：拆分建议章节 + 最终目标章节（供子文档提取）
+    conn = state.get("conn")
+    storage: RequirementDocStorage | None = state.get("storage")
+    product_id = state.get("product_id")
+    requirement_id = state.get("requirement_id")
+
+    # 最终目标章节标题固定
+    goal_heading = "## Story 最终目标" if level == "epic" else "## Task 最终目标"
+    section_heading_line = f"\n\n{section_heading}\n"
+    goal_heading_line = f"\n\n{goal_heading}\n"
+    updated_content = (
+        content.rstrip()
+        + section_heading_line + suggestions.strip()
+        + goal_heading_line + suggestions.strip()
+    )
+
+    if conn and storage and product_id and requirement_id:
+        try:
+            doc_service.save_doc(conn, storage, product_id, requirement_id, updated_content, generated_by="workflow")
+            conn.commit()
+        except Exception as e:
+            logger.warning("追加拆分建议保存失败: %s", e)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+    return {"split_suggestions": suggestions.strip(), "generated_content": updated_content}
+
+
 # ── 图构建 ──
 
 
@@ -563,6 +694,7 @@ def _build_graph() -> StateGraph:
     workflow.add_node("synthesize", _synthesize)
     workflow.add_node("generate_doc", _generate_doc)
     workflow.add_node("save_draft", _save_draft)
+    workflow.add_node("generate_split_suggestions", _generate_split_suggestions)
 
     workflow.add_edge(START, "collect_context")
     workflow.add_conditional_edges(
@@ -572,7 +704,8 @@ def _build_graph() -> StateGraph:
     workflow.add_edge("graph_search", "synthesize")
     workflow.add_edge("synthesize", "generate_doc")
     workflow.add_edge("generate_doc", "save_draft")
-    workflow.add_edge("save_draft", END)
+    workflow.add_edge("save_draft", "generate_split_suggestions")
+    workflow.add_edge("generate_split_suggestions", END)
 
     return workflow
 
@@ -726,6 +859,18 @@ def run_doc_workflow_stream(
 
         yield {"event": "workflow_step", "data": {"step": "save_draft", "status": "done", "detail": None}}
 
+        # ── Phase 4: 拆分建议生成（Epic/Story） ──
+        level = (state.get("level") or "story").lower()
+        if level in ("epic", "story"):
+            yield {"event": "workflow_step", "data": {"step": "generate_split_suggestions", "status": "running"}}
+            split_state = {**state, "generated_content": generated_content}
+            split_result = _generate_split_suggestions(split_state)
+            state.update(split_result)
+            suggestions = state.get("split_suggestions")
+            yield {"event": "workflow_step", "data": {"step": "generate_split_suggestions", "status": "done"}}
+            if suggestions:
+                yield {"event": "split_suggestions", "data": {"content": suggestions}}
+
         meta = None
         if state.get("status") == "completed":
             meta = doc_service.get_doc(conn, storage, product_id, requirement_id)
@@ -794,13 +939,44 @@ def decompose_parent_doc(
 
     lines = [ln.strip() for ln in section.splitlines() if ln.strip()]
     def norm(s: str) -> str:
-        return re.sub(r"^[\s\-*•]\s*", "", s).strip()
+        # 去掉列表前缀、序号、加粗标记
+        s = re.sub(r"^[\s\-*•]\s*", "", s)
+        s = re.sub(r"^\d+[\.\、]\s*", "", s)
+        s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)
+        return s.strip()
+
+    # 将多行合并为条目：以「Story N：」或「Task N：」开头的行是标题，
+    # 紧跟的「职责：」行合并到同一条目
+    entries: list[str] = []
+    i = 0
+    while i < len(lines):
+        current = norm(lines[i])
+        if not current:
+            i += 1
+            continue
+        # 检查下一行是否是职责补充行（以「职责：」开头，或不以列表符/序号开头）
+        if i + 1 < len(lines):
+            next_line = norm(lines[i + 1])
+            next_raw = lines[i + 1].strip()
+            is_continuation = (
+                next_raw.startswith("职责") or
+                next_raw.startswith("说明") or
+                (not re.match(r"^[\-*•]|\d+[\.\、]", next_raw) and
+                 not re.match(r"^(Story|Task)\s*\d+", next_raw, re.IGNORECASE))
+            )
+            if is_continuation and next_line:
+                # 合并：标题 + 职责描述
+                combined = current.rstrip("：:") + "：" + re.sub(r"^职责[：:]\s*|^说明[：:]\s*", "", next_line)
+                entries.append(combined)
+                i += 2
+                continue
+        entries.append(current)
+        i += 1
 
     result: list[dict[str, Any]] = []
     used_child_ids: set[int] = set()
 
-    for line in lines:
-        seed = norm(line)
+    for seed in entries:
         if not seed:
             continue
         # 尝试匹配已有子需求（标题包含种子关键词或种子包含标题）
@@ -854,6 +1030,54 @@ def decompose_parent_doc(
     return result
 
 
+def _run_child_worker(
+    spec: dict,
+    storage: RequirementDocStorage,
+    product_id: int,
+    event_queue: "asyncio.Queue[dict]",
+    loop: "asyncio.AbstractEventLoop",
+    cancel_flag: "threading.Event",
+) -> None:
+    """线程函数：运行单个子需求的完整工作流，把事件推入 asyncio Queue。"""
+    import psycopg2 as _psycopg2
+    from service.dependencies import get_database_url
+
+    rid = spec["requirement_id"]
+
+    def push(ev: dict) -> None:
+        loop.call_soon_threadsafe(event_queue.put_nowait, ev)
+
+    conn = _psycopg2.connect(get_database_url())
+    try:
+        push({"event": "child_start", "data": {"requirement_id": rid}})
+
+        for ev in run_doc_workflow_stream(conn, storage, product_id, rid):
+            if cancel_flag.is_set():
+                break
+            etype = ev.get("event")
+            if etype == "workflow_step":
+                push({
+                    "event": "child_progress",
+                    "data": {**ev.get("data", {}), "requirement_id": rid},
+                })
+            elif etype == "workflow_done":
+                push({
+                    "event": "child_done",
+                    "data": {**ev.get("data", {}), "requirement_id": rid},
+                })
+            # token 事件在并行模式下不转发（噪声过多）
+    except Exception as e:
+        push({
+            "event": "child_done",
+            "data": {"requirement_id": rid, "status": "failed", "error": str(e)},
+        })
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 async def run_generate_children_stream(
     conn,
     storage: RequirementDocStorage,
@@ -862,12 +1086,30 @@ async def run_generate_children_stream(
     version_id: int | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """
-    批量生成子级文档：先 decompose_parent_doc，再对每个子需求跑工作流，产出 SSE。
-    事件：decompose_done（children）, child_done（requirement_id）, workflow_done（total）。
+    三阶段并行批量生成子级文档：
+    1. 预规划：decompose + 持久化 pending 状态 + commit
+    2. 并行生成：每子需求独立连接 + ThreadPoolExecutor
+    3. 取消清理：删除本批次新建且仍 pending/running 的子需求
+    事件：decompose_done, child_start, child_progress, child_done, workflow_done。
     """
+    import threading
+
+    # ── Phase 1: 预规划 ──
     children_specs = decompose_parent_doc(
         conn, storage, product_id, parent_requirement_id, version_id=version_id,
     )
+    if not children_specs:
+        yield {"event": "decompose_done", "data": {"children": []}}
+        yield {"event": "workflow_done", "data": {"total": 0, "completed": 0, "failed": 0}}
+        return
+
+    all_rids = [s["requirement_id"] for s in children_specs]
+    new_child_ids = [s["requirement_id"] for s in children_specs if s.get("is_new")]
+
+    from service.repositories import requirement_doc_repository as doc_repo
+    doc_repo.mark_pending_batch(conn, all_rids)
+    conn.commit()  # 提交：新建需求 + pending 状态，并行 worker 可见
+
     yield {
         "event": "decompose_done",
         "data": {
@@ -882,39 +1124,75 @@ async def run_generate_children_stream(
         },
     }
 
-    _executor = _get_executor()
-    loop = asyncio.get_event_loop()
+    # ── Phase 2: 并行生成 ──
+    loop = asyncio.get_running_loop()
+    event_queue: asyncio.Queue[dict] = asyncio.Queue()
+    cancel_flag = threading.Event()
 
-    for spec in children_specs:
-        rid = spec["requirement_id"]
-        gen = run_doc_workflow_stream(conn, storage, product_id, rid)
-        while True:
-            ev = await loop.run_in_executor(_executor, _next_or_stop, gen)
-            if ev is _SENTINEL:
-                break
-            if ev.get("event") == "workflow_step":
-                yield ev
-            elif ev.get("event") == "token":
-                yield ev
-            elif ev.get("event") == "workflow_done":
-                yield {"event": "child_done", "data": ev.get("data", {})}
+    max_workers = int(os.environ.get("DOC_GEN_MAX_WORKERS", "4"))
+    executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="child_doc")
+
+    futures = [
+        loop.run_in_executor(
+            executor,
+            _run_child_worker,
+            spec, storage, product_id, event_queue, loop, cancel_flag,
+        )
+        for spec in children_specs
+    ]
+
+    total = len(children_specs)
+    completed_count = 0
+    success_count = 0
+    failed_count = 0
+
+    try:
+        while completed_count < total:
+            ev = await event_queue.get()
+            yield ev
+            if ev.get("event") == "child_done":
+                completed_count += 1
+                if ev.get("data", {}).get("status") == "completed":
+                    success_count += 1
+                else:
+                    failed_count += 1
+
+        await asyncio.gather(*futures, return_exceptions=True)
+
+    except (GeneratorExit, asyncio.CancelledError):
+        # ── Phase 3: 取消清理 ──
+        cancel_flag.set()
+        await asyncio.gather(*futures, return_exceptions=True)
+
+        if new_child_ids:
+            import psycopg2 as _psycopg2
+            from service.dependencies import get_database_url as _get_db_url
+            from service.repositories import product_requirement_repository as req_repo
+            cleanup_conn = _psycopg2.connect(_get_db_url())
+            try:
+                for rid in new_child_ids:
+                    status_info = doc_repo.get_generation_status(cleanup_conn, rid)
+                    gen_status = (status_info or {}).get("generation_status")
+                    if gen_status in ("pending", "running", None):
+                        req_repo.delete(cleanup_conn, rid)  # CASCADE 删除 doc_meta
+                cleanup_conn.commit()
+            except Exception as e:
+                logger.error("取消清理失败: %s", e, exc_info=True)
+                try:
+                    cleanup_conn.rollback()
+                except Exception:
+                    pass
+            finally:
+                try:
+                    cleanup_conn.close()
+                except Exception:
+                    pass
+        raise
+
+    finally:
+        executor.shutdown(wait=False)
 
     yield {
         "event": "workflow_done",
-        "data": {"total": len(children_specs)},
+        "data": {"total": total, "completed": success_count, "failed": failed_count},
     }
-
-
-_SENTINEL = object()
-_executor: ThreadPoolExecutor | None = None
-
-
-def _get_executor() -> ThreadPoolExecutor:
-    global _executor
-    if _executor is None:
-        _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="doc_workflow")
-    return _executor
-
-
-def _next_or_stop(gen: Iterator[dict[str, Any]]) -> dict[str, Any] | object:
-    return next(gen, _SENTINEL)

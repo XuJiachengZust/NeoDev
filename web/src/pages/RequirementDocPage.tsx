@@ -31,6 +31,7 @@ const STEP_LABELS: Record<string, string> = {
   synthesize: "合并结果",
   generate_doc: "生成文档",
   save_draft: "保存草稿",
+  generate_split_suggestions: "生成拆分建议",
 };
 
 export function RequirementDocPage() {
@@ -62,6 +63,7 @@ export function RequirementDocPage() {
   // Generation
   const [generateStreaming, setGenerateStreaming] = useState(false);
   const [generateStep, setGenerateStep] = useState<string | null>(null);
+  const [splitSuggestions, setSplitSuggestions] = useState<string | null>(null);
 
   // Generation status persistence
   const [generationStatus, setGenerationStatus] = useState<string | null>(null);
@@ -259,6 +261,7 @@ export function RequirementDocPage() {
     setGenerateStep(null);
     setError(null);
     setContent("");
+    setSplitSuggestions(null);
     setViewMode("edit");
     setShowGenerateModal(false);
     streamAbortRef.current = streamGenerateDoc(productId, requirementId, {
@@ -277,6 +280,10 @@ export function RequirementDocPage() {
           setError("生成失败");
           streamAbortRef.current = null;
         }
+      },
+      split_suggestions: (data: unknown) => {
+        const d = data as { content?: string };
+        if (d?.content) setSplitSuggestions(d.content);
       },
       workflow_done: (data: unknown) => {
         setGenerateStreaming(false);
@@ -680,6 +687,17 @@ export function RequirementDocPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 拆分建议面板（Epic/Story 生成后展示） */}
+      {splitSuggestions && (
+        <div className="req-doc-split-suggestions card">
+          <div className="req-doc-split-suggestions-header">
+            <span>{requirement?.level === "epic" ? "Story 拆分建议" : "Task 拆分建议"}</span>
+            <button type="button" className="secondary xs" onClick={() => setSplitSuggestions(null)}>关闭</button>
+          </div>
+          <MarkdownRenderer content={splitSuggestions} />
         </div>
       )}
 
