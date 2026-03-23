@@ -117,8 +117,9 @@ def _create_chat_model():
     api_key = os.environ.get("OPENAI_API_KEY", "").strip() or None
 
     ssl_ctx = _ssl_context()
-    http_client = httpx.Client(verify=ssl_ctx)
-    http_async_client = httpx.AsyncClient(verify=ssl_ctx)
+    timeout = httpx.Timeout(600.0, connect=10.0)
+    http_client = httpx.Client(verify=ssl_ctx, timeout=timeout)
+    http_async_client = httpx.AsyncClient(verify=ssl_ctx, timeout=timeout)
 
     return ChatOpenAI(
         model=model_name,
@@ -126,6 +127,7 @@ def _create_chat_model():
         api_key=api_key,
         http_client=http_client,
         http_async_client=http_async_client,
+        max_tokens=8192,
     )
 
 
@@ -665,38 +667,22 @@ def get_or_create_product_agent(
 
 
 _PRE_GEN_CACHE_PREFIX = "pre_gen:"
+_pre_gen_history: dict[str, list] = {}
 
+# 预生成引导对话的结构化输出 schema
+try:
+    from pydantic import BaseModel as _PydanticBase, Field as _Field
 
-def _get_or_create_pre_gen_agent(thread_id: str) -> Any:
-    """获取或创建预生成引导 Agent（轻量级，无子智能体）。"""
-    cache_key = _PRE_GEN_CACHE_PREFIX + thread_id
-    current_cp = _get_effective_checkpointer()
-
-    if cache_key in _agent_cache:
-        cached = _agent_cache[cache_key]
-        cached_cp = getattr(cached, "checkpointer", None)
-        if cached_cp is not current_cp:
-            del _agent_cache[cache_key]
-        else:
-            return cached
-
-    from deepagents.graph import create_deep_agent
-
-    model = _create_chat_model()
-
-    logger.info("创建预生成引导 Agent [%s] model=%s", thread_id, model)
-
-    agent = create_deep_agent(
-        model=model,
-        system_prompt="placeholder",
-        tools=None,
-        backend=None,
-        subagents=None,
-        checkpointer=current_cp,
-    )
-
-    _agent_cache[cache_key] = agent
-    return agent
+    class _PreGenResponse(_PydanticBase):
+        """AI 预生成引导的结构化回复格式"""
+        question: str = _Field(description="对用户的问题或引导语，支持 Markdown 格式")
+        options: list[str] = _Field(
+            description="2-4 个用户可快速选择的简短回答选项（每项 15 字以内）",
+            min_length=2,
+            max_length=4,
+        )
+except Exception:
+    _PreGenResponse = None  # type: ignore[assignment,misc]
 
 
 async def run_pre_generate_agent_stream(
@@ -704,8 +690,12 @@ async def run_pre_generate_agent_stream(
     user_message: str,
     doc_context: dict,
 ) -> AsyncIterator[dict]:
-    """预生成引导 Agent 流式调用（Epic 对话式引导）。"""
-    agent = _get_or_create_pre_gen_agent(thread_id)
+    """预生成引导对话（直接使用 LLM 结构化输出，不经过 DeepAgent）。
+
+    AI 直接输出结构化的 {question, options} 格式。
+    前端会自动在 options 后追加 Skip 和手动输入框。
+    """
+    from langchain_core.messages import HumanMessage as HM, SystemMessage
 
     system_prompt = build_pre_generate_prompt(
         level=doc_context.get("level", "epic"),
@@ -716,17 +706,41 @@ async def run_pre_generate_agent_stream(
         parent_doc=doc_context.get("parent_doc"),
     )
 
-    config = {
-        "configurable": {
-            "thread_id": thread_id,
-            "system_prompt_override": system_prompt,
-        },
-        "recursion_limit": 50,
-    }
-    input_msg = {"messages": [HumanMessage(content=user_message)]}
+    # 从内存缓存加载对话历史（pre-gen 会话是短暂的，无需持久化）
+    messages = list(_pre_gen_history.get(thread_id, []))
 
-    async for event in _process_stream_events(agent, input_msg, config, f"pre_gen:{thread_id}", thread_id):
-        yield event
+    if not messages or not any(isinstance(m, SystemMessage) for m in messages):
+        messages.insert(0, SystemMessage(content=system_prompt))
+    messages.append(HM(content=user_message))
+
+    try:
+        model = _create_chat_model()
+        structured = model.with_structured_output(_PreGenResponse)
+
+        logger.info("预生成引导：开始调用 LLM thread=%s", thread_id)
+        result = await structured.ainvoke(messages)
+
+        question = result.question
+        options = list(result.options) if result.options else []
+
+        logger.info("预生成引导完成 thread=%s question_len=%d options=%d",
+                   thread_id, len(question), len(options))
+
+        from langchain_core.messages import AIMessage
+        messages.append(AIMessage(content=question))
+        _pre_gen_history[thread_id] = messages
+
+        # 先发送 question 作为 token 事件（模拟流式）
+        yield {"event": "token", "data": question}
+        yield {"event": "done", "data": {"content": question}}
+
+        # 再发送 options 事件（前端会自动追加 Skip 和手动输入框）
+        if options:
+            yield {"event": "structured", "data": {"options": options}}
+
+    except Exception as e:
+        logger.exception("预生成引导错误 thread=%s", thread_id)
+        yield {"event": "error", "data": {"message": str(e)}}
 
 
 async def run_product_agent_stream(

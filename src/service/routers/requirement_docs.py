@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from service.dependencies import get_db, get_requirement_doc_storage
 from service.repositories import product_repository
 from service.repositories import product_version_repository
+from service.repositories import split_suggestion_repository as split_repo
 from service.services import product_service
 from service.services import requirement_doc_service as doc_service
 from service.services import product_requirement_service as requirement_service
@@ -18,6 +19,7 @@ from service.workflows import run_doc_workflow_stream, run_generate_children_str
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["requirement-docs"])
+
 
 
 def _check_product_and_requirement(db, product_id: int, requirement_id: int) -> None:
@@ -305,6 +307,12 @@ async def pre_generate_chat(
             ):
                 event_type = ev.get("event", "message")
                 data = ev.get("data", ev)
+                if event_type == "structured":
+                    # 结构化中间件结果：转为 options SSE 事件
+                    options = data.get("options") if isinstance(data, dict) else None
+                    if options:
+                        yield f"event: options\ndata: {json.dumps({'options': options}, ensure_ascii=False)}\n\n"
+                    continue
                 yield f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.exception("Pre-generate chat stream error")
@@ -377,3 +385,57 @@ async def generate_children_docs(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── 拆分建议 CRUD ──
+
+@router.get("/{product_id}/requirements/{requirement_id}/doc/split-suggestions")
+def get_split_suggestions(
+    product_id: int,
+    requirement_id: int,
+    db=Depends(get_db),
+):
+    """获取拆分建议。"""
+    _check_product_and_requirement(db, product_id, requirement_id)
+    record = split_repo.find_by_requirement(db, requirement_id)
+    if not record:
+        return {"suggestions": [], "generated_by": None, "updated_at": None}
+    return {
+        "suggestions": record.get("suggestions") or [],
+        "generated_by": record.get("generated_by"),
+        "updated_at": record.get("updated_at"),
+    }
+
+
+@router.put("/{product_id}/requirements/{requirement_id}/doc/split-suggestions")
+def save_split_suggestions(
+    product_id: int,
+    requirement_id: int,
+    body: dict,
+    db=Depends(get_db),
+):
+    """保存/更新拆分建议。body: { suggestions: [{title, goal}, ...] }。"""
+    _check_product_and_requirement(db, product_id, requirement_id)
+    suggestions = body.get("suggestions")
+    if suggestions is None:
+        raise HTTPException(status_code=400, detail="suggestions is required")
+    record = split_repo.upsert(db, requirement_id, suggestions, generated_by="manual")
+    db.commit()
+    return {
+        "suggestions": record.get("suggestions") or [],
+        "generated_by": record.get("generated_by"),
+        "updated_at": record.get("updated_at"),
+    }
+
+
+@router.delete("/{product_id}/requirements/{requirement_id}/doc/split-suggestions")
+def delete_split_suggestions(
+    product_id: int,
+    requirement_id: int,
+    db=Depends(get_db),
+):
+    """删除拆分建议。"""
+    _check_product_and_requirement(db, product_id, requirement_id)
+    split_repo.delete_by_requirement(db, requirement_id)
+    db.commit()
+    return {"ok": True}

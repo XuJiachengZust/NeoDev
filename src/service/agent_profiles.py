@@ -601,9 +601,6 @@ _REQ_DOC_EPIC_TEMPLATE = (
     "## 7. 风险与依赖\n"
     "- 已知风险\n"
     "- 外部依赖\n"
-    "\n"
-    "## 8. Story 拆分建议\n"
-    "- 建议拆分为哪些 Story（简述每个 Story 的职责）\n"
 )
 
 _REQ_DOC_STORY_TEMPLATE = (
@@ -724,10 +721,15 @@ def build_pre_generate_prompt(
         "## 对话规则\n"
         "- 每次只问 1-2 个关键问题，不要一次抛出所有问题\n"
         "- 根据用户已提供的标题和描述，指出缺失的关键信息并提问\n"
-        "- 提供选项或示例引导用户思考\n"
+        "- 必须提供 2-4 个快捷选项供用户选择，每个选项不超过 15 字\n"
         "- 当信息足够充分时，主动告知用户：信息已经比较完整，可以点击「开始生成」按钮了\n"
         "- 始终使用中文\n"
         "- 回复简洁，不要长篇大论\n"
+        "\n"
+        "## 输出格式（严格遵守）\n"
+        "你的每次回复必须是结构化的 question + options 格式。\n"
+        "question 字段包含你的问题或引导语（支持 Markdown）。\n"
+        "options 字段包含 2-4 个快捷选项，用户可以点击选择。\n"
     ]
 
     parts.append("\n## 当前需求信息\n")
@@ -774,10 +776,11 @@ def build_requirement_doc_prompt(
     else:
         parts.append(_REQ_DOC_TASK_TEMPLATE)
 
-    # 最终目标（最高优先级约束，所有节点共享）
+    # 最终目标（参考约束，不得覆盖文档模版的用户视角要求）
     if final_goal:
-        parts.append("\n\n## 最终目标（请始终围绕此目标生成内容）\n")
+        parts.append("\n\n## 最终目标（参考方向，文档内容仍须从用户视角描述）\n")
         parts.append(f"> {final_goal}\n")
+        parts.append("> 注意：请围绕此目标展开，但用户故事和验收标准必须从用户视角撰写，不要直接复述此目标作为描述。\n")
 
     # 上下文注入
     parts.append("\n\n## 当前需求与产品上下文\n")
@@ -792,22 +795,22 @@ def build_requirement_doc_prompt(
 
     if parent_doc:
         parts.append("\n## 父需求文档（请在此框架内细化）\n\n")
-        parts.append(parent_doc[:8000] + ("..." if len(parent_doc) > 8000 else ""))
+        parts.append(parent_doc[:5000] + ("..." if len(parent_doc) > 5000 else ""))
         parts.append("\n")
 
     if code_context:
         parts.append("\n## 代码检索结果（供参考）\n\n")
-        parts.append(code_context[:12000] + ("..." if len(code_context) > 12000 else ""))
+        parts.append(code_context[:6000] + ("..." if len(code_context) > 6000 else ""))
         parts.append("\n")
 
     if graph_context:
         parts.append("\n## 图谱检索结果（供参考）\n\n")
-        parts.append(graph_context[:12000] + ("..." if len(graph_context) > 12000 else ""))
+        parts.append(graph_context[:6000] + ("..." if len(graph_context) > 6000 else ""))
         parts.append("\n")
 
     if existing_doc:
         parts.append("\n## 当前已有文档（已写入 /workspace/sandbox/requirement_doc.md，修改时使用 edit_file 工具）\n\n")
-        parts.append(existing_doc[:16000] + ("..." if len(existing_doc) > 16000 else ""))
+        parts.append(existing_doc[:8000] + ("..." if len(existing_doc) > 8000 else ""))
         parts.append("\n")
 
     if user_overview:

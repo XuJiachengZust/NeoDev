@@ -1649,6 +1649,37 @@ button.secondary:hover {
   border-color: var(--color-primary);
 }
 
+/* 预生成快捷选项卡 */
+.pre-gen-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.pre-gen-option-chip {
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--color-primary);
+  background: transparent;
+  color: var(--color-primary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.pre-gen-option-chip:hover {
+  background: var(--color-primary);
+  color: #000;
+}
+.pre-gen-option-skip {
+  border-color: var(--color-border);
+  color: var(--color-text-muted);
+}
+.pre-gen-option-skip:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
 /* 审阅模式 */
 .req-doc-review {
   display: flex;
@@ -1689,6 +1720,178 @@ button.secondary:hover {
 }
 .req-tree-item[data-has-doc="true"] .req-doc-status {
   color: #3fb950;
+}
+
+/* ── 需求文档页侧边栏 ── */
+.req-doc-sidebar {
+  width: 260px;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg);
+  overflow: hidden;
+  transition: width 0.2s, min-width 0.2s;
+}
+.req-doc-sidebar--collapsed {
+  width: 36px;
+  min-width: 36px;
+}
+.req-doc-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.req-doc-sidebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.req-doc-sidebar-toggle {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.req-doc-sidebar-toggle:hover {
+  color: var(--color-primary);
+}
+.req-doc-sidebar-tree {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+}
+.req-doc-sidebar-empty {
+  padding: 16px 12px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* 树节点 */
+.req-sidebar-node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  cursor: default;
+  font-size: 12px;
+  line-height: 1.4;
+  border-left: 2px solid transparent;
+  transition: background 0.15s;
+}
+.req-sidebar-node:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.req-sidebar-node--active {
+  background: rgba(0, 240, 255, 0.08);
+  border-left-color: var(--color-primary);
+}
+.req-sidebar-arrow {
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 10px;
+  user-select: none;
+}
+.req-sidebar-arrow:hover {
+  color: var(--color-primary);
+}
+.req-sidebar-arrow-placeholder {
+  width: 14px;
+  flex-shrink: 0;
+}
+.req-sidebar-doc-dot {
+  font-size: 10px;
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+.req-sidebar-doc-dot[data-has-doc="true"] {
+  color: #3fb950;
+}
+.req-sidebar-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--color-text);
+}
+.req-sidebar-title:hover {
+  color: var(--color-primary);
+}
+.req-sidebar-gen-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 2px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.req-sidebar-node:hover .req-sidebar-gen-btn {
+  opacity: 1;
+}
+.req-sidebar-gen-btn:hover {
+  color: var(--color-primary);
+}
+.req-sidebar-gen-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 生成进度 */
+.req-sidebar-gen-progress {
+  padding: 2px 0;
+}
+.req-sidebar-gen-entry {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.req-sidebar-gen-entry.completed .req-sidebar-gen-icon {
+  color: #3fb950;
+}
+.req-sidebar-gen-entry.running .req-sidebar-gen-icon {
+  color: var(--color-primary);
+  animation: req-doc-pulse 1s ease-in-out infinite;
+}
+.req-sidebar-gen-entry.failed .req-sidebar-gen-icon {
+  color: var(--color-danger, #f85149);
+}
+.req-sidebar-gen-icon {
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+.req-sidebar-gen-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── Diff Reviewer (Hunk 级审阅) ── */

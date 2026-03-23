@@ -17,6 +17,7 @@ from service.agent_profiles import build_requirement_doc_prompt
 from service.repositories import product_repository as product_repo
 from service.repositories import product_requirement_repository as requirement_repo
 from service.repositories import product_version_repository as version_repo
+from service.repositories import split_suggestion_repository as split_suggestion_repo
 from service.services import requirement_doc_service as doc_service
 from service.storage import RequirementDocStorage
 
@@ -49,7 +50,7 @@ class DocWorkflowState(TypedDict, total=False):
     code_search_results: str
     graph_search_results: str
     generated_content: str
-    split_suggestions: str | None  # 拆分建议（Epic→Story / Story→Task）
+    split_suggestions: list[dict] | None  # 拆分建议（Epic→Story / Story→Task）结构化 JSON
     status: str  # "running" | "completed" | "failed"
     error: str | None
 
@@ -96,54 +97,52 @@ def _match_generation_seed(section_text: str, child_title: str) -> str:
 
 
 def extract_generation_seed(
-    parent_doc_content: str | None,
+    conn,
+    parent_requirement_id: int,
     level: str,
     child_title: str,
 ) -> str:
-    """
-    按层级从父文档提取本需求的生成种子。
-    Epic 父文档 → 「Story 拆分建议」；Story 父文档 → 「Task 拆分建议」。
-    """
-    if not parent_doc_content or not child_title:
+    """从 DB 拆分建议中提取与 child_title 匹配的生成种子。"""
+    if not child_title or level not in ("story", "task"):
         return ""
-    if level == "story":
-        section = _extract_split_section(parent_doc_content, "Story 拆分建议")
-    elif level == "task":
-        section = _extract_split_section(parent_doc_content, "Task 拆分建议")
-    else:
+    record = split_suggestion_repo.find_by_requirement(conn, parent_requirement_id)
+    if not record:
         return ""
-    return _match_generation_seed(section, child_title)
+    suggestions = record.get("suggestions") or []
+    for item in suggestions:
+        t = item.get("title", "").strip()
+        g = item.get("goal", "").strip()
+        if not t:
+            continue
+        if t == child_title or t in child_title or child_title in t or (len(child_title) >= 10 and child_title[:10] in t):
+            return f"{t}：{g}" if g else t
+    # fallback：返回第一条
+    if suggestions:
+        first = suggestions[0]
+        t, g = first.get("title", ""), first.get("goal", "")
+        return f"{t}：{g}" if g else t
+    return ""
 
 
 def extract_final_goal(
-    parent_doc_content: str | None,
+    conn,
+    parent_requirement_id: int,
     level: str,
     child_title: str,
 ) -> str:
-    """
-    从父文档的「Story 最终目标」或「Task 最终目标」章节中，
-    找到与 child_title 匹配的一行，提取其目标描述。
-    Epic 无父文档，返回空字符串。
-    """
-    if not parent_doc_content or not child_title:
+    """从 DB 拆分建议中提取与 child_title 匹配的业务目标。"""
+    if not child_title or level not in ("story", "task"):
         return ""
-    if level == "story":
-        section = _extract_split_section(parent_doc_content, "Story 最终目标")
-    elif level == "task":
-        section = _extract_split_section(parent_doc_content, "Task 最终目标")
-    else:
+    record = split_suggestion_repo.find_by_requirement(conn, parent_requirement_id)
+    if not record:
         return ""
-    if not section:
-        return ""
-    # 逐行匹配：找含 child_title 关键词的行，提取冒号后的目标描述
-    for line in section.splitlines():
-        line = line.strip()
-        if not line:
+    suggestions = record.get("suggestions") or []
+    for item in suggestions:
+        t = item.get("title", "").strip()
+        if not t:
             continue
-        if child_title in line or (child_title and child_title[:10] in line):
-            # 提取冒号后的内容作为目标
-            parts = re.split(r"[：:]", line, maxsplit=1)
-            return parts[1].strip() if len(parts) > 1 else line
+        if t == child_title or t in child_title or child_title in t or (len(child_title) >= 10 and child_title[:10] in t):
+            return item.get("goal", "").strip()
     return ""
 
 
@@ -172,19 +171,26 @@ def _collect_context(state: DocWorkflowState) -> dict[str, Any]:
     if level not in ("epic", "story", "task"):
         level = "story"
 
-    # 生成种子（子需求时从父文档拆分建议提取）
-    generation_seed = extract_generation_seed(
-        parent_doc_content,
-        level,
-        current.get("title") or "",
-    )
+    # 生成种子（子需求时从 DB 拆分建议提取）
+    parent_id = current.get("parent_id")
+    generation_seed = ""
+    if parent_id:
+        generation_seed = extract_generation_seed(
+            conn,
+            parent_id,
+            level,
+            current.get("title") or "",
+        )
 
-    # 最终目标（从父文档目标章节提取；Epic 无父文档则用需求描述）
-    final_goal = extract_final_goal(
-        parent_doc_content,
-        level,
-        current.get("title") or "",
-    )
+    # 最终目标（从 DB 拆分建议提取；Epic 无父文档则用需求描述）
+    final_goal = ""
+    if parent_id:
+        final_goal = extract_final_goal(
+            conn,
+            parent_id,
+            level,
+            current.get("title") or "",
+        )
     if not final_goal and level == "epic":
         final_goal = current.get("description") or ""
 
@@ -469,7 +475,7 @@ def _generate_doc(state: DocWorkflowState) -> dict[str, Any]:
 
 
 _LLM_USER_MESSAGE = "请根据以上上下文生成完整需求文档，只输出 Markdown 内容，不要附加解释。"
-_LLM_MAX_RETRIES = 2
+_LLM_MAX_RETRIES = 5  # 最多重试5次，每次压缩 prompt
 
 
 def _init_llm():
@@ -489,26 +495,37 @@ def _build_llm_messages(system_prompt: str):
     ]
 
 
+def _compress_prompt(system_prompt: str, ratio: float) -> str:
+    """按比例截断 system_prompt，保留前 ratio 比例的字符，确保不破坏结构。"""
+    max_len = max(500, int(len(system_prompt) * ratio))
+    return system_prompt[:max_len] + "\n\n（上下文已压缩，请根据以上信息生成文档）"
+
+
 def _invoke_llm_for_doc(system_prompt: str, title: str) -> str | None:
-    """调用 LLM 生成文档正文；失败时重试，最终仍失败返回 None。"""
+    """调用 LLM 生成文档正文；失败时重试并逐步压缩 prompt，最终仍失败返回 None。"""
     try:
         llm = _init_llm()
         if not llm:
             return None
-        messages = _build_llm_messages(system_prompt)
 
         last_error: Exception | None = None
+        # 每次重试压缩比例：1.0, 0.8, 0.65, 0.5, 0.4, 0.3
+        compress_ratios = [1.0, 0.8, 0.65, 0.5, 0.4, 0.3]
         for attempt in range(_LLM_MAX_RETRIES + 1):
+            ratio = compress_ratios[min(attempt, len(compress_ratios) - 1)]
+            prompt = _compress_prompt(system_prompt, ratio) if ratio < 1.0 else system_prompt
             try:
+                messages = _build_llm_messages(prompt)
                 response = llm.invoke(messages)
                 content = getattr(response, "content", None) or ""
                 if content.strip():
                     return content.strip()
             except Exception as e:
                 last_error = e
-                logger.warning("LLM 生成文档异常 (尝试 %d/%d): %s", attempt + 1, _LLM_MAX_RETRIES + 1, e, exc_info=True)
+                logger.warning("LLM 生成文档异常 (尝试 %d/%d, 压缩比 %.0f%%): %s",
+                               attempt + 1, _LLM_MAX_RETRIES + 1, ratio * 100, e)
                 if attempt < _LLM_MAX_RETRIES:
-                    time.sleep(2 ** attempt)
+                    time.sleep(min(2 ** attempt, 16))
         if last_error:
             logger.error("LLM 生成文档最终失败 (重试 %d 次): %s", _LLM_MAX_RETRIES, last_error)
         return None
@@ -518,15 +535,18 @@ def _invoke_llm_for_doc(system_prompt: str, title: str) -> str | None:
 
 
 def _invoke_llm_for_doc_stream(system_prompt: str) -> Iterator[str]:
-    """流式调用 LLM 生成文档，逐 token yield；全部失败时不产出任何内容。"""
+    """流式调用 LLM 生成文档，逐 token yield；失败时压缩 prompt 重试，全部失败时不产出任何内容。"""
     try:
         llm = _init_llm()
         if not llm:
             return
-        messages = _build_llm_messages(system_prompt)
 
+        compress_ratios = [1.0, 0.8, 0.65, 0.5, 0.4, 0.3]
         for attempt in range(_LLM_MAX_RETRIES + 1):
+            ratio = compress_ratios[min(attempt, len(compress_ratios) - 1)]
+            prompt = _compress_prompt(system_prompt, ratio) if ratio < 1.0 else system_prompt
             try:
+                messages = _build_llm_messages(prompt)
                 has_content = False
                 for chunk in llm.stream(messages):
                     text = getattr(chunk, "content", None) or ""
@@ -536,9 +556,10 @@ def _invoke_llm_for_doc_stream(system_prompt: str) -> Iterator[str]:
                 if has_content:
                     return
             except Exception as e:
-                logger.warning("LLM 流式生成异常 (尝试 %d/%d): %s", attempt + 1, _LLM_MAX_RETRIES + 1, e, exc_info=True)
+                logger.warning("LLM 流式生成异常 (尝试 %d/%d, 压缩比 %.0f%%): %s",
+                               attempt + 1, _LLM_MAX_RETRIES + 1, ratio * 100, e)
                 if attempt < _LLM_MAX_RETRIES:
-                    time.sleep(2 ** attempt)
+                    time.sleep(min(2 ** attempt, 16))
                 else:
                     logger.error("LLM 流式生成最终失败 (重试 %d 次): %s", _LLM_MAX_RETRIES, e)
     except Exception as e:
@@ -582,34 +603,36 @@ def _save_draft(state: DocWorkflowState) -> dict[str, Any]:
 
 def _generate_split_suggestions(state: DocWorkflowState) -> dict[str, Any]:
     """
-    为 Epic/Story 生成拆分建议（独立 LLM 调用）。
+    为 Epic/Story 生成拆分建议（独立 LLM 调用，结构化 JSON 输出）。
     Epic → Story 拆分建议；Story → Task 拆分建议；Task 跳过。
-    章节标题由代码固定拼接，LLM 只输出列表内容。
-    结果追加到文档末尾并重新保存。
+    结果存入 DB（requirement_split_suggestions 表），不再追加到文档内容。
     """
+    from pydantic import BaseModel, Field
+
+    class SplitSuggestionItem(BaseModel):
+        title: str = Field(description="子需求标题")
+        goal: str = Field(description="业务目标：该需求完成后用户能做什么或获得什么结果")
+
+    class SplitSuggestionsOutput(BaseModel):
+        suggestions: list[SplitSuggestionItem] = Field(description="拆分建议列表")
+
     level = (state.get("level") or "epic").lower()
     if level not in ("epic", "story"):
         return {"split_suggestions": None}
 
-    # 固定章节标题
-    section_heading = "## Story 拆分建议" if level == "epic" else "## Task 拆分建议"
     child_level = "Story" if level == "epic" else "Task"
-
-    # 如果文档中已有固定章节标题，跳过
-    content = state.get("generated_content") or ""
-    if section_heading in content:
-        return {"split_suggestions": None}
-
     title = state.get("requirement_title") or ""
     desc = state.get("requirement_description") or ""
-
+    content = state.get("generated_content") or ""
     final_goal = state.get("final_goal") or ""
 
     system_prompt = (
         f"你是一位敏捷需求拆分专家。根据以下需求信息，生成{child_level}拆分建议列表。\n"
-        f"输出格式严格要求：每条一行，格式为「- {child_level}标题：一句话最终目标描述」，标题和目标必须在同一行，不允许换行。\n"
-        f"目标描述要从用户/业务价值角度描述，说明该{child_level}完成后能达到什么结果。\n"
-        f"不要输出标题、前言、序号或其他任何内容，只输出列表。\n\n"
+        f"每条建议包含 title（子需求标题）和 goal（业务目标）。\n"
+        f"目标描述要从用户/业务价值角度描述，说明该{child_level}完成后用户能做什么或获得什么结果。\n"
+        f"禁止使用「职责」「负责」「开发并提供」「实现...的核心逻辑」等实现视角的描述，目标必须是可验收的业务成果。\n"
+        f"正确示例：title=导入模板下载功能, goal=用户可以下载标准Excel模板，按模板格式准备批量导入数据\n"
+        f"错误示例：title=导入模板下载功能, goal=开发并提供标准Excel模板的下载接口与前端界面\n\n"
         f"需求标题：{title}\n"
         f"需求描述：{desc or '（无）'}\n"
         f"产品：{state.get('product_name') or ''}\n"
@@ -618,42 +641,54 @@ def _generate_split_suggestions(state: DocWorkflowState) -> dict[str, Any]:
     if content:
         system_prompt += f"\n已生成的文档摘要（前2000字）：\n{content[:2000]}\n"
 
-    try:
-        suggestions = _invoke_llm_for_doc(system_prompt, title)
-    except Exception:
-        suggestions = None
-
-    if not suggestions:
-        return {"split_suggestions": None}
-
-    # 追加到文档末尾：拆分建议章节 + 最终目标章节（供子文档提取）
     conn = state.get("conn")
-    storage: RequirementDocStorage | None = state.get("storage")
-    product_id = state.get("product_id")
     requirement_id = state.get("requirement_id")
 
-    # 最终目标章节标题固定
-    goal_heading = "## Story 最终目标" if level == "epic" else "## Task 最终目标"
-    section_heading_line = f"\n\n{section_heading}\n"
-    goal_heading_line = f"\n\n{goal_heading}\n"
-    updated_content = (
-        content.rstrip()
-        + section_heading_line + suggestions.strip()
-        + goal_heading_line + suggestions.strip()
-    )
+    try:
+        llm = _init_llm()
+        if not llm:
+            return {"split_suggestions": None}
 
-    if conn and storage and product_id and requirement_id:
-        try:
-            doc_service.save_doc(conn, storage, product_id, requirement_id, updated_content, generated_by="workflow")
-            conn.commit()
-        except Exception as e:
-            logger.warning("追加拆分建议保存失败: %s", e)
+        structured_llm = llm.with_structured_output(SplitSuggestionsOutput)
+
+        result = None
+        compress_ratios = [1.0, 0.8, 0.65, 0.5, 0.4]
+        for attempt in range(len(compress_ratios)):
+            ratio = compress_ratios[attempt]
+            prompt = _compress_prompt(system_prompt, ratio) if ratio < 1.0 else system_prompt
             try:
-                conn.rollback()
-            except Exception:
-                pass
+                msgs = _build_llm_messages(prompt)
+                result = structured_llm.invoke(msgs)
+                if result and result.suggestions:
+                    break
+            except Exception as e:
+                logger.warning("结构化拆分建议生成异常 (尝试 %d/%d, 压缩比 %.0f%%): %s",
+                               attempt + 1, len(compress_ratios), ratio * 100, e)
+                if attempt < len(compress_ratios) - 1:
+                    time.sleep(min(2 ** attempt, 16))
 
-    return {"split_suggestions": suggestions.strip(), "generated_content": updated_content}
+        if not result or not result.suggestions:
+            return {"split_suggestions": None}
+
+        suggestions_list = [item.model_dump() for item in result.suggestions]
+
+        # 存入 DB
+        if conn and requirement_id:
+            try:
+                split_suggestion_repo.upsert(conn, requirement_id, suggestions_list, "workflow")
+                conn.commit()
+            except Exception as e:
+                logger.warning("拆分建议存储失败: %s", e)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
+        return {"split_suggestions": suggestions_list}
+
+    except Exception as e:
+        logger.error("拆分建议生成失败: %s", e, exc_info=True)
+        return {"split_suggestions": None}
 
 
 # ── 图构建 ──
@@ -869,7 +904,7 @@ def run_doc_workflow_stream(
             suggestions = state.get("split_suggestions")
             yield {"event": "workflow_step", "data": {"step": "generate_split_suggestions", "status": "done"}}
             if suggestions:
-                yield {"event": "split_suggestions", "data": {"content": suggestions}}
+                yield {"event": "split_suggestions", "data": {"suggestions": suggestions}}
 
         meta = None
         if state.get("status") == "completed":
@@ -905,6 +940,23 @@ def run_doc_workflow_stream(
 # ── 批量生成子级：Step 0 解析 + 逐子需求工作流 ──
 
 
+def _parse_text_to_suggestions(section_text: str) -> list[dict]:
+    """将旧格式纯文本拆分建议解析为结构化 JSON（用于 fallback 迁移）。"""
+    suggestions = []
+    for line in section_text.splitlines():
+        line = re.sub(r"^[\s\-*•]\s*", "", line).strip()
+        line = re.sub(r"^\d+[\.\、]\s*", "", line).strip()
+        line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
+        if not line:
+            continue
+        parts = re.split(r"[：:]", line, maxsplit=1)
+        if len(parts) == 2:
+            suggestions.append({"title": parts[0].strip(), "goal": parts[1].strip()})
+        else:
+            suggestions.append({"title": line, "goal": ""})
+    return suggestions
+
+
 def decompose_parent_doc(
     conn,
     storage: RequirementDocStorage,
@@ -913,96 +965,90 @@ def decompose_parent_doc(
     version_id: int | None = None,
 ) -> list[dict[str, Any]]:
     """
-    解析父文档拆分建议，与已有子需求匹配或创建新子需求，返回带 generation_seed、is_new 的列表。
-    步骤4 可用 LLM 提取条目；此处用正则解析章节并与 list_by_product(parent_id) 匹配/创建。
+    从 DB 读取结构化拆分建议，与已有子需求匹配或创建新子需求，返回带 generation_seed、is_new 的列表。
+    Fallback：DB 无记录时从旧文档解析并自动迁移到 DB。
     """
-    parent_doc = storage.read(product_id, parent_requirement_id)
     parent_req = requirement_repo.find_by_id(conn, parent_requirement_id)
     if not parent_req:
         return []
-    # version_id 优先使用参数传入，否则继承父需求的 version_id
     if version_id is None:
         version_id = parent_req.get("version_id")
     parent_level = (parent_req.get("level") or "story").lower()
-    children = requirement_repo.list_by_product(
-        conn, product_id, parent_id=parent_requirement_id
-    )
+    if parent_level not in ("epic", "story"):
+        return []
+    child_level = "story" if parent_level == "epic" else "task"
 
-    if parent_level == "epic":
-        section = _extract_split_section(parent_doc, "Story 拆分建议")
-        child_level = "story"
-    elif parent_level == "story":
-        section = _extract_split_section(parent_doc, "Task 拆分建议")
-        child_level = "task"
-    else:
+    # ── 1. 从 DB 读取结构化拆分建议 ──
+    record = split_suggestion_repo.find_by_requirement(conn, parent_requirement_id)
+    suggestions = []
+    if record:
+        suggestions = record.get("suggestions") or []
+
+    # ── 1b. Fallback：DB 无记录时从旧文档解析并迁移 ──
+    if not suggestions:
+        parent_doc = storage.read(product_id, parent_requirement_id)
+        section_key = "Story 拆分建议" if parent_level == "epic" else "Task 拆分建议"
+        section = _extract_split_section(parent_doc, section_key)
+        if section:
+            suggestions = _parse_text_to_suggestions(section)
+            if suggestions:
+                try:
+                    split_suggestion_repo.upsert(conn, parent_requirement_id, suggestions, "migrated")
+                    conn.commit()
+                except Exception as e:
+                    logger.warning("迁移旧拆分建议到 DB 失败: %s", e)
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+
+    if not suggestions:
         return []
 
-    lines = [ln.strip() for ln in section.splitlines() if ln.strip()]
-    def norm(s: str) -> str:
-        # 去掉列表前缀、序号、加粗标记
-        s = re.sub(r"^[\s\-*•]\s*", "", s)
-        s = re.sub(r"^\d+[\.\、]\s*", "", s)
-        s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)
-        return s.strip()
+    # ── 2. 加载已有子需求 ──
+    children = requirement_repo.list_by_product(conn, product_id, parent_id=parent_requirement_id)
 
-    # 将多行合并为条目：以「Story N：」或「Task N：」开头的行是标题，
-    # 紧跟的「职责：」行合并到同一条目
-    entries: list[str] = []
-    i = 0
-    while i < len(lines):
-        current = norm(lines[i])
-        if not current:
-            i += 1
-            continue
-        # 检查下一行是否是职责补充行（以「职责：」开头，或不以列表符/序号开头）
-        if i + 1 < len(lines):
-            next_line = norm(lines[i + 1])
-            next_raw = lines[i + 1].strip()
-            is_continuation = (
-                next_raw.startswith("职责") or
-                next_raw.startswith("说明") or
-                (not re.match(r"^[\-*•]|\d+[\.\、]", next_raw) and
-                 not re.match(r"^(Story|Task)\s*\d+", next_raw, re.IGNORECASE))
-            )
-            if is_continuation and next_line:
-                # 合并：标题 + 职责描述
-                combined = current.rstrip("：:") + "：" + re.sub(r"^职责[：:]\s*|^说明[：:]\s*", "", next_line)
-                entries.append(combined)
-                i += 2
-                continue
-        entries.append(current)
-        i += 1
-
+    # ── 3. 逐条匹配 ──
     result: list[dict[str, Any]] = []
     used_child_ids: set[int] = set()
 
-    for seed in entries:
-        if not seed:
+    for item in suggestions:
+        title = item.get("title", "").strip()
+        goal = item.get("goal", "").strip()
+        if not title:
             continue
-        # 尝试匹配已有子需求（标题包含种子关键词或种子包含标题）
+
         matched = None
         for c in children:
             if c["id"] in used_child_ids:
                 continue
-            title = (c.get("title") or "").strip()
-            if title in seed or seed in title or (title and seed and title[:20] in seed):
+            c_title = (c.get("title") or "").strip()
+            if not c_title:
+                continue
+            if c_title == title:
                 matched = c
                 break
+            if c_title in title or title in c_title:
+                matched = c
+                break
+            if len(c_title) >= 10 and c_title[:20] in title:
+                matched = c
+                break
+
         if matched:
             used_child_ids.add(matched["id"])
             result.append({
                 "requirement_id": matched["id"],
                 "title": matched.get("title"),
-                "generation_seed": seed,
+                "generation_seed": f"{title}：{goal}" if goal else title,
                 "is_new": False,
             })
         else:
-            # 创建新子需求
             try:
                 new_req = requirement_repo.create(
                     conn,
                     product_id=product_id,
-                    title=seed[:200] if len(seed) > 200 else seed,
+                    title=title[:200],
                     level=child_level,
                     parent_id=parent_requirement_id,
                     version_id=version_id,
@@ -1010,22 +1056,21 @@ def decompose_parent_doc(
                 result.append({
                     "requirement_id": new_req["id"],
                     "title": new_req.get("title"),
-                    "generation_seed": seed,
+                    "generation_seed": f"{title}：{goal}" if goal else title,
                     "is_new": True,
                 })
             except Exception:
                 continue
 
-    # 未匹配到的已有子需求也加入，seed 为空
+    # 未匹配的已有子需求也加入
     for c in children:
-        if c["id"] in used_child_ids:
-            continue
-        result.append({
-            "requirement_id": c["id"],
-            "title": c.get("title"),
-            "generation_seed": "",
-            "is_new": False,
-        })
+        if c["id"] not in used_child_ids:
+            result.append({
+                "requirement_id": c["id"],
+                "title": c.get("title"),
+                "generation_seed": "",
+                "is_new": False,
+            })
 
     return result
 

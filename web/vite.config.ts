@@ -16,6 +16,20 @@ export default defineConfig({
       "/api": {
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
+        configure: (proxy, _options) => {
+          proxy.on('proxyReq', (proxyReq, req, _res) => {
+            // SSE 请求：禁用缓冲
+            if (req.headers.accept?.includes('text/event-stream')) {
+              proxyReq.setHeader('X-Accel-Buffering', 'no');
+            }
+          });
+          proxy.on('proxyRes', (proxyRes, req, _res) => {
+            // SSE 响应：禁用缓冲
+            if (proxyRes.headers['content-type']?.includes('text/event-stream')) {
+              proxyRes.headers['x-accel-buffering'] = 'no';
+            }
+          });
+        },
       },
     },
   },

@@ -17,3 +17,4 @@ COPY docker/migrations/013_version_feature_summaries.sql            /docker-entr
 COPY docker/migrations/014_requirement_doc_meta.sql                 /docker-entrypoint-initdb.d/014_requirement_doc_meta.sql
 COPY docker/migrations/015_ai_description_cache.sql                 /docker-entrypoint-initdb.d/015_ai_description_cache.sql
 COPY docker/migrations/016_doc_generation_status.sql                /docker-entrypoint-initdb.d/016_doc_generation_status.sql
+COPY docker/migrations/017_split_suggestions.sql                    /docker-entrypoint-initdb.d/017_split_suggestions.sql

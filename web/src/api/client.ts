@@ -840,7 +840,7 @@ export function canGenerateChildren(
 }
 
 /** 文档编辑 Agent SSE 事件类型 */
-export type DocChatEventType = "token" | "done" | "error" | "content_start" | "subagent_token" | "subagent_tool_event" | "recursion_limit" | "tool_start" | "tool_end";
+export type DocChatEventType = "token" | "done" | "error" | "content_start" | "subagent_token" | "subagent_tool_event" | "recursion_limit" | "tool_start" | "tool_end" | "options";
 
 export interface DocChatStreamHandle {
   abort(): void;
@@ -867,17 +867,21 @@ export function streamDocEditorChat(
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let eventType: string = "message";
       function pump() {
         if (!reader) return;
         reader.read().then(({ done, value }) => {
-          if (done) return;
+          if (done) {
+            callbacks.done?.({});
+            return;
+          }
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
-          let eventType: string = "message";
           for (const line of lines) {
-            if (line.startsWith("event:")) eventType = line.slice(6).trim();
-            else if (line.startsWith("data:")) {
+            if (line.startsWith("event:")) {
+              eventType = line.slice(6).trim();
+            } else if (line.startsWith("data:")) {
               const raw = line.slice(5).trim();
               try {
                 const data = raw ? JSON.parse(raw) : {};
@@ -886,6 +890,8 @@ export function streamDocEditorChat(
               } catch {
                 // ignore
               }
+            } else if (line === "") {
+              eventType = "message";
             }
           }
           pump();
@@ -916,20 +922,24 @@ function parseSSEStream(
   const reader = res.body?.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let eventType: string = "message";
 
   async function pump() {
     if (!reader) return;
     try {
       for (;;) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          callbacks.workflow_done?.({ status: "completed" });
+          break;
+        }
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-        let eventType: string = "message";
         for (const line of lines) {
-          if (line.startsWith("event:")) eventType = line.slice(6).trim();
-          else if (line.startsWith("data:")) {
+          if (line.startsWith("event:")) {
+            eventType = line.slice(6).trim();
+          } else if (line.startsWith("data:")) {
             const raw = line.slice(5).trim();
             try {
               const data = raw ? JSON.parse(raw) : {};
@@ -938,6 +948,8 @@ function parseSSEStream(
             } catch {
               // ignore parse error
             }
+          } else if (line === "") {
+            eventType = "message";
           }
         }
       }
@@ -998,25 +1010,42 @@ export function streamPreGenerateChat(
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let eventType: string = "message";
+      let receivedOptions = false;
       function pump() {
         if (!reader) return;
         reader.read().then(({ done, value }) => {
-          if (done) return;
+          if (done) {
+            // SSE 连接关闭，如果没收到 options 事件则调用 done 停止流式状态
+            if (!receivedOptions) {
+              callbacks.done?.({});
+            }
+            return;
+          }
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
-          let eventType: string = "message";
           for (const line of lines) {
-            if (line.startsWith("event:")) eventType = line.slice(6).trim();
-            else if (line.startsWith("data:")) {
+            if (line.startsWith("event:")) {
+              eventType = line.slice(6).trim();
+            } else if (line.startsWith("data:")) {
               const raw = line.slice(5).trim();
               try {
                 const data = raw ? JSON.parse(raw) : {};
                 const fn = callbacks[eventType as DocChatEventType];
-                if (fn) fn(data);
+                if (fn) {
+                  fn(data);
+                  // 标记已收到 options 事件
+                  if (eventType === "options") {
+                    receivedOptions = true;
+                  }
+                }
               } catch {
                 // ignore
               }
+            } else if (line === "") {
+              // 空行表示事件结束，重置 eventType
+              eventType = "message";
             }
           }
           pump();
@@ -1042,6 +1071,49 @@ export function getDocGenerationStatus(
 ): Promise<DocGenerationStatus> {
   return request<DocGenerationStatus>(
     `/api/products/${productId}/requirements/${requirementId}/doc/generation-status`
+  );
+}
+
+// ── 拆分建议 CRUD ──
+
+export interface SplitSuggestion {
+  title: string;
+  goal: string;
+}
+
+export interface SplitSuggestionsResponse {
+  suggestions: SplitSuggestion[];
+  generated_by: string | null;
+  updated_at: string | null;
+}
+
+export function getSplitSuggestions(
+  productId: number,
+  reqId: number
+): Promise<SplitSuggestionsResponse> {
+  return request<SplitSuggestionsResponse>(
+    `/api/products/${productId}/requirements/${reqId}/doc/split-suggestions`
+  );
+}
+
+export function saveSplitSuggestions(
+  productId: number,
+  reqId: number,
+  suggestions: SplitSuggestion[]
+): Promise<SplitSuggestionsResponse> {
+  return request<SplitSuggestionsResponse>(
+    `/api/products/${productId}/requirements/${reqId}/doc/split-suggestions`,
+    { method: "PUT", body: { suggestions } }
+  );
+}
+
+export function deleteSplitSuggestions(
+  productId: number,
+  reqId: number
+): Promise<void> {
+  return request<void>(
+    `/api/products/${productId}/requirements/${reqId}/doc/split-suggestions`,
+    { method: "DELETE" }
   );
 }
 
