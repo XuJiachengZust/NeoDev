@@ -271,34 +271,61 @@ def build_retriever_subagent(
         "---\n"
         "\n"
         "请勿输出大段未加工的代码，只提取与问题直接相关的片段。请用中文回答。\n"
+        "\n"
+        "## 目标导向原则\n"
+        "- 你的任务消息开头会包含「用户最终目标」，你的所有检索必须围绕这个目标展开\n"
+        "- 只检索与最终目标直接相关的代码，避免泛泛的全面搜索\n"
+        "- 在回复的「结论」部分说明你的发现如何服务于用户的最终目标\n"
     )
 
     # ── 路径部分（按模式追加） ──
     path_section = ""
     if project_path:
         path_section = (
-            "\n## 可用项目仓库\n"
-            f"项目仓库挂载在 {project_path} 目录下。\n"
-            "所有搜索和读取操作从此路径开始，例如：\n"
-            f'- grep("keyword", path="{project_path}")\n'
-            f'- glob("**/*.py", path="{project_path}")\n'
-            f'- read_file("{project_path}src/main.py")\n'
-            "请勿搜索其他路径。\n"
+            "\n## 可用项目仓库（重要：必须使用以下路径）\n"
+            f"项目仓库挂载在 **{project_path}** 目录下。\n"
+            "所有搜索和读取操作必须从此路径开始。\n"
+            "\n"
+            "### 工具调用示例\n"
+            f'- ls("{project_path}") — 查看项目根目录结构\n'
+            f'- grep("keyword", path="{project_path}") — 全局搜索关键字\n'
+            f'- glob("**/*.java", path="{project_path}") — 查找所有 Java 文件\n'
+            f'- glob("**/*.py", path="{project_path}") — 查找所有 Python 文件\n'
+            f'- read_file("{project_path}pom.xml") — 读取项目配置文件\n'
+            "\n"
+            "### 定位源代码的策略\n"
+            "1. 先用 ls 查看项目根目录，识别项目类型（Java/Python/JS 等）和目录布局\n"
+            "2. Java 项目源码通常在 `src/main/java/` 下的深层包目录中（如 `com/example/app/`）\n"
+            "3. 用 grep 搜索关键字定位具体文件，比盲目浏览目录更高效\n"
+            "\n"
+            f"⚠ 代码只在 **{project_path}** 下，请勿在其他路径搜索。\n"
         )
     elif project_repo_map:
-        repo_lines = "\n".join(f"- {p}" for p in project_repo_map.values())
+        repo_lines = "\n".join(
+            f"- **{name}** → {path}" for name, path in project_repo_map.items()
+        )
         path_section = (
-            "\n## 可用项目仓库\n"
+            "\n## 可用项目仓库（重要：必须使用以下路径）\n"
             "以下项目仓库已挂载，可直接访问：\n"
             f"{repo_lines}\n"
-            "请在对应路径下搜索和阅读代码，例如：\n"
+            "\n"
         )
-        # 取第一个作为示例
         first_name = next(iter(project_repo_map))
         first_path = project_repo_map[first_name]
         path_section += (
-            f'- grep("className", path="{first_path}")\n'
-            f'- glob("**/*.java", path="{first_path}")\n'
+            "### 工具调用示例\n"
+            f'- ls("{first_path}") — 查看项目根目录结构\n'
+            f'- grep("className", path="{first_path}") — 搜索代码\n'
+            f'- glob("**/*.java", path="{first_path}") — 查找 Java 文件\n'
+            f'- glob("**/*.py", path="{first_path}") — 查找 Python 文件\n'
+            "\n"
+            "### 定位源代码的策略\n"
+            "1. 先用 ls 查看项目根目录，识别项目类型和目录布局\n"
+            "2. Java 项目源码通常在 `src/main/java/` 下的深层包目录中（如 `com/example/app/`）\n"
+            "3. Python 项目源码通常在 `src/` 或项目同名目录下\n"
+            "4. 用 grep 搜索关键字定位具体文件，比逐级浏览目录更高效\n"
+            "\n"
+            "⚠ 代码只在上述项目路径下，请勿在其他路径搜索。\n"
         )
 
     # ── 版本分支部分 ──
@@ -372,6 +399,11 @@ def build_commit_analyzer_subagent(
         "- 关键 diff 片段用 markdown 代码块包裹\n"
         "- 每个 diff 片段不超过 15 行，聚焦核心变更\n"
         "- 请用中文回答\n"
+        "\n"
+        "## 目标导向原则\n"
+        "- 你的任务消息开头会包含「用户最终目标」，你的分析必须围绕这个目标展开\n"
+        "- 重点分析与最终目标相关的变更文件和代码，跳过无关的配置/格式变更\n"
+        "- 在「变更摘要」中说明分析结果与用户最终目标的关联\n"
     )
 
     # ── 项目路径部分 ──
@@ -469,6 +501,11 @@ def build_nexus_subagent(
         "- 简洁：TL;DR 在前，细节在后\n"
         "- Mermaid 图中节点 ID 使用简化名，标签用引号包裹\n"
         "- 请用中文回答\n"
+        "\n"
+        "## 目标导向原则\n"
+        "- 你的任务消息开头会包含「用户最终目标」，你的图谱查询必须围绕这个目标展开\n"
+        "- 只查询与最终目标直接相关的节点和关系，避免无方向的全图探索\n"
+        "- 在 TL;DR 中说明你的图谱分析结果如何服务于用户的最终目标\n"
     )
 
     # ── 项目上下文 ──
@@ -511,7 +548,25 @@ def build_nexus_subagent(
 
 # ── 需求文档 Agent：公共前缀与三级模版 ──
 
-_REQ_DOC_PROMPT_PREFIX = (
+# 工作流生成专用 prompt（一次性生成完整文档）
+_REQ_DOC_GENERATION_PREFIX = (
+    "你是 NeoDev 需求文档生成专家。你的任务是根据提供的上下文信息，一次性生成完整的需求文档。\n"
+    "\n"
+    "## 核心规则（最高优先级）\n"
+    "⚠ **直接输出完整的 Markdown 文档内容，不要附加任何解释、说明或元信息。**\n"
+    "⚠ **不要输出工具调用过程**（如 `read_file`、`grep` 等），这些已经在上下文中提供。\n"
+    "⚠ **不要输出「我将...」「首先...」「接下来...」等过程描述**，直接输出文档正文。\n"
+    "⚠ 输出的第一行必须是文档标题（`# {标题}`），最后一行是文档末尾，中间是文档正文。\n"
+    "\n"
+    "## 文档生成原则\n"
+    "- 严格按照下方模版结构输出纯 Markdown 格式\n"
+    "- 内容要具体、可执行，禁止空洞描述\n"
+    "- 使用 Mermaid 图表可视化关键流程和架构\n"
+    "- 基于提供的上下文（父文档、代码检索、图谱检索）生成内容，不要凭空编造\n"
+)
+
+# 编辑 Agent 专用 prompt（交互式编辑已有文档）
+_REQ_DOC_EDIT_PREFIX = (
     "你是 NeoDev 需求文档编辑专家。文档已放置在沙箱工作区文件 `/workspace/sandbox/requirement_doc.md`，你通过 edit_file 工具直接编辑它。\n"
     "\n"
     "## 核心规则（最高优先级）\n"
@@ -618,9 +673,12 @@ _REQ_DOC_STORY_TEMPLATE = (
     "\n"
     "### 上下文使用规则\n"
     "- 父 Epic 文档提供业务背景和范围，在此框架内细化，不要重复宏观描述\n"
-    "- 图检索结果描述现有业务逻辑，用于说明「现有是怎样的、本 Story 要改什么」\n"
-    "- **禁止**出现技术栈、架构设计、代码结构、数据库表设计等技术内容\n"
-    "- **禁止**出现「Task 拆分建议」章节，拆分由系统单独处理\n"
+    "- 代码/图检索结果**仅用于理解现有业务逻辑**，帮助你描述「现状是什么、本 Story 要改什么」\n"
+    "- **严格禁止**：\n"
+    "  - 不要出现任何技术栈、架构设计、代码结构、数据库表设计、API 设计等技术内容\n"
+    "  - 不要出现「Task 拆分建议」「技术方案」「实现步骤」等章节，拆分由系统单独处理\n"
+    "  - 不要引用代码片段、文件路径、类名、函数名等技术细节\n"
+    "  - 不要描述「如何实现」，只描述「用户看到什么、系统做什么」\n"
     "\n"
     "### 输出模版\n"
     "严格按照以下 Markdown 结构输出：\n"
@@ -660,39 +718,65 @@ _REQ_DOC_TASK_TEMPLATE = (
     "\n"
     "## 你的角色：Task 技术方案专家\n"
     "\n"
-    "### 文档目标\n"
-    "Task 是最终的可执行技术任务，文档只需提供两件事：\n"
-    "1. **将要编辑的文件目录清单**：列出需要新增或修改的文件完整路径，每个文件一句话说明改动内容\n"
-    "2. **关键伪代码**：每个核心文件的实现逻辑用伪代码表达，不需要完整可运行代码\n"
-    "不要写架构设计、技术选型、测试方案、影响范围等内容，保持简洁可执行。\n"
+    "### 文档目标（严格遵守）\n"
+    "Task 是最终的可执行技术任务，文档**必须且只需**提供两件事：\n"
+    "1. **文件改动清单**：列出需要新增或修改的文件**完整路径**（必须是真实存在或即将创建的路径），每个文件一句话说明改动内容\n"
+    "2. **关键伪代码**：每个核心文件的实现逻辑用伪代码表达（不需要完整可运行代码，但必须包含核心逻辑）\n"
+    "\n"
+    "### 严格禁止\n"
+    "- 不要写架构设计、技术选型、测试方案、影响范围分析等内容\n"
+    "- 不要写「背景」「目标」「验收标准」等业务层面的章节（这些在 Story 中已有）\n"
+    "- 不要写空洞的文件路径（如「待定」「根据实际情况」），必须给出精确路径\n"
+    "- 不要省略伪代码，每个核心文件都必须有对应的实现逻辑描述\n"
     "\n"
     "### 上下文使用规则\n"
-    "- 父 Story 文档提供业务逻辑，将其转化为具体文件改动\n"
-    "- 代码检索结果提供真实文件路径，优先基于现有路径定位修改点\n"
-    "- 图谱检索结果提供模块依赖，用于判断需要改哪些文件\n"
+    "- 父 Story 文档提供业务逻辑，你的任务是将其转化为**具体文件改动和伪代码**\n"
+    "- **代码检索结果是关键**：从中提取真实文件路径、现有类名/函数名，基于现有代码结构定位修改点\n"
+    "- 图谱检索结果提供模块依赖，用于判断需要改哪些文件、调用哪些接口\n"
+    "- 如果检索结果不足，基于项目常见结构推断路径（如 `src/service/routers/xxx.py`），但必须给出具体路径\n"
     "\n"
-    "### 输出模版\n"
-    "严格按照以下 Markdown 结构输出：\n"
+    "### 输出模版（严格遵守，不要添加其他章节）\n"
+    "**警告**：如果你的输出包含「用户故事」「验收标准」「业务流程」等业务层面的章节，说明你理解错了任务。\n"
+    "Task 文档只写技术实现，不写业务描述。必须且只能包含以下 3 个章节：\n"
     "\n"
     "# {Task 标题}\n"
     "\n"
     "## 1. 技术概述\n"
-    "- 一句话描述这个 Task 的技术目标\n"
+    "- 一句话描述这个 Task 的技术目标（如：新增 XXX API 路由、实现 YYY 组件）\n"
     "- 所属层级（前端 / 后端 / 数据库 / 其他）\n"
     "\n"
     "## 2. 文件改动清单\n"
+    "**必须列出所有需要改动的文件，路径必须精确到文件名。**\n"
+    "\n"
     "### 新增文件\n"
-    "- `完整/文件/路径.ext` — 职责说明\n"
+    "- `src/service/routers/example.py` — 新增 XXX 路由，处理 YYY 请求\n"
+    "- `web/src/components/ExampleComponent.tsx` — 新增 XXX 组件，展示 YYY 数据\n"
     "\n"
     "### 修改文件\n"
-    "- `完整/文件/路径.ext` — 改动内容摘要\n"
+    "- `src/service/repositories/example_repository.py` — 新增 get_xxx() 方法，查询 YYY 数据\n"
+    "- `web/src/api/client.ts` — 新增 fetchXxx() 接口调用\n"
     "\n"
     "## 3. 关键伪代码\n"
-    "（每个核心文件的实现逻辑，用代码块包裹，写伪代码即可）\n"
+    "**每个核心文件都必须提供伪代码，描述核心实现逻辑。**\n"
     "\n"
+    "```python\n"
+    "# 文件：src/service/routers/example.py\n"
+    "@router.get(\"/api/example\")\n"
+    "def get_example(conn=Depends(get_db)):\n"
+    "    # 1. 调用 repository 查询数据\n"
+    "    data = example_repo.get_xxx(conn, param)\n"
+    "    # 2. 转换为响应格式\n"
+    "    return {\"data\": data}\n"
     "```\n"
-    "// 文件：完整/文件/路径.ext\n"
-    "// 伪代码描述核心逻辑\n"
+    "\n"
+    "```typescript\n"
+    "// 文件：web/src/components/ExampleComponent.tsx\n"
+    "export function ExampleComponent() {\n"
+    "  // 1. 调用 API 获取数据\n"
+    "  const { data } = useQuery(['example'], fetchXxx)\n"
+    "  // 2. 渲染数据\n"
+    "  return <div>{data.map(...)}</div>\n"
+    "}\n"
     "```\n"
 )
 
@@ -761,13 +845,21 @@ def build_requirement_doc_prompt(
     existing_doc: str | None = None,
     user_overview: str | None = None,
     final_goal: str | None = None,
+    for_editing: bool = False,
+    project_repo_map: dict[str, str] | None = None,
 ) -> str:
-    """根据需求级别和上下文动态构建 system_prompt，供工作流 GenerateDoc 与编辑 Agent 共用。"""
+    """根据需求级别和上下文动态构建 system_prompt。
+
+    for_editing=False: 工作流一次性生成（使用 _REQ_DOC_GENERATION_PREFIX）
+    for_editing=True: 交互式编辑 Agent（使用 _REQ_DOC_EDIT_PREFIX）
+    """
     level = (level or "story").lower()
     if level not in ("epic", "story", "task"):
         level = "story"
 
-    parts: list[str] = [_REQ_DOC_PROMPT_PREFIX]
+    # 根据场景选择不同的 prefix
+    prefix = _REQ_DOC_EDIT_PREFIX if for_editing else _REQ_DOC_GENERATION_PREFIX
+    parts: list[str] = [prefix]
 
     if level == "epic":
         parts.append(_REQ_DOC_EPIC_TEMPLATE)
@@ -776,11 +868,16 @@ def build_requirement_doc_prompt(
     else:
         parts.append(_REQ_DOC_TASK_TEMPLATE)
 
-    # 最终目标（参考约束，不得覆盖文档模版的用户视角要求）
+    # 最终目标（Story 和 Task 的注释不同）
     if final_goal:
-        parts.append("\n\n## 最终目标（参考方向，文档内容仍须从用户视角描述）\n")
-        parts.append(f"> {final_goal}\n")
-        parts.append("> 注意：请围绕此目标展开，但用户故事和验收标准必须从用户视角撰写，不要直接复述此目标作为描述。\n")
+        if level == "task":
+            parts.append("\n\n## 业务目标（来自父 Story）\n")
+            parts.append(f"> {final_goal}\n")
+            parts.append("> 你的任务：将上述业务目标转化为具体的文件改动清单和伪代码，不要重复业务描述。\n")
+        else:
+            parts.append("\n\n## 最终目标（参考方向，文档内容仍须从用户视角描述）\n")
+            parts.append(f"> {final_goal}\n")
+            parts.append("> 注意：请围绕此目标展开，但用户故事和验收标准必须从用户视角撰写，不要直接复述此目标作为描述。\n")
 
     # 上下文注入
     parts.append("\n\n## 当前需求与产品上下文\n")
@@ -793,19 +890,45 @@ def build_requirement_doc_prompt(
     if sibling_titles:
         parts.append(f"- **兄弟需求**：{', '.join(s for s in sibling_titles if s)}\n")
 
+    if for_editing and project_repo_map:
+        repo_lines = "\n".join(
+            f"  - **{name}** → {path}" for name, path in project_repo_map.items()
+        )
+        parts.append(
+            "\n## 项目代码目录（子智能体检索时使用）\n"
+            f"{repo_lines}\n"
+            "⚠ 项目代码在上述路径下，不在 /workspace/sandbox/ 下。"
+            "需要查看代码时请调度 project-retriever 子智能体在这些路径中搜索。\n"
+        )
+
     if parent_doc:
-        parts.append("\n## 父需求文档（请在此框架内细化）\n\n")
-        parts.append(parent_doc[:5000] + ("..." if len(parent_doc) > 5000 else ""))
-        parts.append("\n")
+        if level == "task":
+            parts.append("\n## 父 Story 文档（业务需求，需转化为技术方案）\n\n")
+            parts.append(parent_doc[:5000] + ("..." if len(parent_doc) > 5000 else ""))
+            parts.append("\n**重要**：上述是业务层面的需求描述，你的任务是将其转化为技术实现方案（文件清单+伪代码），不要复制业务描述。\n")
+        else:
+            parts.append("\n## 父需求文档（请在此框架内细化）\n\n")
+            parts.append(parent_doc[:5000] + ("..." if len(parent_doc) > 5000 else ""))
+            parts.append("\n")
 
     if code_context:
-        parts.append("\n## 代码检索结果（供参考）\n\n")
-        parts.append(code_context[:6000] + ("..." if len(code_context) > 6000 else ""))
-        parts.append("\n")
+        if level == "task":
+            parts.append("\n## 代码检索结果（核心依据：从中提取文件路径和现有代码结构）\n\n")
+            parts.append(code_context[:6000] + ("..." if len(code_context) > 6000 else ""))
+            parts.append("\n**必须使用**：基于上述检索结果定位需要修改的文件，给出精确路径。\n")
+        else:
+            parts.append("\n## 代码检索结果（供参考：仅用于理解现有逻辑）\n\n")
+            parts.append(code_context[:6000] + ("..." if len(code_context) > 6000 else ""))
+            parts.append("\n")
 
     if graph_context:
-        parts.append("\n## 图谱检索结果（供参考）\n\n")
-        parts.append(graph_context[:6000] + ("..." if len(graph_context) > 6000 else ""))
+        if level == "task":
+            parts.append("\n## 图谱检索结果（核心依据：模块依赖和调用关系）\n\n")
+            parts.append(graph_context[:6000] + ("..." if len(graph_context) > 6000 else ""))
+            parts.append("\n**必须使用**：基于上述图谱结果判断需要改动哪些模块和文件。\n")
+        else:
+            parts.append("\n## 图谱检索结果（供参考：现有架构概览）\n\n")
+            parts.append(graph_context[:6000] + ("..." if len(graph_context) > 6000 else ""))
         parts.append("\n")
 
     if existing_doc:
@@ -862,16 +985,38 @@ def build_product_system_prompt(
     route_hint: str | None = None,
     version_name: str | None = None,
     branch_mappings: list[dict] | None = None,
+    project_id_map: dict[str, int] | None = None,
 ) -> str:
     """根据产品上下文动态构建 system prompt。
 
     branch_mappings 格式: [{"project_name": "proj-a", "branch": "feature/dev"}, ...]
+    project_id_map: {"proj-a": 1, ...} 项目名→ID，用于生成 /workspace/tmp/{id}/ 路径。
     """
     projects_section = ""
+    workspace_layout = ""
     if project_names:
         project_list = "、".join(project_names)
         projects_section = f"\n该产品包含以下项目（子系统/微服务）：{project_list}。"
-        projects_section += "\n你可以通过 /workspace/projects/{项目名}/ 访问各项目仓库代码。"
+        project_path_lines: list[str] = []
+        for n in project_names:
+            pid = project_id_map.get(n) if project_id_map else None
+            if pid is not None:
+                project_path_lines.append(f"  - **{n}** → /workspace/tmp/{pid}/")
+            else:
+                project_path_lines.append(f"  - **{n}** → /workspace/projects/{n}/")
+        project_paths = "\n".join(project_path_lines)
+        workspace_layout = (
+            "\n\n## 工作空间目录结构（重要）\n"
+            "以下是当前可用的文件系统挂载点，搜索和读取代码必须使用这些路径：\n"
+            "\n"
+            "### 项目代码仓库（只读）\n"
+            f"{project_paths}\n"
+            "\n"
+            "### 工作区\n"
+            "  - /workspace/sandbox/ — 沙箱工作区（可写，子智能体报告输出在 /workspace/sandbox/reports/）\n"
+            "\n"
+            "⚠ 代码仓库在上述项目路径下，搜索代码时请使用对应的项目路径。\n"
+        )
 
     route_sections = {
         "product_dashboard": "用户正在产品仪表盘页面，关注产品整体状态。",
@@ -898,7 +1043,8 @@ def build_product_system_prompt(
 
     return (
         f"你是 NeoDev 产品智能助手，当前服务的产品是「{product_name}」。{projects_section}\n"
-        f"{context_hint}{version_section}\n"
+        f"{context_hint}{version_section}"
+        f"{workspace_layout}\n"
         "\n"
         "## 你的角色\n"
         "你是编排者和分析者，不是直接操作代码的人。你的核心工作流程是：\n"
@@ -962,6 +1108,24 @@ def build_product_system_prompt(
         "- **复合问题** → 并行调度多个子智能体，各取所长后综合\n"
         "- nexus 不能读文件，project-retriever 不能查图谱，commit-analyzer 不能做两者——职责不重叠\n"
         "- nexus 返回的结果中如包含文件路径，你应接力调度 project-retriever 获取源码验证\n"
+        "\n"
+        "## 检索效率与去重（极其重要）\n"
+        "\n"
+        "### 任务职责不重叠\n"
+        "- project-retriever: **仅**负责源码文本搜索（grep/glob/read_file/ls），不做 git 操作或图谱查询\n"
+        "- commit-analyzer: **仅**负责 git 操作（git_show/git_diff/git_log_range），不做源码全文搜索\n"
+        "- nexus: **仅**负责图谱查询（nexus_search/cypher/explore/overview/impact），不做文件读取\n"
+        "- 不要让一个子智能体做另一个子智能体的工作，也不要为「保险」而重复调度\n"
+        "\n"
+        "### 结果复用（避免重复检索）\n"
+        "- **串行调度时**：在后续 task 的 description 中附上前一个 task 的关键发现，避免后续子智能体重新搜索已有信息\n"
+        "- **并行调度后**：综合所有子智能体的返回结果再做判断，不要因为某个子智能体结果不够详细就重复调度同类型 task\n"
+        "- **跨类型复用**：nexus 返回的文件路径可直接传递给 project-retriever 的 read_file，无需 project-retriever 再次 grep 定位\n"
+        "\n"
+        "### 搜索关键词分配\n"
+        "- 并行派发多个 project-retriever 时，每个实例必须搜索**不同的关键词或不同的文件范围**\n"
+        "- 禁止两个子智能体搜索相同的关键词——这是纯粹的资源浪费\n"
+        "- 如需搜索多个关键词，将它们分配给不同的并行 task，而非让每个 task 都搜索全部关键词\n"
         "\n"
         "## 沙箱工作空间与动态规划\n"
         "\n"

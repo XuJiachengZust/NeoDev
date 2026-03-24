@@ -275,7 +275,7 @@ def _grep_in_repo(repo_path: str, keyword: str, branch: str | None = None, max_r
 
 
 def _code_search(state: DocWorkflowState) -> dict[str, Any]:
-    """按层级做代码检索：Epic 不检索；Story 轻量检索；Task 详细检索。"""
+    """按层级做代码检索：Epic 不检索；Story 极轻量检索（仅概览）；Task 详细检索。"""
     level = (state.get("level") or "epic").lower()
     if level == "epic":
         return {"code_search_results": ""}
@@ -290,8 +290,10 @@ def _code_search(state: DocWorkflowState) -> dict[str, Any]:
     if not keywords:
         return {"code_search_results": ""}
 
-    max_per_kw = 8 if level == "task" else 3
-    max_keywords = 6 if level == "task" else 3
+    # Story: 极轻量检索，只取前2个关键词，每个最多2条结果（仅用于理解现有逻辑）
+    # Task: 详细检索，取前6个关键词，每个最多8条结果（用于定位具体文件和代码）
+    max_per_kw = 8 if level == "task" else 2
+    max_keywords = 6 if level == "task" else 2
     results: list[str] = []
     branch_map = state.get("branch_map") or {}
 

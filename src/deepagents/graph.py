@@ -28,6 +28,7 @@ from deepagents.middleware.memory import MemoryMiddleware
 from deepagents.middleware.parallel_tools import ParallelToolCallsMiddleware
 from deepagents.middleware.patch_tool_calls import PatchToolCallsMiddleware
 from deepagents.middleware.skills import SkillsMiddleware
+from deepagents.middleware.retrieval_cache import RetrievalCache, RetrievalCacheMiddleware
 from deepagents.middleware.subagents import CompiledSubAgent, SubAgent, SubAgentMiddleware
 from deepagents.middleware.summarization import SummarizationMiddleware
 from deepagents.middleware.workspace import SandboxWorkspaceMiddleware
@@ -69,6 +70,7 @@ def create_deep_agent(
     debug: bool = False,
     name: str | None = None,
     cache: BaseCache | None = None,
+    retrieval_cache: RetrievalCache | None = None,
 ) -> CompiledStateGraph:
     """Create a deep agent.
 
@@ -205,9 +207,13 @@ def create_deep_agent(
 
     if skills is not None:
         subagent_middleware.append(SkillsMiddleware(backend=backend, sources=skills))
-    subagent_middleware.extend(
+    subagent_extra: list[AgentMiddleware] = [
+        FilesystemMiddleware(backend=backend),
+    ]
+    if retrieval_cache is not None:
+        subagent_extra.append(RetrievalCacheMiddleware(cache=retrieval_cache))
+    subagent_extra.extend(
         [
-            FilesystemMiddleware(backend=backend),
             SummarizationMiddleware(
                 model=model,
                 backend=backend,
@@ -221,6 +227,7 @@ def create_deep_agent(
             PatchToolCallsMiddleware(),
         ]
     )
+    subagent_middleware.extend(subagent_extra)
 
     # 子智能体工作空间中间件（subagent 角色）
     if workspace_backend is not None:

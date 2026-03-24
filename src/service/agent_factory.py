@@ -54,6 +54,7 @@ def _read_raw_doc(ws) -> str | None:
 
 _agent_cache: dict[str, Any] = {}
 _workspace_cache: dict[str, Any] = {}  # thread_id → SandboxWorkspaceBackend
+_retrieval_cache_store: dict[str, Any] = {}  # thread_id → RetrievalCache
 _fallback_checkpointer = None
 
 
@@ -79,6 +80,10 @@ def evict_agent(thread_id: str) -> bool:
             logger.info("已清理 workspace [%s]", thread_id)
         except Exception:
             logger.warning("workspace cleanup 失败 [%s]", thread_id, exc_info=True)
+    rc = _retrieval_cache_store.pop(thread_id, None)
+    if rc:
+        rc.clear()
+        logger.info("已清理 RetrievalCache [%s]", thread_id)
     removed = _agent_cache.pop(thread_id, None)
     if removed:
         logger.info("已移除缓存 Agent [%s]", thread_id)
@@ -176,7 +181,12 @@ def _load_nexus_neo4j_config() -> dict[str, str] | None:
     }
 
 
-def _build_backend(profile_name: str, session_id: str | None = None, project_path: str | None = None):
+def _build_backend(
+    profile_name: str,
+    session_id: str | None = None,
+    project_path: str | None = None,
+    project_id: int | None = None,
+):
     """构建 CompositeBackend：项目目录只读 + 沙箱可写 + 默认 StateBackend。"""
     from deepagents.backends import CompositeBackend, StateBackend
     from service.readonly_backend import ReadOnlyFilesystemBackend
@@ -184,18 +194,20 @@ def _build_backend(profile_name: str, session_id: str | None = None, project_pat
 
     routes: dict[str, Any] = {}
 
-    # 项目只读挂载
-    if project_path and Path(project_path).is_dir():
-        routes["/workspace/project/"] = ReadOnlyFilesystemBackend(root_dir=project_path)
-        logger.info("只读挂载项目: %s -> /workspace/project/", project_path)
+    resolved = _resolve_repo_dir(project_path or "", project_id)
+    if resolved:
+        backend_inst = ReadOnlyFilesystemBackend(root_dir=resolved)
+        routes["/workspace/project/"] = backend_inst
+        logger.info("只读挂载项目: %s -> /workspace/project/", resolved)
+        if project_id is not None:
+            routes[f"/workspace/tmp/{project_id}/"] = backend_inst
+            logger.info("只读挂载项目(ID): %s -> /workspace/tmp/%s/", resolved, project_id)
 
-    # 沙箱可写区域
     if session_id:
         sandbox = ensure_sandbox(session_id)
         routes["/workspace/tmp/"] = sandbox
         logger.info("沙箱挂载: session=%s -> /workspace/tmp/", session_id)
 
-    # 返回工厂函数（create_deep_agent 需要 BackendFactory）
     def factory(rt):
         default = StateBackend(rt)
         if routes:
@@ -210,6 +222,7 @@ def get_or_create_agent(
     profile_name: str,
     session_id: str | None = None,
     project_path: str | None = None,
+    project_id: int | None = None,
 ) -> Any:
     """获取或创建编译后的 agent，按 thread_id 缓存。
 
@@ -219,7 +232,6 @@ def get_or_create_agent(
 
     if thread_id in _agent_cache:
         cached = _agent_cache[thread_id]
-        # 检查 checkpointer 是否一致，不一致则重建
         cached_cp = getattr(cached, "checkpointer", None)
         if cached_cp is not current_cp:
             logger.info("Checkpointer 变化，重建 Agent [%s]", thread_id)
@@ -235,9 +247,8 @@ def get_or_create_agent(
     logger.info("创建 Agent [%s] profile=%s model=%s checkpointer=%s",
                 thread_id, profile_name, model, type(current_cp).__name__)
 
-    backend = _build_backend(profile_name, session_id, project_path)
+    backend = _build_backend(profile_name, session_id, project_path, project_id=project_id)
 
-    # 构建子智能体
     subagents = None
     profile = get_profile(profile_name)
     subagent_names = profile.get("subagents", [])
@@ -245,10 +256,13 @@ def get_or_create_agent(
         from deepagents.middleware.git_tools import GitToolsMiddleware
         from deepagents.middleware.subagents import SubAgent
         subagents = []
+        retriever_path = f"/workspace/tmp/{project_id}/" if project_id else (
+            "/workspace/project/" if project_path else None
+        )
         for name in subagent_names:
             if name == "project-retriever":
                 defn = build_retriever_subagent(
-                    project_path="/workspace/project/" if project_path else None,
+                    project_path=retriever_path,
                 )
             elif name == "commit-analyzer":
                 if not project_path:
@@ -395,9 +409,13 @@ async def run_agent_stream(
     user_message: str,
     session_id: str | None = None,
     project_path: str | None = None,
+    project_id: int | None = None,
 ) -> AsyncIterator[dict]:
     """流式调用 agent，yield SSE 事件字典。"""
-    agent = get_or_create_agent(thread_id, profile_name, session_id=session_id, project_path=project_path)
+    agent = get_or_create_agent(
+        thread_id, profile_name, session_id=session_id,
+        project_path=project_path, project_id=project_id,
+    )
 
     system_prompt = get_profile(profile_name)["system_prompt"]
     config = {
@@ -419,9 +437,13 @@ async def run_agent_invoke(
     user_message: str,
     session_id: str | None = None,
     project_path: str | None = None,
+    project_id: int | None = None,
 ) -> dict:
     """非流式调用 agent，返回完整响应。"""
-    agent = get_or_create_agent(thread_id, profile_name, session_id=session_id, project_path=project_path)
+    agent = get_or_create_agent(
+        thread_id, profile_name, session_id=session_id,
+        project_path=project_path, project_id=project_id,
+    )
 
     system_prompt = get_profile(profile_name)["system_prompt"]
     config = {
@@ -473,18 +495,33 @@ async def run_agent_invoke(
 # ── 产品级 Agent ──────────────────────────────────────────────────────
 
 
+def _resolve_repo_dir(repo_path: str, project_id: int | None) -> str | None:
+    """尝试将 repo_path 解析为本地目录：若为 URL，回退到 REPO_CLONE_BASE/{project_id}。"""
+    if repo_path and Path(repo_path).is_dir():
+        return repo_path
+    if project_id is not None:
+        clone_base = os.environ.get("REPO_CLONE_BASE", "").strip()
+        if clone_base:
+            fallback = Path(clone_base) / str(project_id)
+            if fallback.is_dir():
+                return str(fallback)
+    return None
+
+
 def _build_product_backend(
     session_id: str | None,
     project_repo_map: dict[str, str] | None = None,
     workspace_backend: Any = None,
     branch_mappings: list[dict] | None = None,
+    project_id_map: dict[str, int] | None = None,
 ):
     """产品级 CompositeBackend：多项目只读挂载 + 沙箱可写 + workspace。
 
     project_repo_map: {"project-a": "/path/to/repo-a", ...}
-    挂载为 /workspace/projects/project-a/ 等。
+    挂载为 /workspace/projects/project-a/ 和 /workspace/tmp/{project_id}/。
     workspace_backend: SandboxWorkspaceBackend 实例，挂载到 /workspace/sandbox/。
     branch_mappings: [{"project_name": "xxx", "branch": "yyy"}, ...] 指定分支时使用 GitReadOnlyBackend。
+    project_id_map: {"project-a": 1, ...} 项目名→ID，用于 /workspace/tmp/{id}/ 路由。
     """
     from deepagents.backends import CompositeBackend, StateBackend
     from service.git_readonly_backend import GitReadOnlyBackend
@@ -493,7 +530,6 @@ def _build_product_backend(
 
     routes: dict[str, Any] = {}
 
-    # 构建 project_name → branch 映射
     branch_by_project: dict[str, str] = {}
     if branch_mappings:
         for bm in branch_mappings:
@@ -504,16 +540,27 @@ def _build_product_backend(
 
     if project_repo_map:
         for proj_name, repo_path in project_repo_map.items():
-            if not repo_path or not Path(repo_path).is_dir():
+            pid = project_id_map.get(proj_name) if project_id_map else None
+            resolved = _resolve_repo_dir(repo_path, pid)
+            if not resolved:
                 continue
-            mount = f"/workspace/projects/{proj_name}/"
             branch = branch_by_project.get(proj_name)
-            if branch:
-                routes[mount] = GitReadOnlyBackend(repo_dir=repo_path, branch=branch)
-                logger.info("Git只读挂载: %s@%s -> %s", repo_path, branch, mount)
-            else:
-                routes[mount] = ReadOnlyFilesystemBackend(root_dir=repo_path)
-                logger.info("产品只读挂载: %s -> %s", repo_path, mount)
+
+            def _make_backend(rpath: str, br: str | None):
+                if br:
+                    return GitReadOnlyBackend(repo_dir=rpath, branch=br)
+                return ReadOnlyFilesystemBackend(root_dir=rpath)
+
+            backend_inst = _make_backend(resolved, branch)
+
+            mount_name = f"/workspace/projects/{proj_name}/"
+            routes[mount_name] = backend_inst
+            logger.info("项目挂载: %s -> %s", resolved, mount_name)
+
+            if pid is not None:
+                mount_id = f"/workspace/tmp/{pid}/"
+                routes[mount_id] = backend_inst
+                logger.info("项目挂载(ID): %s -> %s", resolved, mount_id)
 
     if session_id:
         sandbox = ensure_sandbox(session_id)
@@ -561,6 +608,7 @@ def get_or_create_product_agent(
     from deepagents.backends.workspace import SandboxWorkspaceBackend
     from deepagents.graph import create_deep_agent
     from deepagents.middleware.git_tools import GitToolsMiddleware
+    from deepagents.middleware.retrieval_cache import RetrievalCache
     from deepagents.middleware.subagents import SubAgent
 
     model = _create_chat_model()
@@ -576,12 +624,24 @@ def get_or_create_product_agent(
         session_id, project_repo_map,
         workspace_backend=workspace_backend,
         branch_mappings=branch_mappings,
+        project_id_map=project_id_map,
     )
 
-    virtual_repo_map = {
-        pname: f"/workspace/projects/{pname}/"
-        for pname in project_repo_map
-    } if project_repo_map else None
+    # 虚拟路径映射：优先使用 /workspace/tmp/{pid}/ 路径（智能体更易定位）
+    virtual_repo_map: dict[str, str] | None = None
+    if project_repo_map and project_id_map:
+        virtual_repo_map = {}
+        for pname in project_repo_map:
+            pid = project_id_map.get(pname)
+            if pid is not None:
+                virtual_repo_map[pname] = f"/workspace/tmp/{pid}/"
+            else:
+                virtual_repo_map[pname] = f"/workspace/projects/{pname}/"
+    elif project_repo_map:
+        virtual_repo_map = {
+            pname: f"/workspace/projects/{pname}/"
+            for pname in project_repo_map
+        }
 
     subagents = []
     for name in PRODUCT_AGENT_PROFILE.get("subagents", []):
@@ -649,6 +709,9 @@ def get_or_create_product_agent(
                 system_prompt=defn["prompt"],
             ))
 
+    shared_retrieval_cache = RetrievalCache()
+    _retrieval_cache_store[thread_id] = shared_retrieval_cache
+
     agent = create_deep_agent(
         model=model,
         system_prompt="placeholder",
@@ -660,6 +723,7 @@ def get_or_create_product_agent(
         workspace_routing={"/workspace/sandbox/": workspace_backend},
         workspace_path_prefix="/workspace/sandbox/",
         general_purpose_agent=False,
+        retrieval_cache=shared_retrieval_cache,
     )
 
     _agent_cache[thread_id] = agent
@@ -787,11 +851,14 @@ async def run_product_agent_stream(
             code_context=doc_context.get("code_context"),
             graph_context=doc_context.get("graph_context"),
             existing_doc=doc_context.get("existing_doc"),
+            for_editing=True,
+            project_repo_map=virtual_repo_map,
         )
     else:
         system_prompt = build_product_system_prompt(
             product_name, project_names, route_hint,
             version_name=version_name, branch_mappings=branch_mappings,
+            project_id_map=project_id_map,
         )
 
     config = {

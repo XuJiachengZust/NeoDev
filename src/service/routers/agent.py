@@ -174,8 +174,9 @@ async def chat(body: ChatRequest, db=Depends(get_db)):
 
     # 解析项目路径（如果有 project_id）
     project_path = None
-    if conv.get("project_id"):
-        project = project_repo.find_by_id(db, conv["project_id"])
+    project_id = conv.get("project_id")
+    if project_id:
+        project = project_repo.find_by_id(db, project_id)
         if project and project.get("repo_path"):
             project_path = project["repo_path"]
 
@@ -199,6 +200,7 @@ async def chat(body: ChatRequest, db=Depends(get_db)):
             gen = _stream_chat(
                 db, body.conversation_id, profile_name, thread_id, body.message,
                 session_id=session_id, project_path=project_path,
+                project_id=project_id,
             )
         return StreamingResponse(
             gen,
@@ -212,12 +214,14 @@ async def chat(body: ChatRequest, db=Depends(get_db)):
         return await _invoke_chat(
             db, body.conversation_id, profile_name, thread_id, body.message,
             session_id=session_id, project_path=project_path,
+            project_id=project_id,
         )
 
 
 async def _stream_chat(
     db, conversation_id: int, profile_name: str, thread_id: str, message: str,
     session_id: str | None = None, project_path: str | None = None,
+    project_id: int | None = None,
 ):
     """SSE 流式生成器。"""
     from service.agent_factory import run_agent_stream
@@ -228,6 +232,7 @@ async def _stream_chat(
         async for event in run_agent_stream(
             profile_name, thread_id, message,
             session_id=session_id, project_path=project_path,
+            project_id=project_id,
         ):
             sse_data = json.dumps(event, ensure_ascii=False)
             yield f"data: {sse_data}\n\n"
@@ -430,6 +435,7 @@ async def _stream_product_chat(
 async def _invoke_chat(
     db, conversation_id: int, profile_name: str, thread_id: str, message: str,
     session_id: str | None = None, project_path: str | None = None,
+    project_id: int | None = None,
 ):
     """非流式调用。"""
     from service.agent_factory import run_agent_invoke
@@ -438,6 +444,7 @@ async def _invoke_chat(
     result = await run_agent_invoke(
         profile_name, thread_id, message,
         session_id=session_id, project_path=project_path,
+        project_id=project_id,
     )
     latency_ms = int((time.time() - start_time) * 1000)
 

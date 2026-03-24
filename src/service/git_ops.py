@@ -214,23 +214,39 @@ def fetch_repo(repo_path: str) -> None:
     if not repo.is_dir():
         raise RuntimeError(f"Not a directory: {repo_path}")
     logger.info("git fetch --all in %s", repo)
+
+    # 配置环境变量：禁用交互式提示、跳过 SSL 验证（如果需要）
+    env = {
+        **subprocess.os.environ,
+        "GIT_TERMINAL_PROMPT": "0",  # 禁用交互式密码提示
+        "GIT_ASKPASS": "echo",       # 避免弹出凭据对话框
+        "GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o StrictHostKeyChecking=no",  # SSH 非交互模式
+    }
+
     try:
         r = subprocess.run(
-            ["git", "fetch", "--all"],
+            ["git", "fetch", "--all", "--prune"],
             cwd=repo,
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=60,
+            timeout=120,  # 增加到 120 秒
+            env=env,
         )
         if r.returncode != 0:
-            logger.error("git fetch failed in %s: %s", repo, r.stderr or r.stdout or "unknown")
-            raise RuntimeError(f"git fetch failed: {r.stderr or r.stdout or 'unknown'}")
+            stderr = (r.stderr or "").strip()
+            stdout = (r.stdout or "").strip()
+            error_msg = stderr or stdout or "unknown"
+            logger.error("git fetch failed in %s: %s", repo, error_msg)
+            # 如果是认证失败，提供更明确的错误信息
+            if "authentication" in error_msg.lower() or "credentials" in error_msg.lower():
+                raise RuntimeError(f"git fetch 认证失败，请检查仓库凭据配置: {error_msg}")
+            raise RuntimeError(f"git fetch failed: {error_msg}")
         logger.info("git fetch done in %s", repo)
     except subprocess.TimeoutExpired as e:
-        logger.error("git fetch timed out in %s", repo)
-        raise RuntimeError("git fetch timed out") from e
+        logger.error("git fetch timed out (120s) in %s", repo)
+        raise RuntimeError("git fetch 超时（120秒），请检查网络连接或仓库 URL") from e
     except FileNotFoundError as e:
         logger.error("git not found")
         raise RuntimeError("git not found") from e

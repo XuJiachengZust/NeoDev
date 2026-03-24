@@ -477,10 +477,15 @@ class FilesystemBackend(BackendProtocol):
 
         return results
 
+    _SKIP_DIRS = frozenset({"proc", "sys", "dev", "run", "snap", "boot"})
+
     def _python_search(self, pattern: str, base_full: Path, include_glob: str | None) -> dict[str, list[tuple[int, str]]]:
         """Fallback search using Python when ripgrep is unavailable.
 
         Recursively searches files, respecting `max_file_size_bytes` limit.
+        Uses `os.walk` instead of `Path.rglob` to gracefully skip
+        pseudo-filesystems (`/proc`, `/sys`, etc.) that raise `OSError`
+        during directory iteration inside containers.
 
         Args:
             pattern: Escaped regex pattern (from re.escape) for literal search.
@@ -490,39 +495,41 @@ class FilesystemBackend(BackendProtocol):
         Returns:
             Dict mapping file paths to list of `(line_number, line_text)` tuples.
         """
-        # Compile escaped pattern once for efficiency (used in loop)
         regex = re.compile(pattern)
 
         results: dict[str, list[tuple[int, str]]] = {}
         root = base_full if base_full.is_dir() else base_full.parent
 
-        for fp in root.rglob("*"):
-            try:
-                if not fp.is_file():
+        for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _: None):
+            dirnames[:] = [
+                d for d in dirnames
+                if not (dirpath == str(root) and d in self._SKIP_DIRS)
+                and not d.startswith(".")
+            ]
+
+            for filename in filenames:
+                fp = Path(dirpath) / filename
+                if include_glob and not wcglob.globmatch(fp.name, include_glob, flags=wcglob.BRACE):
                     continue
-            except (PermissionError, OSError):
-                continue
-            if include_glob and not wcglob.globmatch(fp.name, include_glob, flags=wcglob.BRACE):
-                continue
-            try:
-                if fp.stat().st_size > self.max_file_size_bytes:
+                try:
+                    if fp.stat().st_size > self.max_file_size_bytes:
+                        continue
+                except OSError:
                     continue
-            except OSError:
-                continue
-            try:
-                content = fp.read_text()
-            except (UnicodeDecodeError, PermissionError, OSError):
-                continue
-            for line_num, line in enumerate(content.splitlines(), 1):
-                if regex.search(line):
-                    if self.virtual_mode:
-                        try:
-                            virt_path = "/" + str(fp.resolve().relative_to(self.cwd))
-                        except Exception:
-                            continue
-                    else:
-                        virt_path = str(fp)
-                    results.setdefault(virt_path, []).append((line_num, line))
+                try:
+                    content = fp.read_text()
+                except (UnicodeDecodeError, PermissionError, OSError):
+                    continue
+                for line_num, line in enumerate(content.splitlines(), 1):
+                    if regex.search(line):
+                        if self.virtual_mode:
+                            try:
+                                virt_path = "/" + str(fp.resolve().relative_to(self.cwd))
+                            except Exception:
+                                continue
+                        else:
+                            virt_path = str(fp)
+                        results.setdefault(virt_path, []).append((line_num, line))
 
         return results
 
@@ -545,14 +552,17 @@ class FilesystemBackend(BackendProtocol):
             return []
 
         results: list[FileInfo] = []
-        try:
-            # Use recursive globbing to match files in subdirectories as tests expect
-            for matched_path in search_path.rglob(pattern):
-                try:
-                    is_file = matched_path.is_file()
-                except (PermissionError, OSError):
-                    continue
-                if not is_file:
+
+        for dirpath, dirnames, filenames in os.walk(search_path, onerror=lambda _: None):
+            dirnames[:] = [
+                d for d in dirnames
+                if not (dirpath == str(search_path) and d in self._SKIP_DIRS)
+                and not d.startswith(".")
+            ]
+
+            for filename in filenames:
+                matched_path = Path(dirpath) / filename
+                if not matched_path.match(pattern):
                     continue
                 abs_path = str(matched_path)
                 if not self.virtual_mode:
@@ -591,8 +601,6 @@ class FilesystemBackend(BackendProtocol):
                         )
                     except OSError:
                         results.append({"path": virt, "is_dir": False})
-        except (OSError, ValueError):
-            pass
 
         results.sort(key=lambda x: x.get("path", ""))
         return results

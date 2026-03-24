@@ -101,6 +101,10 @@ def _ensure_graph_fresh(
     from service.services.sync_service import sync_commits_for_version
 
     _log_step(process_logs, f"[预检] 同步代码到图数据库 (version_id={version['id']}, branch={branch})")
+    # 心跳：更新 updated_at，防止 git fetch 超时误判
+    status_repo.update_heartbeat(conn, project_id, branch)
+    conn.commit()
+
     try:
         sync_result = sync_commits_for_version(conn, project_id, version["id"])
     except Exception as exc:  # noqa: BLE001

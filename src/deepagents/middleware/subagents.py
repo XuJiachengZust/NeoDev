@@ -254,6 +254,26 @@ When NOT to use the task tool:
 
 DEFAULT_GENERAL_PURPOSE_DESCRIPTION = "General-purpose agent for researching complex questions, searching for files and content, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. This agent has access to all tools as the main agent."  # noqa: E501
 
+_MAX_OBJECTIVE_LENGTH = 2000
+
+
+def _extract_user_objective(messages: list) -> str:
+    """Extract the user's original objective from the parent agent's message history.
+
+    Walks backwards through messages to find the most recent HumanMessage that
+    represents a genuine user query (not a tool-generated intermediate message).
+    """
+    for msg in reversed(messages):
+        if not isinstance(msg, HumanMessage):
+            continue
+        content = msg.content if isinstance(msg.content, str) else str(msg.content)
+        if not content.strip():
+            continue
+        if len(content) > _MAX_OBJECTIVE_LENGTH:
+            content = content[:_MAX_OBJECTIVE_LENGTH] + "..."
+        return content.strip()
+    return ""
+
 
 def _get_subagents(
     *,
@@ -385,11 +405,24 @@ def _create_task_tool(
         )
 
     def _validate_and_prepare_state(subagent_type: str, description: str, runtime: ToolRuntime) -> tuple[Runnable, dict]:
-        """Prepare state for invocation."""
+        """Prepare state for invocation.
+
+        Automatically injects the user's original objective into the sub-agent's
+        task context so every sub-agent is goal-aware.
+        """
         subagent = subagent_graphs[subagent_type]
-        # Create a new state dict to avoid mutating the original
         subagent_state = {k: v for k, v in runtime.state.items() if k not in _EXCLUDED_STATE_KEYS}
-        subagent_state["messages"] = [HumanMessage(content=description)]
+
+        user_objective = _extract_user_objective(runtime.state.get("messages", []))
+        if user_objective and user_objective not in description:
+            enriched_description = (
+                f"## 用户最终目标（你的任务必须以此为导向）\n{user_objective}\n\n"
+                f"## 你的具体任务\n{description}"
+            )
+        else:
+            enriched_description = description
+
+        subagent_state["messages"] = [HumanMessage(content=enriched_description)]
         return subagent, subagent_state
 
     # Use custom description if provided, otherwise use default template

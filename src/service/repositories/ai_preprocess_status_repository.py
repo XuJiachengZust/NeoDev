@@ -5,15 +5,39 @@ from datetime import datetime, timezone
 from psycopg2.extras import RealDictCursor
 
 
-def has_running(conn, project_id: int) -> bool:
-    """存在该 project_id 且 status='running' 则返回 True。"""
-    with conn.cursor() as cur:
+def has_running(conn, project_id: int, stale_minutes: int = 10) -> bool:
+    """存在该 project_id 且 status='running' 则返回 True。
+
+    超时保护：如果任务 updated_at 超过 stale_minutes 未更新（心跳超时），自动标记为 failed。
+    这样可以区分：
+    - git fetch 卡住（无心跳更新）→ 10 分钟后自动清理
+    - AI 分析正常运行（定期更新进度）→ 可以运行几小时
+    """
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
-            """SELECT 1 FROM ai_preprocess_status
-             WHERE project_id = %s AND status = 'running' LIMIT 1""",
+            """SELECT id, project_id, branch, updated_at FROM ai_preprocess_status
+             WHERE project_id = %s AND status = 'running'""",
             (project_id,),
         )
-        return cur.fetchone() is not None
+        rows = cur.fetchall()
+        if not rows:
+            return False
+
+        # 检查心跳是否超时（基于 updated_at）
+        now = datetime.now(timezone.utc)
+        for row in rows:
+            updated_at = row.get("updated_at")
+            if updated_at:
+                elapsed = (now - updated_at).total_seconds() / 60
+                if elapsed > stale_minutes:
+                    # 心跳超时，自动标记为 failed
+                    branch = row.get("branch", "unknown")
+                    error_msg = f"任务无响应（超过 {stale_minutes} 分钟未更新心跳），已自动清理"
+                    set_failed(conn, project_id, branch, error_msg)
+                    conn.commit()
+                    return False
+
+        return True
 
 
 def set_running(conn, project_id: int, branch: str) -> bool:
@@ -95,7 +119,7 @@ def get_status(conn, project_id: int, branch: str | None = None) -> list[dict]:
 
 
 def update_progress(conn, project_id: int, branch: str, progress: dict) -> None:
-    """在任务运行过程中更新进度信息（extra.progress）。"""
+    """在任务运行过程中更新进度信息（extra.progress）。同时更新 updated_at 作为心跳。"""
     from psycopg2.extras import Json
     now = datetime.now(timezone.utc)
     with conn.cursor() as cur:
@@ -105,4 +129,16 @@ def update_progress(conn, project_id: int, branch: str, progress: dict) -> None:
              SET extra = %s, updated_at = %s
              WHERE project_id = %s AND branch = %s""",
             (Json({"progress": progress}), now, project_id, branch),
+        )
+
+
+def update_heartbeat(conn, project_id: int, branch: str) -> None:
+    """更新心跳时间戳（updated_at），表示任务仍在运行。"""
+    now = datetime.now(timezone.utc)
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE ai_preprocess_status
+             SET updated_at = %s
+             WHERE project_id = %s AND branch = %s AND status = 'running'""",
+            (now, project_id, branch),
         )
