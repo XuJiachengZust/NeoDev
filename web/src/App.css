@@ -1493,8 +1493,6 @@ button.secondary:hover {
   padding: 16px 24px 0;
   background: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
-  max-height: 140px;
-  overflow: hidden;
 }
 .req-doc-header {
   display: flex;
@@ -1534,6 +1532,53 @@ button.secondary:hover {
   padding: 2px 8px;
   border-radius: 8px;
   white-space: nowrap;
+}
+.req-doc-status-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 12px;
+  margin-bottom: 8px;
+  border-top: 1px solid var(--color-border);
+}
+.req-doc-status-banner-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.req-doc-status-banner-description {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.req-doc-status-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.req-doc-status-banner--info .req-doc-status-banner-title { color: var(--color-primary); }
+.req-doc-status-banner--success .req-doc-status-banner-title { color: #3fb950; }
+.req-doc-status-banner--warning .req-doc-status-banner-title { color: var(--color-warning, #d29922); }
+.req-doc-status-banner--danger .req-doc-status-banner-title { color: #ff6b6b; }
+.req-doc-state-panel {
+  margin-bottom: 12px;
+  padding: 16px;
+}
+.req-doc-state-panel h3 {
+  margin: 0 0 8px;
+}
+.req-doc-state-panel p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+.req-doc-state-panel--danger {
+  border-color: rgba(255, 107, 107, 0.35);
+}
+.req-doc-state-panel-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 /* 生成进度条 */

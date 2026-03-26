@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   getProductRequirement,
@@ -12,6 +12,7 @@ import {
   listProductRequirementsTree,
   canGenerateChildren,
   streamGenerateChildrenDocs,
+  ApiError,
   type ProductRequirement,
   type DocVersion,
   type SplitSuggestion,
@@ -24,6 +25,17 @@ import { SplitSuggestionsModal } from "../components/SplitSuggestionsModal";
 import { useAgentSession } from "../contexts/AgentSessionContext";
 
 type ViewMode = "edit" | "preview" | "diff" | "review";
+type DocLoadState = "idle" | "loading" | "ready" | "missing" | "error";
+type VisibleStatus =
+  | "loading"
+  | "empty"
+  | "ready"
+  | "generating"
+  | "generate_failed"
+  | "load_failed"
+  | "review"
+  | "dirty"
+  | "saved";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -60,8 +72,12 @@ export function RequirementDocPage() {
   const [diffV2, setDiffV2] = useState<number | null>(null);
   const [diffContent, setDiffContent] = useState<{ v1_content: string; v2_content: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [docLoadState, setDocLoadState] = useState<DocLoadState>("idle");
+  const [docLoadError, setDocLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
   // Review mode (agent → direct edit)
   const [pendingContent, setPendingContent] = useState<string | null>(null);
@@ -88,6 +104,7 @@ export function RequirementDocPage() {
 
   const streamAbortRef = useRef<{ abort: () => void } | null>(null);
   const contentAreaRef = useRef<HTMLDivElement>(null);
+  const draftBeforeGenerateRef = useRef("");
 
   const isDirty = content !== savedContent;
 
@@ -179,16 +196,24 @@ export function RequirementDocPage() {
   const loadDoc = useCallback(async () => {
     if (!productId || !requirementId) return;
     setLoading(true);
-    setError(null);
+    setDocLoadState("loading");
+    setDocLoadError(null);
     try {
       const doc = await getRequirementDoc(productId, requirementId);
       setContent(doc.content);
       setSavedContent(doc.content);
       setVersion(doc.version);
-    } catch {
+      setDocLoadState("ready");
+    } catch (e) {
       setContent("");
       setSavedContent("");
       setVersion(0);
+      if (e instanceof ApiError && e.status === 404) {
+        setDocLoadState("missing");
+        return;
+      }
+      setDocLoadState("error");
+      setDocLoadError(e instanceof Error ? e.message : "加载文档失败");
     } finally {
       setLoading(false);
     }
@@ -206,6 +231,12 @@ export function RequirementDocPage() {
 
   useEffect(() => { loadRequirement(); }, [loadRequirement]);
   useEffect(() => { loadDoc(); loadVersions(); }, [loadDoc, loadVersions]);
+
+  useEffect(() => {
+    if (!saveFeedback) return;
+    const timer = window.setTimeout(() => setSaveFeedback(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [saveFeedback]);
 
   // ── Unsaved changes warning ──
 
@@ -245,7 +276,8 @@ export function RequirementDocPage() {
       } else if (st.generation_status === "failed") {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         setGenerationStatus(null);
-        setError(st.generation_error || "生成失败");
+        setGenerationError(st.generation_error || "生成失败");
+        setContent((prev) => prev || draftBeforeGenerateRef.current);
       }
     } catch { /* ignore */ }
   }, [productId, requirementId, loadDoc, loadVersions]);
@@ -310,10 +342,13 @@ export function RequirementDocPage() {
     if (!productId || !requirementId) return;
     setSaving(true);
     setError(null);
+    setGenerationError(null);
     try {
       const doc = await saveRequirementDoc(productId, requirementId, content, "manual");
       setVersion(doc.version);
       setSavedContent(content);
+      setDocLoadState("ready");
+      setSaveFeedback("saved");
       loadVersions();
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败");
@@ -339,9 +374,12 @@ export function RequirementDocPage() {
 
   const handleGenerate = (userOverview?: string) => {
     if (!productId || !requirementId) return;
+    draftBeforeGenerateRef.current = content;
     setGenerateStreaming(true);
     setGenerateStep(null);
     setError(null);
+    setGenerationError(null);
+    setSaveFeedback(null);
     setContent("");
     setSplitSuggestions(null);
     setViewMode("edit");
@@ -359,7 +397,8 @@ export function RequirementDocPage() {
         if (d?.status === "failed") {
           setGenerateStreaming(false);
           setGenerateStep(null);
-          setError("生成失败");
+          setGenerationError("生成失败");
+          setContent(draftBeforeGenerateRef.current);
           streamAbortRef.current = null;
         }
       },
@@ -376,7 +415,8 @@ export function RequirementDocPage() {
         streamAbortRef.current = null;
         const d = data as { status?: string; error?: string };
         if (d?.status === "failed" && d?.error) {
-          setError(d.error);
+          setGenerationError(d.error);
+          setContent(draftBeforeGenerateRef.current);
         } else {
           loadDoc();
           loadVersions();
@@ -391,6 +431,7 @@ export function RequirementDocPage() {
     if (generateStreaming) {
       setGenerateStreaming(false);
       setGenerateStep(null);
+      setContent(draftBeforeGenerateRef.current);
     }
   };
 
@@ -497,11 +538,14 @@ export function RequirementDocPage() {
     if (!productId || !requirementId) return;
     setSaving(true);
     setError(null);
+    setGenerationError(null);
     try {
       const doc = await saveRequirementDoc(productId, requirementId, rebuiltContent, "agent");
       setContent(rebuiltContent);
       setSavedContent(rebuiltContent);
       setVersion(doc.version);
+      setDocLoadState("ready");
+      setSaveFeedback("saved");
       loadVersions();
       setPendingContent(null);
       setPreChangeContent("");
@@ -518,6 +562,100 @@ export function RequirementDocPage() {
     setPreChangeContent("");
     setViewMode("edit");
   };
+
+  const hasPersistedDoc = docLoadState === "ready" || versions.length > 0 || savedContent.trim().length > 0;
+  const hasAnyContent = content.trim().length > 0 || savedContent.trim().length > 0;
+  const hasComparableVersions = versions.length >= 2;
+  const hasReviewChanges = pendingContent !== null;
+  const isGenerating = generateStreaming || generationStatus === "running";
+  const hasBlockingLoadError = docLoadState === "error" && !hasPersistedDoc;
+  const hasGenerationFailure = generationError !== null;
+  const primaryGenerateLabel = hasPersistedDoc || hasAnyContent ? "续生成" : "生成文档";
+  const saveButtonLabel = saveFeedback ? "已保存" : saving ? "保存中..." : "保存";
+  const statusMeta = useMemo(() => {
+    const meta: Record<VisibleStatus, { tone: "neutral" | "info" | "success" | "warning" | "danger"; title: string; description: string; cta?: "save" | "generate" | "retry_load" | "review" }> = {
+      loading: {
+        tone: "neutral",
+        title: "正在加载文档",
+        description: "先同步当前需求、文档和版本信息。",
+      },
+      empty: {
+        tone: "neutral",
+        title: "当前还没有需求文档",
+        description: "可以先手写草稿，或直接用 AI 生成第一版。",
+        cta: "generate",
+      },
+      ready: {
+        tone: "success",
+        title: hasPersistedDoc ? "已有草稿 / 文档" : "文档已就绪",
+        description: "可以继续编辑、预览或查看版本差异。",
+      },
+      generating: {
+        tone: "info",
+        title: "文档生成中",
+        description: generateStreaming
+          ? `正在执行 ${generateStep ? STEP_LABELS[generateStep] ?? generateStep : "生成步骤"}。`
+          : "后台仍在生成，页面会自动同步结果。",
+      },
+      generate_failed: {
+        tone: "danger",
+        title: "文档生成失败",
+        description: generationError ?? "本次生成没有完成，请修正后重试或续生成。",
+        cta: "generate",
+      },
+      load_failed: {
+        tone: "danger",
+        title: "文档加载失败",
+        description: docLoadError ?? "当前无法读取文档，请稍后重试。",
+        cta: "retry_load",
+      },
+      review: {
+        tone: "warning",
+        title: "待审阅",
+        description: "Agent 修改已生成，先审阅并决定是否应用，再继续保存或生成。",
+        cta: "review",
+      },
+      dirty: {
+        tone: "warning",
+        title: "有未保存改动",
+        description: "当前编辑内容还没有保存到文档版本中。",
+        cta: "save",
+      },
+      saved: {
+        tone: "success",
+        title: "保存完成",
+        description: "最新修改已经写入当前需求文档。",
+      },
+    };
+    return meta;
+  }, [docLoadError, generateStep, generateStreaming, generationError, hasPersistedDoc]);
+  const visibleStatus: VisibleStatus =
+    loading ? "loading"
+      : isGenerating ? "generating"
+        : hasBlockingLoadError ? "load_failed"
+          : hasGenerationFailure ? "generate_failed"
+            : hasReviewChanges ? "review"
+              : isDirty ? "dirty"
+                : saveFeedback ? "saved"
+                  : hasPersistedDoc ? "ready"
+                    : "empty";
+  const statusInfo = statusMeta[visibleStatus];
+  const canEnterPreview = !hasBlockingLoadError;
+  const canSwitchToDiff = hasComparableVersions || diffContent !== null;
+  const canSave = !loading && !saving && !isGenerating && !hasReviewChanges && isDirty;
+  const canGenerate = !loading && !saving && !hasReviewChanges && !isGenerating;
+
+  useEffect(() => {
+    if (viewMode === "review" && !hasReviewChanges) {
+      setViewMode("edit");
+    }
+  }, [hasReviewChanges, viewMode]);
+
+  useEffect(() => {
+    if (viewMode === "diff" && !canSwitchToDiff) {
+      setViewMode("preview");
+    }
+  }, [canSwitchToDiff, viewMode]);
 
   // ── Render ──
 
@@ -581,12 +719,31 @@ export function RequirementDocPage() {
             )}
           </div>
 
+          <div
+            className={`req-doc-status-card req-doc-status-card--${statusInfo.tone}`}
+            data-testid="doc-status-card"
+            data-status={visibleStatus}
+          >
+            <div>
+              <div className="req-doc-status-card__title">{statusInfo.title}</div>
+              <div className="req-doc-status-card__desc">{statusInfo.description}</div>
+            </div>
+            <div className="req-doc-status-card__meta">
+              {hasPersistedDoc && <span className="req-doc-status-pill">已有文档</span>}
+              {hasReviewChanges && <span className="req-doc-status-pill">待审阅</span>}
+              {isDirty && !hasReviewChanges && <span className="req-doc-status-pill">未保存</span>}
+              {saveFeedback && !isDirty && <span className="req-doc-status-pill req-doc-status-pill--success">刚保存</span>}
+            </div>
+          </div>
+
           <div className="req-doc-toolbar">
             <div className="req-doc-view-mode">
               <button
                 type="button"
                 className={viewMode === "edit" ? "primary xs" : "secondary xs"}
                 onClick={() => setViewMode("edit")}
+                disabled={loading || isGenerating}
+                data-testid="doc-action-edit"
               >
                 编辑
               </button>
@@ -594,6 +751,7 @@ export function RequirementDocPage() {
                 type="button"
                 className={viewMode === "preview" ? "primary xs" : "secondary xs"}
                 onClick={() => setViewMode("preview")}
+                disabled={!canEnterPreview}
               >
                 预览
               </button>
@@ -601,10 +759,11 @@ export function RequirementDocPage() {
                 type="button"
                 className={viewMode === "diff" ? "primary xs" : "secondary xs"}
                 onClick={handleSwitchToDiff}
+                disabled={!canSwitchToDiff}
               >
                 变更
               </button>
-              {pendingContent !== null && (
+              {hasReviewChanges && (
                 <button
                   type="button"
                   className={viewMode === "review" ? "primary xs" : "secondary xs"}
@@ -615,17 +774,17 @@ export function RequirementDocPage() {
               )}
             </div>
             <div className="req-doc-actions">
-              {isDirty && <span className="req-doc-dirty-badge">未保存</span>}
+              {(isDirty || visibleStatus === "saved") && <span className="req-doc-dirty-badge">{isDirty ? "未保存" : "已保存"}</span>}
               <button
                 type="button"
                 className="primary"
                 onClick={handleSave}
-                disabled={saving || loading || !isDirty}
+                disabled={!canSave}
                 title="Ctrl+S"
               >
-                {saving ? "保存中…" : "保存"}
+                {saveButtonLabel}
               </button>
-              {generateStreaming ? (
+              {isGenerating ? (
                 <button type="button" className="secondary" onClick={handleStopStream}>
                   停止
                 </button>
@@ -634,18 +793,48 @@ export function RequirementDocPage() {
                   type="button"
                   className="primary"
                   onClick={handleGenerateClick}
-                  disabled={loading || generationStatus === "running"}
+                  disabled={!canGenerate || hasBlockingLoadError}
                 >
-                  {generationStatus === "running" ? "生成中…" : "AI 生成"}
+                  {primaryGenerateLabel}
                 </button>
               )}
-              {requirement && (requirement.level === "epic" || requirement.level === "story") && !generateStreaming && (
+              {requirement && (requirement.level === "epic" || requirement.level === "story") && !isGenerating && (
                 <button
                   type="button"
                   className="secondary"
                   onClick={() => { setSplitSuggestions(null); setShowSplitModal(true); }}
+                  disabled={hasBlockingLoadError}
                 >
                   拆分建议
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className={`req-doc-status-banner req-doc-status-banner--${statusInfo.tone}`}>
+            <div>
+              <div className="req-doc-status-banner-title">{statusInfo.title}</div>
+              <div className="req-doc-status-banner-description">{statusInfo.description}</div>
+            </div>
+            <div className="req-doc-status-banner-actions">
+              {statusInfo.cta === "save" && (
+                <button type="button" className="primary xs" onClick={handleSave} disabled={!canSave}>
+                  保存当前草稿
+                </button>
+              )}
+              {statusInfo.cta === "generate" && (
+                <button type="button" className="primary xs" onClick={handleGenerateClick} disabled={!canGenerate || hasBlockingLoadError}>
+                  {primaryGenerateLabel}
+                </button>
+              )}
+              {statusInfo.cta === "retry_load" && (
+                <button type="button" className="primary xs" onClick={() => { void loadDoc(); void loadVersions(); }}>
+                  重试加载
+                </button>
+              )}
+              {statusInfo.cta === "review" && hasReviewChanges && (
+                <button type="button" className="primary xs" onClick={() => setViewMode("review")}>
+                  打开审阅
                 </button>
               )}
             </div>
@@ -683,19 +872,37 @@ export function RequirementDocPage() {
         <div className={`req-doc-content-scroll${viewMode !== "edit" ? " req-doc-content-scroll--scrollable" : ""}`} ref={contentAreaRef}>
           {loading ? (
             <div className="loading-state">加载中...</div>
+          ) : hasBlockingLoadError ? (
+            <div className="req-doc-state-panel req-doc-state-panel--danger card">
+              <h3>文档读取失败</h3>
+              <p>{docLoadError ?? "当前无法读取文档内容，因此先不展示空编辑器，避免和“无文档”状态混淆。"}</p>
+              <div className="req-doc-state-panel-actions">
+                <button type="button" className="primary" onClick={() => { void loadDoc(); void loadVersions(); }}>
+                  重试加载
+                </button>
+              </div>
+            </div>
           ) : (
             <>
               {viewMode === "edit" && (
-                <textarea
-                  className="req-doc-editor"
-                  value={content}
-                  onChange={(e) => {
-                    setContent(e.target.value);
-                    if (pendingContent !== null) { setPendingContent(null); setPreChangeContent(""); }
-                  }}
-                  placeholder="在此编辑 Markdown 文档…"
-                  spellCheck={false}
-                />
+                <>
+                  {visibleStatus === "empty" && (
+                    <div className="req-doc-state-panel card">
+                      <h3>当前还没有文档</h3>
+                      <p>这是文档初始态，不是异常。你可以直接输入第一版内容，或点击上方“{primaryGenerateLabel}”。</p>
+                    </div>
+                  )}
+                  <textarea
+                    className="req-doc-editor"
+                    value={content}
+                    onChange={(e) => {
+                      setContent(e.target.value);
+                      if (pendingContent !== null) { setPendingContent(null); setPreChangeContent(""); }
+                    }}
+                    placeholder={visibleStatus === "empty" ? "从这里开始写第一版需求文档…" : "在此编辑 Markdown 文档…"}
+                    spellCheck={false}
+                  />
+                </>
               )}
               {viewMode === "preview" && (
                 <div className="req-doc-preview card">
