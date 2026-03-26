@@ -968,6 +968,50 @@ def resolve_profile_name(route_context_key: str) -> str:
     return "default"
 
 
+# ── 回答模式配置 ──
+
+RESPONSE_MODE_CONFIG: dict[str, dict] = {
+    "simple": {
+        "subagent_planning": False,
+        "disable_main_planning": True,
+        "prompt_suffix": (
+            "\n\n## 回答风格：精简模式\n"
+            "- 用 3-5 句话概括思路、现状、不足\n"
+            "- 不贴代码片段，不列文件路径\n"
+            "- 只说结论和方向\n"
+            "- 如果涉及多个模块，每个模块一句话概括\n"
+            "- 不要使用 write_todos 工具制定计划，直接回答\n"
+        ),
+    },
+    "medium": {
+        "subagent_planning": False,
+        "disable_main_planning": False,
+        "prompt_suffix": (
+            "\n\n## 回答风格：标准模式\n"
+            "- 结构化回答，可分点阐述\n"
+            "- 可提及关键文件和函数名，但不贴大段代码\n"
+            "- 重点说清「是什么」「为什么」「怎么改」\n"
+            "- 代码片段只在必要时贴核心几行\n"
+        ),
+    },
+    "hard": {
+        "subagent_planning": True,
+        "disable_main_planning": False,
+        "prompt_suffix": (
+            "\n\n## 回答风格：详细模式\n"
+            "- 深入分析，可贴完整代码片段和文件路径\n"
+            "- 展开实现细节、调用链、数据流\n"
+            "- 给出具体修改方案和代码示例\n"
+        ),
+    },
+}
+
+
+def get_response_mode_config(mode: str | None) -> dict:
+    """获取回答模式配置，默认 medium。"""
+    return RESPONSE_MODE_CONFIG.get(mode or "medium", RESPONSE_MODE_CONFIG["medium"])
+
+
 # ── 产品级 Agent Profile ──
 
 
@@ -986,6 +1030,7 @@ def build_product_system_prompt(
     version_name: str | None = None,
     branch_mappings: list[dict] | None = None,
     project_id_map: dict[str, int] | None = None,
+    response_mode: str | None = None,
 ) -> str:
     """根据产品上下文动态构建 system prompt。
 
@@ -1041,7 +1086,7 @@ def build_product_system_prompt(
             version_section += "\n该版本中各项目对应的分支：\n" + "\n".join(branch_lines)
         version_section += "\n请优先关注当前版本对应的分支代码，但也可以查阅其他文件。"
 
-    return (
+    prompt = (
         f"你是 NeoDev 产品智能助手，当前服务的产品是「{product_name}」。{projects_section}\n"
         f"{context_hint}{version_section}"
         f"{workspace_layout}\n"
@@ -1161,3 +1206,9 @@ def build_product_system_prompt(
         "\n"
         "请用中文回答。回答要简洁、准确、有依据。"
     )
+
+    # 拼接回答模式风格指令
+    mode_config = get_response_mode_config(response_mode)
+    prompt += mode_config.get("prompt_suffix", "")
+
+    return prompt

@@ -49,6 +49,7 @@ class ChatRequest(BaseModel):
     message: str
     stream: bool = True
     doc_context: dict | None = None  # {"requirement_id": int, "current_content": str}
+    response_mode: str | None = None  # simple / medium / hard
 
 
 class NewConversationRequest(BaseModel):
@@ -195,12 +196,14 @@ async def chat(body: ChatRequest, db=Depends(get_db)):
                 thread_id, body.message, session_id=session_id,
                 version_id=conv.get("version_id"),
                 doc_context_input=body.doc_context,
+                response_mode=body.response_mode,
             )
         else:
             gen = _stream_chat(
                 db, body.conversation_id, profile_name, thread_id, body.message,
                 session_id=session_id, project_path=project_path,
                 project_id=project_id,
+                response_mode=body.response_mode,
             )
         return StreamingResponse(
             gen,
@@ -215,6 +218,7 @@ async def chat(body: ChatRequest, db=Depends(get_db)):
             db, body.conversation_id, profile_name, thread_id, body.message,
             session_id=session_id, project_path=project_path,
             project_id=project_id,
+            response_mode=body.response_mode,
         )
 
 
@@ -222,6 +226,7 @@ async def _stream_chat(
     db, conversation_id: int, profile_name: str, thread_id: str, message: str,
     session_id: str | None = None, project_path: str | None = None,
     project_id: int | None = None,
+    response_mode: str | None = None,
 ):
     """SSE 流式生成器。"""
     from service.agent_factory import run_agent_stream
@@ -233,6 +238,7 @@ async def _stream_chat(
             profile_name, thread_id, message,
             session_id=session_id, project_path=project_path,
             project_id=project_id,
+            response_mode=response_mode,
         ):
             sse_data = json.dumps(event, ensure_ascii=False)
             yield f"data: {sse_data}\n\n"
@@ -290,6 +296,7 @@ async def _stream_product_chat(
     thread_id: str, message: str, session_id: str | None = None,
     version_id: int | None = None,
     doc_context_input: dict | None = None,
+    response_mode: str | None = None,
 ):
     """产品级 SSE 流式生成器。
 
@@ -387,6 +394,7 @@ async def _stream_product_chat(
             branch_mappings=branch_mappings,
             project_id_map=project_id_map,
             doc_context=doc_context,
+            response_mode=response_mode,
         ):
             sse_data = json.dumps(event, ensure_ascii=False)
             yield f"data: {sse_data}\n\n"
@@ -436,6 +444,7 @@ async def _invoke_chat(
     db, conversation_id: int, profile_name: str, thread_id: str, message: str,
     session_id: str | None = None, project_path: str | None = None,
     project_id: int | None = None,
+    response_mode: str | None = None,
 ):
     """非流式调用。"""
     from service.agent_factory import run_agent_invoke
@@ -445,6 +454,7 @@ async def _invoke_chat(
         profile_name, thread_id, message,
         session_id=session_id, project_path=project_path,
         project_id=project_id,
+        response_mode=response_mode,
     )
     latency_ms = int((time.time() - start_time) * 1000)
 

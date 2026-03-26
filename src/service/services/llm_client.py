@@ -12,6 +12,8 @@ _ENV_BASE = "OPENAI_BASE"
 _ENV_MODEL_CHAT = "OPENAI_MODEL_CHAT"
 _ENV_MODEL_EMBEDDING = "OPENAI_MODEL_EMBEDDING"
 _ENV_MAX_RETRIES = "OPENAI_REQUEST_MAX_RETRIES"
+_ENV_CHAT_TIMEOUT = "OPENAI_CHAT_TIMEOUT_SECONDS"
+_ENV_EMBEDDING_TIMEOUT = "OPENAI_EMBEDDING_TIMEOUT_SECONDS"
 def _ssl_context() -> ssl.SSLContext:
     """跳过 SSL 验证以兼容内网代理（自签名证书 / 弱密钥）。"""
     ctx = ssl.SSLContext()
@@ -24,6 +26,8 @@ _DEFAULT_BASE = "https://api.openai.com/v1"
 _DEFAULT_MODEL_CHAT = "gpt-4o-mini"
 _DEFAULT_MODEL_EMBEDDING = "text-embedding-3-small"
 _DEFAULT_MAX_RETRIES = 2
+_DEFAULT_CHAT_TIMEOUT = 300.0
+_DEFAULT_EMBEDDING_TIMEOUT = 180.0
 
 
 def _max_retries() -> int:
@@ -33,6 +37,19 @@ def _max_retries() -> int:
     except ValueError:
         return _DEFAULT_MAX_RETRIES
     return max(0, value)
+
+
+def _timeout_from_env(env_name: str, default: float) -> float:
+    raw = os.environ.get(env_name, str(default)).strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return max(1.0, value)
+
+
+def _client_timeout(total_seconds: float) -> httpx.Timeout:
+    return httpx.Timeout(timeout=total_seconds, connect=min(30.0, total_seconds))
 
 
 def _should_retry(exc: Exception) -> bool:
@@ -81,6 +98,8 @@ def get_llm_config() -> dict:
         "model_chat": os.environ.get(_ENV_MODEL_CHAT) or _DEFAULT_MODEL_CHAT,
         "model_embedding": os.environ.get(_ENV_MODEL_EMBEDDING) or _DEFAULT_MODEL_EMBEDDING,
         "max_retries": _max_retries(),
+        "chat_timeout": _timeout_from_env(_ENV_CHAT_TIMEOUT, _DEFAULT_CHAT_TIMEOUT),
+        "embedding_timeout": _timeout_from_env(_ENV_EMBEDDING_TIMEOUT, _DEFAULT_EMBEDDING_TIMEOUT),
     }
 
 
@@ -98,7 +117,7 @@ def chat_completion(prompt: str, system_prompt: str | None = None, max_tokens: i
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
 
-    with httpx.Client(timeout=60.0, verify=_ssl_context()) as client:
+    with httpx.Client(timeout=_client_timeout(cfg["chat_timeout"]), verify=_ssl_context()) as client:
         data = _post_json_with_retry(
             client=client,
             url=f"{cfg['base_url']}/chat/completions",
@@ -163,7 +182,7 @@ def embedding_completion(text: str) -> list[float]:
     if not cfg["api_key"]:
         raise ValueError("OPENAI_API_KEY 未设置，无法调用 embedding")
     payload = {"model": cfg["model_embedding"], "input": text}
-    with httpx.Client(timeout=60.0, verify=_ssl_context()) as client:
+    with httpx.Client(timeout=_client_timeout(cfg["embedding_timeout"]), verify=_ssl_context()) as client:
         data = _post_json_with_retry(
             client=client,
             url=f"{cfg['base_url']}/embeddings",

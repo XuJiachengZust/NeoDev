@@ -64,6 +64,8 @@ export interface DocContextOverlay {
   onModifiedDoc: (modified: string, preChange: string) => void;
 }
 
+export type ResponseMode = "simple" | "medium" | "hard";
+
 interface AgentSessionState {
   sessionId: string;
   currentConversationId: number | null;
@@ -80,6 +82,8 @@ interface AgentSessionState {
   resolving: boolean;
   error: string | null;
   recursionLimitHit: boolean;
+  responseMode: ResponseMode;
+  setResponseMode: (mode: ResponseMode) => void;
   resolve: (
     routeContextKey: string,
     projectId?: number | null,
@@ -116,6 +120,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recursionLimitHit, setRecursionLimitHit] = useState(false);
+  const [responseMode, setResponseMode] = useState<ResponseMode>("medium");
 
   const abortRef = useRef<AbortController | null>(null);
   const docContextRef = useRef<DocContextOverlay | null>(null);
@@ -382,11 +387,11 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
           setStreaming(false);
           abortRef.current = null;
         },
-      });
+      }, { response_mode: responseMode });
 
       abortRef.current = controller;
     }, 0);
-  }, [conversationId]);
+  }, [conversationId, responseMode]);
 
   const send = useCallback(
     (message: string) => {
@@ -409,12 +414,15 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
 
       // 构建文档编辑 extraBody
       const docCtx = docContextRef.current;
-      const extraBody = docCtx ? {
-        doc_context: {
+      const extraBody: Record<string, unknown> = {
+        response_mode: responseMode,
+      };
+      if (docCtx) {
+        extraBody.doc_context = {
           requirement_id: docCtx.requirementId,
           current_content: docCtx.getCurrentContent(),
-        },
-      } : undefined;
+        };
+      }
 
       const controller = streamAgentChat(conversationId, message, {
         onToken: (text) => {
@@ -547,7 +555,7 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
 
       abortRef.current = controller;
     },
-    [conversationId, streaming]
+    [conversationId, responseMode, streaming]
   );
 
   // 清理流式连接
@@ -574,6 +582,8 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       resolving,
       error,
       recursionLimitHit,
+      responseMode,
+      setResponseMode,
       resolve,
       send,
       loadHistory,
@@ -600,6 +610,8 @@ export function AgentSessionProvider({ children }: { children: ReactNode }) {
       resolving,
       error,
       recursionLimitHit,
+      responseMode,
+      setResponseMode,
       resolve,
       send,
       loadHistory,

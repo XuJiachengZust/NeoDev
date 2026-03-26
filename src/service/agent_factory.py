@@ -26,6 +26,7 @@ from service.agent_profiles import (
     build_requirement_doc_prompt,
     build_retriever_subagent,
     get_profile,
+    get_response_mode_config,
 )
 from service.checkpointer import get_checkpointer
 
@@ -223,21 +224,25 @@ def get_or_create_agent(
     session_id: str | None = None,
     project_path: str | None = None,
     project_id: int | None = None,
+    response_mode: str | None = None,
 ) -> Any:
     """获取或创建编译后的 agent，按 thread_id 缓存。
 
     system_prompt 使用占位符，实际 prompt 在运行时由 DynamicPromptMiddleware 注入。
     """
     current_cp = _get_effective_checkpointer()
+    mode_config = get_response_mode_config(response_mode)
+    cache_key = f"{thread_id}:{response_mode or 'medium'}"
 
-    if thread_id in _agent_cache:
-        cached = _agent_cache[thread_id]
+    if cache_key in _agent_cache:
+        cached = _agent_cache[cache_key]
         cached_cp = getattr(cached, "checkpointer", None)
         if cached_cp is not current_cp:
             logger.info("Checkpointer 变化，重建 Agent [%s]", thread_id)
-            del _agent_cache[thread_id]
+            del _agent_cache[cache_key]
         else:
             logger.debug("复用 Agent [%s]", thread_id)
+            logger.debug("Agent cache hit [%s]", cache_key)
             return cached
 
     from deepagents.graph import create_deep_agent
@@ -293,9 +298,10 @@ def get_or_create_agent(
         backend=backend,
         subagents=subagents,
         checkpointer=current_cp,
+        subagent_planning=mode_config.get("subagent_planning", True),
     )
 
-    _agent_cache[thread_id] = agent
+    _agent_cache[cache_key] = agent
     return agent
 
 
@@ -410,19 +416,28 @@ async def run_agent_stream(
     session_id: str | None = None,
     project_path: str | None = None,
     project_id: int | None = None,
+    response_mode: str | None = None,
 ) -> AsyncIterator[dict]:
     """流式调用 agent，yield SSE 事件字典。"""
     agent = get_or_create_agent(
         thread_id, profile_name, session_id=session_id,
         project_path=project_path, project_id=project_id,
+        response_mode=response_mode,
     )
 
+    mode_config = get_response_mode_config(response_mode)
     system_prompt = get_profile(profile_name)["system_prompt"]
+    system_prompt += mode_config.get("prompt_suffix", "")
+
+    configurable: dict = {
+        "thread_id": thread_id,
+        "system_prompt_override": system_prompt,
+    }
+    if mode_config.get("disable_main_planning"):
+        configurable["disabled_tools"] = {"write_todos"}
+
     config = {
-        "configurable": {
-            "thread_id": thread_id,
-            "system_prompt_override": system_prompt,
-        },
+        "configurable": configurable,
         "recursion_limit": 1000,
     }
     input_msg = {"messages": [HumanMessage(content=user_message)]}
@@ -438,19 +453,26 @@ async def run_agent_invoke(
     session_id: str | None = None,
     project_path: str | None = None,
     project_id: int | None = None,
+    response_mode: str | None = None,
 ) -> dict:
     """非流式调用 agent，返回完整响应。"""
     agent = get_or_create_agent(
         thread_id, profile_name, session_id=session_id,
         project_path=project_path, project_id=project_id,
+        response_mode=response_mode,
     )
 
+    mode_config = get_response_mode_config(response_mode)
     system_prompt = get_profile(profile_name)["system_prompt"]
+    system_prompt += mode_config.get("prompt_suffix", "")
+    configurable = {
+        "thread_id": thread_id,
+        "system_prompt_override": system_prompt,
+    }
+    if mode_config.get("disable_main_planning"):
+        configurable["disabled_tools"] = {"write_todos"}
     config = {
-        "configurable": {
-            "thread_id": thread_id,
-            "system_prompt_override": system_prompt,
-        },
+        "configurable": configurable,
         "recursion_limit": 1000,
     }
     input_msg = {"messages": [HumanMessage(content=user_message)]}
@@ -588,21 +610,24 @@ def get_or_create_product_agent(
     branch_mappings: list[dict] | None = None,
     project_id_map: dict[str, int] | None = None,
     exclude_subagents: set[str] | None = None,
+    response_mode: str | None = None,
 ) -> Any:
     """获取或创建产品级 Agent，按 thread_id 缓存。
 
     system_prompt 在运行时由 DynamicPromptMiddleware 动态注入。
     """
     current_cp = _get_effective_checkpointer()
+    mode_config = get_response_mode_config(response_mode)
+    cache_key = f"{thread_id}:{response_mode or 'medium'}"
 
-    if thread_id in _agent_cache:
-        cached = _agent_cache[thread_id]
+    if cache_key in _agent_cache:
+        cached = _agent_cache[cache_key]
         cached_cp = getattr(cached, "checkpointer", None)
         if cached_cp is not current_cp:
-            logger.info("Checkpointer 变化，重建产品 Agent [%s]", thread_id)
-            del _agent_cache[thread_id]
+            logger.info("Checkpointer 变化，重建产品 Agent [%s]", cache_key)
+            del _agent_cache[cache_key]
         else:
-            logger.debug("复用产品 Agent [%s]", thread_id)
+            logger.debug("复用产品 Agent [%s]", cache_key)
             return cached
 
     from deepagents.backends.workspace import SandboxWorkspaceBackend
@@ -613,8 +638,8 @@ def get_or_create_product_agent(
 
     model = _create_chat_model()
 
-    logger.info("创建产品 Agent [%s] model=%s checkpointer=%s",
-                thread_id, model, type(current_cp).__name__)
+    logger.info("创建产品 Agent [%s] mode=%s model=%s checkpointer=%s",
+                cache_key, response_mode or "medium", model, type(current_cp).__name__)
 
     # 创建 workspace
     workspace_backend = SandboxWorkspaceBackend()
@@ -723,10 +748,11 @@ def get_or_create_product_agent(
         workspace_routing={"/workspace/sandbox/": workspace_backend},
         workspace_path_prefix="/workspace/sandbox/",
         general_purpose_agent=False,
+        subagent_planning=mode_config.get("subagent_planning", True),
         retrieval_cache=shared_retrieval_cache,
     )
 
-    _agent_cache[thread_id] = agent
+    _agent_cache[cache_key] = agent
     return agent
 
 
@@ -819,6 +845,7 @@ async def run_product_agent_stream(
     branch_mappings: list[dict] | None = None,
     project_id_map: dict[str, int] | None = None,
     doc_context: dict | None = None,
+    response_mode: str | None = None,
 ) -> AsyncIterator[dict]:
     """产品级 Agent 流式调用。
 
@@ -837,6 +864,7 @@ async def run_product_agent_stream(
         version_name=version_name, branch_mappings=branch_mappings,
         project_id_map=project_id_map,
         exclude_subagents=exclude_subagents,
+        response_mode=response_mode,
     )
 
     if doc_context:
@@ -859,13 +887,19 @@ async def run_product_agent_stream(
             product_name, project_names, route_hint,
             version_name=version_name, branch_mappings=branch_mappings,
             project_id_map=project_id_map,
+            response_mode=response_mode,
         )
 
+    mode_config = get_response_mode_config(response_mode)
+    configurable: dict = {
+        "thread_id": thread_id,
+        "system_prompt_override": system_prompt,
+    }
+    if mode_config.get("disable_main_planning"):
+        configurable["disabled_tools"] = {"write_todos"}
+
     config = {
-        "configurable": {
-            "thread_id": thread_id,
-            "system_prompt_override": system_prompt,
-        },
+        "configurable": configurable,
         "recursion_limit": 1000,
     }
     input_msg = {"messages": [HumanMessage(content=user_message)]}

@@ -31,6 +31,7 @@ from deepagents.middleware.skills import SkillsMiddleware
 from deepagents.middleware.retrieval_cache import RetrievalCache, RetrievalCacheMiddleware
 from deepagents.middleware.subagents import CompiledSubAgent, SubAgent, SubAgentMiddleware
 from deepagents.middleware.summarization import SummarizationMiddleware
+from deepagents.middleware.tool_filter import ToolFilterMiddleware
 from deepagents.middleware.workspace import SandboxWorkspaceMiddleware
 
 BASE_AGENT_PROMPT = "In order to complete the objective that the user asks of you, you have access to a number of standard tools."
@@ -67,6 +68,7 @@ def create_deep_agent(
     workspace_path_prefix: str = "/workspace/",
     interrupt_on: dict[str, bool | InterruptOnConfig] | None = None,
     general_purpose_agent: bool = True,
+    subagent_planning: bool = True,
     debug: bool = False,
     name: str | None = None,
     cache: BaseCache | None = None,
@@ -188,9 +190,9 @@ def create_deep_agent(
         }
 
     # Build middleware stack for subagents (includes skills if provided)
-    subagent_middleware: list[AgentMiddleware] = [
-        TodoListMiddleware(),
-    ]
+    subagent_middleware: list[AgentMiddleware] = []
+    if subagent_planning:
+        subagent_middleware.append(TodoListMiddleware())
 
     backend = backend if backend is not None else (lambda rt: StateBackend(rt))
 
@@ -237,6 +239,7 @@ def create_deep_agent(
     deepagent_middleware: list[AgentMiddleware] = [
         DynamicPromptMiddleware(),
         TodoListMiddleware(),
+        ToolFilterMiddleware(),
     ]
     if memory is not None:
         deepagent_middleware.append(MemoryMiddleware(backend=backend, sources=memory))

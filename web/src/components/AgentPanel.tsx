@@ -5,6 +5,7 @@ import { useProductContext } from "../hooks/useProductContext";
 import { AgentQuickCommands } from "./AgentQuickCommands";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import type { AgentMessage, SubagentStep } from "../api/client";
+import type { ResponseMode } from "../contexts/AgentSessionContext";
 
 interface AgentPanelProps {
   collapsed: boolean;
@@ -26,6 +27,12 @@ const CONTEXT_LABELS: Record<string, string> = {
   product_bugs: "版本Bug",
 };
 
+const RESPONSE_MODE_OPTIONS: Array<{ value: ResponseMode; label: string }> = [
+  { value: "simple", label: "精简" },
+  { value: "medium", label: "标准" },
+  { value: "hard", label: "深入" },
+];
+
 export function AgentPanel({ collapsed, onToggle }: AgentPanelProps) {
   const {
     messages,
@@ -33,6 +40,8 @@ export function AgentPanel({ collapsed, onToggle }: AgentPanelProps) {
     resolving,
     error,
     recursionLimitHit,
+    responseMode,
+    setResponseMode,
     resolve,
     send,
     cancel,
@@ -223,6 +232,19 @@ export function AgentPanel({ collapsed, onToggle }: AgentPanelProps) {
 
           {/* 输入区域 */}
           <div className="agent-chat-input-wrap">
+            <div className="agent-response-mode" role="group" aria-label="回答深度">
+              {RESPONSE_MODE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`agent-response-mode-btn ${responseMode === option.value ? "active" : ""}`}
+                  onClick={() => setResponseMode(option.value)}
+                  disabled={streaming}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
             <textarea
               ref={inputRef}
               className="agent-chat-input"
