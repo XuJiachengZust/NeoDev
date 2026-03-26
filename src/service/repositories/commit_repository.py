@@ -16,6 +16,9 @@ def find_by_id(conn, commit_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+_ORDER_BY_LATEST = "ORDER BY committed_at DESC NULLS LAST, id DESC"
+
+
 def list_by_project_id(
     conn,
     project_id: int,
@@ -26,7 +29,8 @@ def list_by_project_id(
         if version_id is not None:
             cur.execute(
                 """SELECT id, project_id, version_id, commit_sha, message, author, committed_at
-                 FROM commits WHERE project_id = %s AND version_id = %s ORDER BY id""",
+                 FROM commits WHERE project_id = %s AND version_id = %s
+                 ORDER BY committed_at DESC NULLS LAST, id DESC""",
                 (project_id, version_id),
             )
         elif requirement_id is not None:
@@ -34,13 +38,15 @@ def list_by_project_id(
                 """SELECT c.id, c.project_id, c.version_id, c.commit_sha, c.message, c.author, c.committed_at
                  FROM commits c
                  JOIN requirement_commits rc ON rc.commit_id = c.id
-                 WHERE rc.requirement_id = %s AND c.project_id = %s ORDER BY c.id""",
+                 WHERE rc.requirement_id = %s AND c.project_id = %s
+                 ORDER BY c.committed_at DESC NULLS LAST, c.id DESC""",
                 (requirement_id, project_id),
             )
         else:
             cur.execute(
                 """SELECT id, project_id, version_id, commit_sha, message, author, committed_at
-                 FROM commits WHERE project_id = %s ORDER BY id""",
+                 FROM commits WHERE project_id = %s
+                 ORDER BY committed_at DESC NULLS LAST, id DESC""",
                 (project_id,),
             )
         return [dict(row) for row in cur.fetchall()]
@@ -83,7 +89,8 @@ def list_by_version_id_filtered(
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""SELECT id, project_id, version_id, commit_sha, message, author, committed_at
-             FROM commits WHERE {where} ORDER BY id""",
+             FROM commits WHERE {where}
+             ORDER BY committed_at DESC NULLS LAST, id DESC""",
             tuple(params),
         )
         return [dict(row) for row in cur.fetchall()]

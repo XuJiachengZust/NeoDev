@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def _git_checkout(repo_path: str, branch: str) -> str | None:
     """Checkout branch in repo_path; return previous HEAD branch or None.
 
-    If the local branch doesn't exist, creates it from origin/<branch>.
+    If origin/<branch> exists, force the local branch to align with it.
     """
     try:
         r = subprocess.run(
@@ -30,16 +30,28 @@ def _git_checkout(repo_path: str, branch: str) -> str | None:
             timeout=5,
         )
         previous = r.stdout.strip() if r.returncode == 0 and r.stdout else None
-        result = subprocess.run(
-            ["git", "checkout", branch],
+
+        remote_ref = f"origin/{branch}"
+        has_remote = subprocess.run(
+            ["git", "rev-parse", "--verify", remote_ref],
             cwd=repo_path,
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=5,
         )
-        if result.returncode != 0:
+
+        if has_remote.returncode == 0:
             subprocess.run(
-                ["git", "checkout", "-b", branch, f"origin/{branch}"],
+                ["git", "checkout", "-B", branch, remote_ref],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True,
+            )
+        else:
+            subprocess.run(
+                ["git", "checkout", branch],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,

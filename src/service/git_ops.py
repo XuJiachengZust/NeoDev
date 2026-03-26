@@ -11,16 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_ref(repo: Path, branch: str) -> str:
-    """Return a git ref that exists: prefer local branch, fallback to origin/<branch>."""
-    try:
-        r = subprocess.run(
-            ["git", "rev-parse", "--verify", branch],
-            cwd=repo, capture_output=True, text=True, timeout=5,
-        )
-        if r.returncode == 0:
-            return branch
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+    """Return a git ref that exists: prefer origin/<branch>, fallback to local branch."""
     remote_ref = f"origin/{branch}"
     try:
         r = subprocess.run(
@@ -29,6 +20,15 @@ def _resolve_ref(repo: Path, branch: str) -> str:
         )
         if r.returncode == 0:
             return remote_ref
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--verify", branch],
+            cwd=repo, capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            return branch
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
     return branch
