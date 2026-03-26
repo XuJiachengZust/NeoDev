@@ -370,6 +370,10 @@ async def generate_children_docs(
     """触发批量生成子级文档工作流（SSE 流式）。"""
     _check_product_and_requirement(db, product_id, requirement_id)
 
+    gate = doc_service.can_generate_children(db, requirement_id)
+    if not gate.get("can_generate_children"):
+        raise HTTPException(status_code=409, detail=gate.get("reason") or "当前不允许生成子级文档")
+
     # 从父需求获取 version_id，传递给子需求创建
     parent_req = requirement_service.get_requirement(db, requirement_id)
     parent_version_id = parent_req.get("version_id") if parent_req else None

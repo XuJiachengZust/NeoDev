@@ -13,6 +13,7 @@ import {
   canGenerateChildren,
   streamGenerateChildrenDocs,
   ApiError,
+  type CanGenerateChildrenResponse,
   type ProductRequirement,
   type DocVersion,
   type SplitSuggestion,
@@ -52,6 +53,22 @@ interface ChatMessage {
   options?: string[]; // AI 消息的快捷选项
 }
 
+interface ChildGenerationGateInfo {
+  allowed: boolean;
+  reason: string | null;
+  detail: string | null;
+  reasonCode: CanGenerateChildrenResponse["reason_code"];
+}
+
+interface ChildGenerationEntry {
+  reqId: number;
+  title: string;
+  status: "pending" | "running" | "completed" | "failed";
+  step?: string | null;
+  detail?: string | null;
+  error?: string | null;
+}
+
 const STEP_LABELS: Record<string, string> = {
   collect_context: "收集上下文",
   code_search: "代码检索",
@@ -79,6 +96,67 @@ function buildWorkflowSteps(activeStep: string | null = null): WorkflowStepItem[
     status: activeStep === step ? "running" : "pending",
     detail: null,
   }));
+}
+
+function toChildGateInfo(response: CanGenerateChildrenResponse): ChildGenerationGateInfo {
+  return {
+    allowed: response.can_generate_children,
+    reason: response.reason ?? null,
+    detail: response.detail ?? null,
+    reasonCode: response.reason_code ?? null,
+  };
+}
+
+function deriveChildGenerationGate(
+  req: ProductRequirement,
+  allRequirements: ProductRequirement[],
+): ChildGenerationGateInfo {
+  const level = (req.level || "").toLowerCase();
+  if (level !== "epic" && level !== "story") {
+    return {
+      allowed: false,
+      reason: "只有 Epic / Story 可以生成子级文档",
+      detail: "Task 不再向下生成子文档；请在 Epic 或 Story 上触发该流程。",
+      reasonCode: "invalid_level",
+    };
+  }
+
+  const docStatus = req.doc_status ?? (req.has_doc ? "ready" : "none");
+  if (docStatus === "pending" || docStatus === "generating") {
+    return {
+      allowed: false,
+      reason: "当前文档仍在生成中，完成后再生成子级文档",
+      detail: "父文档还在生成流程中，子文档入口会先锁定，避免拆分依据不稳定。",
+      reasonCode: "doc_generating",
+    };
+  }
+  if (docStatus === "failed") {
+    return {
+      allowed: false,
+      reason: "当前文档生成失败，请先重试或修正后再生成子级文档",
+      detail: "请先把父文档恢复到可用状态，再继续向下批量生成子文档。",
+      reasonCode: "doc_failed",
+    };
+  }
+  if (!req.has_doc) {
+    return {
+      allowed: false,
+      reason: "请先完成当前需求文档后再生成子级文档",
+      detail: "当前父需求还没有已落盘的需求文档；请先生成或保存父文档。",
+      reasonCode: "doc_missing",
+    };
+  }
+
+  const childLevel = level === "epic" ? "Story" : "Task";
+  const childCount = allRequirements.filter((item) => item.parent_id === req.id).length;
+  return {
+    allowed: true,
+    reason: null,
+    detail: childCount > 0
+      ? `当前${level === "epic" ? " Epic " : " Story "}文档已就绪，可开始批量生成 ${childCount} 个子级 ${childLevel} 文档。`
+      : `当前${level === "epic" ? " Epic " : " Story "}文档已就绪；生成流程会先基于拆分结果创建子级 ${childLevel}，再批量生成文档。`,
+    reasonCode: null,
+  };
 }
 
 export function RequirementDocPage() {
@@ -149,7 +227,8 @@ export function RequirementDocPage() {
   const [treeRequirements, setTreeRequirements] = useState<ProductRequirement[]>([]);
   const [treeCollapsed, setTreeCollapsed] = useState<Set<number>>(new Set());
   const [childGenParentId, setChildGenParentId] = useState<number | null>(null);
-  const [childGenEntries, setChildGenEntries] = useState<{ reqId: number; title: string; status: string }[]>([]);
+  const [childGenEntries, setChildGenEntries] = useState<ChildGenerationEntry[]>([]);
+  const [currentChildGate, setCurrentChildGate] = useState<ChildGenerationGateInfo | null>(null);
   const childGenAbortRef = useRef<{ abort: () => void } | null>(null);
 
   const loadTree = useCallback(async () => {
@@ -187,56 +266,97 @@ export function RequirementDocPage() {
   const handleGenerateChildrenDocs = async (parentId: number) => {
     if (childGenParentId !== null || isGenerating) return;
     try {
-      const { can_generate_children, reason } = await canGenerateChildren(productId, parentId);
-      if (!can_generate_children) {
-        setError(reason ?? "请先完成当前需求文档后再生成子级文档");
+      const response = await canGenerateChildren(productId, parentId);
+      if (!response.can_generate_children) {
+        setError(response.detail ?? response.reason ?? "??????????????????");
+        if (parentId === requirementId) {
+          setCurrentChildGate(toChildGateInfo(response));
+        }
         return;
       }
       setChildGenParentId(parentId);
       setChildGenEntries([]);
       setError(null);
-      // 展开父节点
+      if (parentId === requirementId) {
+        setGenerationNotice("????????????????????????????????????????");
+      }
+      // ?????
       setTreeCollapsed((prev) => { const n = new Set(prev); n.delete(parentId); return n; });
 
       childGenAbortRef.current = streamGenerateChildrenDocs(productId, parentId, {
         decompose_done: (data: unknown) => {
           const d = data as { children: { requirement_id: number; title: string }[] };
-          setChildGenEntries(d.children.map((c) => ({ reqId: c.requirement_id, title: c.title, status: "pending" })));
+          setChildGenEntries(d.children.map((c) => ({
+            reqId: c.requirement_id,
+            title: c.title,
+            status: "pending",
+            step: null,
+            detail: "????",
+            error: null,
+          })));
         },
         child_start: (data: unknown) => {
           const { requirement_id } = data as { requirement_id: number };
-          setChildGenEntries((prev) => prev.map((c) => c.reqId === requirement_id ? { ...c, status: "running" } : c));
+          setChildGenEntries((prev) => prev.map((c) => c.reqId === requirement_id
+            ? { ...c, status: "running", step: null, detail: "????", error: null }
+            : c));
         },
         child_progress: (data: unknown) => {
-          const { requirement_id, step, status } = data as { requirement_id: number; step?: string; status?: string };
-          if (!requirement_id || !step) return;
-          const suffix = status === "failed" ? "失败" : status === "done" ? "完成" : "进行中";
-          const label = `${STEP_LABELS[step] ?? step} · ${suffix}`;
-          setChildGenEntries((prev) => prev.map((c) => c.reqId === requirement_id ? { ...c, status: label } : c));
+          const { requirement_id, step, status, detail } = data as {
+            requirement_id: number;
+            step?: string;
+            status?: string;
+            detail?: string | null;
+          };
+          if (!requirement_id) return;
+          setChildGenEntries((prev) => prev.map((c) => {
+            if (c.reqId !== requirement_id) return c;
+            if (status === "failed") {
+              return { ...c, status: "failed", step: step ?? c.step ?? null, detail: detail ?? "????", error: detail ?? "????" };
+            }
+            if (status === "done") {
+              return { ...c, status: "running", step: step ?? c.step ?? null, detail: `${STEP_LABELS[step ?? ""] ?? step ?? "????"} ? ???` };
+            }
+            return { ...c, status: "running", step: step ?? c.step ?? null, detail: detail ?? (step ? `${STEP_LABELS[step] ?? step} ? ???` : "???") };
+          }));
         },
         child_done: (data: unknown) => {
-          const { requirement_id, status } = data as { requirement_id: number; status: string };
-          setChildGenEntries((prev) => prev.map((c) => c.reqId === requirement_id ? { ...c, status } : c));
+          const { requirement_id, status, error } = data as { requirement_id: number; status: string; error?: string };
+          setChildGenEntries((prev) => prev.map((c) => c.reqId === requirement_id
+            ? {
+              ...c,
+              status: status === "completed" ? "completed" : "failed",
+              detail: status === "completed" ? "???????" : error ?? "????",
+              error: status === "completed" ? null : (error ?? "????"),
+            }
+            : c));
           void loadTree();
         },
         error: (data: unknown) => {
           const d = data as { message?: string };
-          setError(d.message ?? "子文档生成连接中断，请稍后刷新需求树确认结果。");
+          setError(d.message ?? "???????????????????????");
         },
         workflow_done: () => {
           setChildGenParentId(null);
-          setChildGenEntries([]);
           childGenAbortRef.current = null;
+          if (parentId === requirementId) {
+            setGenerationNotice("?????????????????????????????");
+          }
+          void loadRequirement();
+          void loadDoc();
+          void loadVersions();
           void loadTree();
+          void canGenerateChildren(productId, requirementId)
+            .then((gateResponse) => setCurrentChildGate(toChildGateInfo(gateResponse)))
+            .catch(() => undefined);
         },
       } as Partial<Record<DocWorkflowEventType, (data: unknown) => void>>);
     } catch (e) {
       setChildGenParentId(null);
-      setError(e instanceof Error ? e.message : "生成子文档失败");
+      setError(e instanceof Error ? e.message : "???????");
     }
   };
 
-  // ── Data loading ──
 
   const loadRequirement = useCallback(async () => {
     if (!productId || !requirementId) return;
@@ -289,6 +409,37 @@ export function RequirementDocPage() {
   useEffect(() => { loadDoc(); loadVersions(); }, [loadDoc, loadVersions]);
 
   useEffect(() => {
+    if (!productId || !requirementId || !requirement) {
+      setCurrentChildGate(null);
+      return;
+    }
+    if (requirement.level !== "epic" && requirement.level !== "story") {
+      setCurrentChildGate(null);
+      return;
+    }
+    let alive = true;
+    canGenerateChildren(productId, requirementId)
+      .then((response) => {
+        if (alive) {
+          setCurrentChildGate(toChildGateInfo(response));
+        }
+      })
+      .catch((e) => {
+        if (alive) {
+          setCurrentChildGate({
+            allowed: false,
+            reason: e instanceof Error ? e.message : "子文档门禁校验失败",
+            detail: "当前无法确认是否允许生成子文档，请稍后重试。",
+            reasonCode: null,
+          });
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [productId, requirement, requirementId, currentVersion, generationStatus, generationError, saveFeedback]);
+
+  useEffect(() => {
     setViewMode("edit");
     setDiffV1(null);
     setDiffV2(null);
@@ -307,6 +458,7 @@ export function RequirementDocPage() {
     setSplitSuggestions(null);
     setShowSplitModal(false);
     setGenerationStatus(null);
+    setCurrentChildGate(null);
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
@@ -816,6 +968,12 @@ export function RequirementDocPage() {
   const canSwitchToDiff = !isGenerating && (hasComparableVersions || diffContent !== null || diffV1 != null || diffV2 != null);
   const canSave = !loading && !saving && !isGenerating && !hasReviewChanges && isDirty;
   const canGenerate = !loading && !saving && !hasReviewChanges && !isGenerating;
+  const currentRequirementChildGate = useMemo(() => {
+    if (!requirement || (requirement.level !== "epic" && requirement.level !== "story")) {
+      return null;
+    }
+    return currentChildGate ?? deriveChildGenerationGate(requirement, treeRequirements);
+  }, [currentChildGate, requirement, treeRequirements]);
 
   useEffect(() => {
     if (viewMode === "review" && !hasReviewChanges) {
@@ -1083,6 +1241,32 @@ export function RequirementDocPage() {
                     <span>{step.status === "done" ? "已完成" : step.status === "running" ? "进行中" : step.status === "failed" ? "失败" : "待执行"}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+          {currentRequirementChildGate && (
+            <div
+              className={`req-doc-state-panel card${currentRequirementChildGate.allowed ? "" : " req-doc-state-panel--warning"}`}
+              data-testid="child-generation-gate-panel"
+            >
+              <h3>子文档生成门禁</h3>
+              <p>{currentRequirementChildGate.allowed ? "当前节点已满足子文档生成条件。" : (currentRequirementChildGate.reason ?? "当前节点暂不允许生成子文档。")}</p>
+              {currentRequirementChildGate.detail && <p>{currentRequirementChildGate.detail}</p>}
+              <div className="req-doc-state-panel-actions">
+                {currentRequirementChildGate.allowed ? (
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => handleGenerateChildrenDocs(requirementId)}
+                    disabled={childGenParentId !== null || isGenerating}
+                  >
+                    生成子文档
+                  </button>
+                ) : (
+                  <button type="button" className="secondary" disabled>
+                    生成子文档
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1379,7 +1563,7 @@ function ReqTreeSidebar({
   onSelect: (id: number) => void;
   onGenerateChildren: (parentId: number) => void;
   childGenParentId: number | null;
-  childGenEntries: { reqId: number; title: string; status: string }[];
+  childGenEntries: ChildGenerationEntry[];
   disableActions: boolean;
 }) {
   const epics = requirements.filter((r) => r.level === "epic");
@@ -1390,6 +1574,7 @@ function ReqTreeSidebar({
     const hasChildren = children && children.length > 0;
     const isCollapsed = collapsed.has(req.id);
     const isCurrent = req.id === currentReqId;
+    const childGate = deriveChildGenerationGate(req, requirements);
     const canGenChildren = req.level === "epic" || req.level === "story";
     const isGenerating = childGenParentId === req.id;
     const docIndicator = getTreeDocIndicator(req);
@@ -1430,10 +1615,10 @@ function ReqTreeSidebar({
               type="button"
               className="req-sidebar-gen-btn"
               onClick={(e) => { e.stopPropagation(); onGenerateChildren(req.id); }}
-              disabled={childGenParentId !== null || disableActions}
-              title="生成子级文档"
+              disabled={childGenParentId !== null || disableActions || !childGate.allowed}
+              title={childGate.allowed ? "生成子级文档" : (childGate.reason ?? "当前不允许生成子级文档")}
             >
-              {isGenerating ? "…" : "⚡"}
+              {isGenerating ? "…" : childGate.allowed ? "⚡" : "🔒"}
             </button>
           )}
         </div>
@@ -1446,23 +1631,20 @@ function ReqTreeSidebar({
         })}
         {isGenerating && childGenEntries.length > 0 && !isCollapsed && (
           <div className="req-sidebar-gen-progress" style={{ paddingLeft: 8 + (indent + 1) * 16 }}>
-            {childGenEntries.map((e) => {
-              const normalizedStatus = e.status.includes("失败") ? "failed"
-                : e.status.includes("完成") || e.status === "completed" ? "completed"
-                  : e.status.includes("进行中") || e.status === "running" ? "running"
-                    : "pending";
-              return (
-                <div key={e.reqId} className={`req-sidebar-gen-entry ${normalizedStatus}`}>
-                  <span className="req-sidebar-gen-icon">
-                    {normalizedStatus === "pending" && "○"}
-                    {normalizedStatus === "running" && "◌"}
-                    {normalizedStatus === "completed" && "✓"}
-                    {normalizedStatus === "failed" && "✗"}
-                  </span>
-                  <span className="req-sidebar-gen-title">{e.title} · {e.status}</span>
-                </div>
-              );
-            })}
+            {childGenEntries.map((entry) => (
+              <div key={entry.reqId} className={`req-sidebar-gen-entry ${entry.status}`}>
+                <span className="req-sidebar-gen-icon">
+                  {entry.status === "pending" && "○"}
+                  {entry.status === "running" && "◌"}
+                  {entry.status === "completed" && "✓"}
+                  {entry.status === "failed" && "✗"}
+                </span>
+                <span className="req-sidebar-gen-title">
+                  {entry.title}
+                  {entry.detail ? ` · ${entry.detail}` : ""}
+                </span>
+              </div>
+            ))}
           </div>
         )}
       </div>

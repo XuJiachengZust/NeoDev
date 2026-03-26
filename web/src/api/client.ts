@@ -888,11 +888,25 @@ export function getDocDiff(
   }));
 }
 
+export interface CanGenerateChildrenResponse {
+  can_generate_children: boolean;
+  reason?: string | null;
+  reason_code?:
+    | "requirement_not_found"
+    | "invalid_level"
+    | "doc_missing"
+    | "doc_generating"
+    | "doc_failed"
+    | "doc_not_ready"
+    | null;
+  detail?: string | null;
+}
+
 export function canGenerateChildren(
   productId: number,
   reqId: number
-): Promise<{ can_generate_children: boolean; reason?: string | null }> {
-  return request<{ can_generate_children: boolean; reason?: string | null }>(
+): Promise<CanGenerateChildrenResponse> {
+  return request<CanGenerateChildrenResponse>(
     `/api/products/${productId}/requirements/${reqId}/doc/can-generate-children`
   );
 }

@@ -5,6 +5,7 @@ import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { AgentSessionProvider } from "../contexts/AgentSessionContext";
 import { RequirementDocPage } from "./RequirementDocPage";
+import * as apiClient from "../api/client";
 
 const API_BASE = "/api";
 
@@ -29,6 +30,7 @@ const server = setupServer(
   http.get(`${API_BASE}/products/1/requirements/tree`, () => HttpResponse.json([requirement])),
   http.get(`${API_BASE}/products/1/requirements/1/doc/versions`, () => HttpResponse.json([])),
   http.get(`${API_BASE}/products/1/requirements/1/doc/generation-status`, () => HttpResponse.json({ generation_status: null, generation_error: null })),
+  http.get(`${API_BASE}/products/1/requirements/1/doc/can-generate-children`, () => HttpResponse.json({ can_generate_children: false, reason: "请先完成当前需求文档后再生成子级文档", reason_code: "doc_missing", detail: "当前父需求还没有已落盘的需求文档；请先生成或保存父文档。" })),
   http.get(`${API_BASE}/products/1/requirements/1/doc`, () => HttpResponse.json({ detail: "Not found" }, { status: 404 })),
 );
 
@@ -154,6 +156,85 @@ describe("RequirementDocPage", () => {
     expect(screen.getByTestId("generation-notice")).toHaveTextContent("页面已恢复后台生成状态");
     expect(screen.getByTestId("generation-steps-panel")).toBeInTheDocument();
     expect(screen.getByText("文档生成中（后台运行）…")).toBeInTheDocument();
+  });
+
+  it("shows child-generation gate reason for current epic/story when gating fails", async () => {
+    server.use(
+      http.get(`${API_BASE}/products/1/requirements/1`, () => HttpResponse.json({
+        ...requirement,
+        level: "story",
+        has_doc: false,
+        doc_status: "none",
+      })),
+      http.get(`${API_BASE}/products/1/requirements/tree`, () => HttpResponse.json([{ ...requirement, level: "story", has_doc: false, doc_status: "none" }])),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("child-generation-gate-panel")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("子文档生成门禁")).toBeInTheDocument();
+    expect(screen.getByText("请先完成当前需求文档后再生成子级文档")).toBeInTheDocument();
+    expect(screen.getByText("当前父需求还没有已落盘的需求文档；请先生成或保存父文档。")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "生成子文档" })[0]).toBeDisabled();
+  });
+
+  it("shows child-level progress details and refreshes current page after children workflow completes", async () => {
+    const treeRequirements = [
+      {
+        ...requirement,
+        id: 1,
+        level: "story",
+        title: "用户登录",
+        has_doc: true,
+        doc_status: "ready",
+      },
+    ];
+
+    vi.spyOn(apiClient, "streamGenerateChildrenDocs").mockImplementation((_productId, _requirementId, callbacks) => {
+      callbacks.decompose_done?.({ children: [{ requirement_id: 2, title: "登录表单" }] });
+      callbacks.child_start?.({ requirement_id: 2 });
+      callbacks.child_progress?.({ requirement_id: 2, step: "collect_context", status: "running", detail: "正在收集上下文" });
+      callbacks.child_progress?.({ requirement_id: 2, step: "collect_context", status: "done" });
+      callbacks.child_done?.({ requirement_id: 2, status: "completed" });
+      callbacks.workflow_done?.({ total: 1, completed: 1, failed: 0 });
+      return { abort: vi.fn() };
+    });
+
+    server.use(
+      http.get(`${API_BASE}/products/1/requirements/1`, () => HttpResponse.json({
+        ...requirement,
+        level: "story",
+        has_doc: true,
+        doc_status: "ready",
+      })),
+      http.get(`${API_BASE}/products/1/requirements/tree`, () => HttpResponse.json(treeRequirements)),
+      http.get(`${API_BASE}/products/1/requirements/1/doc`, () => HttpResponse.json({
+        content: "# current draft",
+        version: 2,
+        generated_by: "manual",
+        updated_at: "2026-03-27T00:00:00Z",
+      })),
+      http.get(`${API_BASE}/products/1/requirements/1/doc/versions`, () => HttpResponse.json([{ version: 1 }, { version: 2 }])),
+      http.get(`${API_BASE}/products/1/requirements/1/doc/can-generate-children`, () => HttpResponse.json({
+        can_generate_children: true,
+        reason: null,
+        reason_code: null,
+        detail: "当前 Story 文档已就绪，可开始批量生成子级 Task 文档。",
+      })),
+    );
+
+    renderPage();
+
+    const gateButton = await screen.findByRole("button", { name: "生成子文档" });
+    fireEvent.click(gateButton);
+
+    await waitFor(() => {
+      expect(apiClient.streamGenerateChildrenDocs).toHaveBeenCalled();
+      expect(screen.getByTestId("generation-notice").textContent).toBeTruthy();
+    });
   });
 
   it("shows tree doc statuses and blocks tree navigation when review state is pending", async () => {
