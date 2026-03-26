@@ -52,8 +52,23 @@ def list_by_project_id(
         return [dict(row) for row in cur.fetchall()]
 
 
-def list_by_version_id(conn, project_id: int, version_id: int) -> list[dict]:
-    return list_by_project_id(conn, project_id, version_id=version_id)
+def list_by_version_id(
+    conn,
+    project_id: int,
+    version_id: int,
+    *,
+    offset: int = 0,
+    limit: int = 50,
+) -> list[dict]:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """SELECT id, project_id, version_id, commit_sha, message, author, committed_at
+             FROM commits WHERE project_id = %s AND version_id = %s
+             ORDER BY committed_at DESC NULLS LAST, id DESC
+             LIMIT %s OFFSET %s""",
+            (project_id, version_id, limit, offset),
+        )
+        return [dict(row) for row in cur.fetchall()]
 
 
 def list_by_version_id_filtered(
@@ -61,6 +76,8 @@ def list_by_version_id_filtered(
     project_id: int,
     version_id: int,
     *,
+    offset: int = 0,
+    limit: int = 50,
     message: str | None = None,
     committed_at_from: str | None = None,
     committed_at_to: str | None = None,
@@ -90,8 +107,9 @@ def list_by_version_id_filtered(
         cur.execute(
             f"""SELECT id, project_id, version_id, commit_sha, message, author, committed_at
              FROM commits WHERE {where}
-             ORDER BY committed_at DESC NULLS LAST, id DESC""",
-            tuple(params),
+             ORDER BY committed_at DESC NULLS LAST, id DESC
+             LIMIT %s OFFSET %s""",
+            tuple(params + [limit, offset]),
         )
         return [dict(row) for row in cur.fetchall()]
 

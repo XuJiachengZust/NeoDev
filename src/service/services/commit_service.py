@@ -4,6 +4,13 @@ from service.repositories import commit_repository as commit_repo
 from service.repositories import project_repository as project_repo
 from service.repositories import version_repository as version_repo
 
+DEFAULT_COMMIT_PAGE_LIMIT = 50
+MAX_COMMIT_PAGE_LIMIT = 200
+
+
+def _normalize_commit_pagination(offset: int = 0, limit: int = DEFAULT_COMMIT_PAGE_LIMIT) -> tuple[int, int]:
+    return max(offset, 0), max(1, min(limit, MAX_COMMIT_PAGE_LIMIT))
+
 
 def list_commits(
     conn,
@@ -36,6 +43,8 @@ def list_commits_by_version(
     project_id: int,
     version_id: int,
     *,
+    offset: int = 0,
+    limit: int = DEFAULT_COMMIT_PAGE_LIMIT,
     message: str | None = None,
     committed_at_from: str | None = None,
     committed_at_to: str | None = None,
@@ -47,6 +56,7 @@ def list_commits_by_version(
     ver = version_repo.find_by_id(conn, version_id)
     if ver is None or ver.get("project_id") != project_id:
         return None
+    offset, limit = _normalize_commit_pagination(offset=offset, limit=limit)
     if any(
         x is not None and (x != "" if isinstance(x, str) else True)
         for x in (message, committed_at_from, committed_at_to, id, sha)
@@ -55,10 +65,18 @@ def list_commits_by_version(
             conn,
             project_id,
             version_id,
+            offset=offset,
+            limit=limit,
             message=message,
             committed_at_from=committed_at_from,
             committed_at_to=committed_at_to,
             id=id,
             sha=sha,
         )
-    return commit_repo.list_by_version_id(conn, project_id, version_id)
+    return commit_repo.list_by_version_id(
+        conn,
+        project_id,
+        version_id,
+        offset=offset,
+        limit=limit,
+    )

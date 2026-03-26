@@ -7,6 +7,7 @@ from service.services import commit_service as service
 from service.services import node_service as node_service
 
 router = APIRouter(prefix="", tags=["commits"])
+DEFAULT_COMMIT_PAGE_LIMIT = service.DEFAULT_COMMIT_PAGE_LIMIT
 
 
 @router.get("/{project_id}/commits", response_model=list)
@@ -45,12 +46,16 @@ def list_commits_by_version(
     committed_at_to: str | None = Query(None),
     commit_id: int | None = Query(None, alias="id"),
     sha: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(DEFAULT_COMMIT_PAGE_LIMIT),
     db=Depends(get_db),
 ):
     out = service.list_commits_by_version(
         db,
         project_id,
         version_id,
+        offset=offset,
+        limit=limit,
         message=message,
         committed_at_from=committed_at_from,
         committed_at_to=committed_at_to,

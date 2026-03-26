@@ -76,6 +76,47 @@ class TestCommitsApi:
         assert len(data) == 1
         assert data[0]["commit_sha"] == "a" * 40
 
+    def test_list_by_version_uses_default_pagination(self, client_with_db, pg_conn):
+        pid = _make_project(client_with_db)
+        version_id = _make_version(client_with_db, pid, "main")
+        self._insert_version_commits(pg_conn, pid, version_id, "a", 60)
+
+        r = client_with_db.get(f"/api/projects/{pid}/versions/{version_id}/commits")
+
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 50
+        assert data[0]["message"] == "a-msg-59"
+        assert data[-1]["message"] == "a-msg-10"
+
+    def test_list_by_version_applies_offset(self, client_with_db, pg_conn):
+        pid = _make_project(client_with_db)
+        version_id = _make_version(client_with_db, pid, "main")
+        self._insert_version_commits(pg_conn, pid, version_id, "b", 5)
+
+        r = client_with_db.get(
+            f"/api/projects/{pid}/versions/{version_id}/commits?offset=2&limit=2"
+        )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert [row["message"] for row in data] == ["b-msg-2", "b-msg-1"]
+
+    def test_list_by_version_clamps_limit(self, client_with_db, pg_conn):
+        pid = _make_project(client_with_db)
+        version_id = _make_version(client_with_db, pid, "main")
+        self._insert_version_commits(pg_conn, pid, version_id, "c", 210)
+
+        r = client_with_db.get(
+            f"/api/projects/{pid}/versions/{version_id}/commits?limit=9999"
+        )
+
+        assert r.status_code == 200
+        data = r.json()
+        assert len(data) == 200
+        assert data[0]["message"] == "c-msg-209"
+        assert data[-1]["message"] == "c-msg-10"
+
     def test_list_by_branch_returns_matching_commits(self, client_with_db, pg_conn):
         pid = _make_project(client_with_db)
         main_version_id = _make_version(client_with_db, pid, "main")
