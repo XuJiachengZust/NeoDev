@@ -122,9 +122,9 @@ def can_generate_children(
     requirement_id: int,
     db=Depends(get_db),
 ):
-    """检查当前需求是否已有文档（有文档才可生成子级）。"""
+    """检查当前需求是否允许生成子级文档，并返回失败原因。"""
     _check_product_and_requirement(db, product_id, requirement_id)
-    return {"can_generate_children": doc_service.can_generate_children(db, requirement_id)}
+    return doc_service.can_generate_children(db, requirement_id)
 
 
 @router.get("/{product_id}/requirements/{requirement_id}/doc/generation-context")

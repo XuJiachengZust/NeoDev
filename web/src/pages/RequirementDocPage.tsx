@@ -37,6 +37,15 @@ type VisibleStatus =
   | "dirty"
   | "saved";
 
+type WorkflowStepStatus = "pending" | "running" | "done" | "failed";
+
+interface WorkflowStepItem {
+  key: string;
+  label: string;
+  status: WorkflowStepStatus;
+  detail?: string | null;
+}
+
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
@@ -52,6 +61,25 @@ const STEP_LABELS: Record<string, string> = {
   save_draft: "保存草稿",
   generate_split_suggestions: "生成拆分建议",
 };
+
+const WORKFLOW_STEP_ORDER = [
+  "collect_context",
+  "code_search",
+  "graph_search",
+  "synthesize",
+  "generate_doc",
+  "save_draft",
+  "generate_split_suggestions",
+] as const;
+
+function buildWorkflowSteps(activeStep: string | null = null): WorkflowStepItem[] {
+  return WORKFLOW_STEP_ORDER.map((step) => ({
+    key: step,
+    label: STEP_LABELS[step] ?? step,
+    status: activeStep === step ? "running" : "pending",
+    detail: null,
+  }));
+}
 
 export function RequirementDocPage() {
   const { productId: productIdParam, requirementId: requirementIdParam } = useParams<{
@@ -78,6 +106,8 @@ export function RequirementDocPage() {
   const [error, setError] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [generationNotice, setGenerationNotice] = useState<string | null>(null);
+  const [workflowSteps, setWorkflowSteps] = useState<WorkflowStepItem[]>(() => buildWorkflowSteps());
 
   // Review mode (agent → direct edit)
   const [pendingContent, setPendingContent] = useState<string | null>(null);
@@ -105,6 +135,7 @@ export function RequirementDocPage() {
   const streamAbortRef = useRef<{ abort: () => void } | null>(null);
   const contentAreaRef = useRef<HTMLDivElement>(null);
   const draftBeforeGenerateRef = useRef("");
+  const generationHasContentRef = useRef(false);
 
   const isDirty = content !== savedContent;
 
@@ -122,7 +153,9 @@ export function RequirementDocPage() {
       const vId = requirement?.version_id;
       const reqs = await listProductRequirementsTree(productId, vId ?? undefined);
       setTreeRequirements(reqs);
-    } catch { /* ignore */ }
+    } catch (e) {
+      setError((prev) => prev ?? (e instanceof Error ? e.message : "需求树加载失败"));
+    }
   }, [productId, requirement?.version_id]);
 
   useEffect(() => { loadTree(); }, [loadTree]);
@@ -136,16 +169,20 @@ export function RequirementDocPage() {
 
   const handleTreeNavigate = (reqId: number) => {
     if (reqId === requirementId) return;
+    if (isGenerating) {
+      setError("当前文档仍在生成中，暂不允许切换需求，避免状态混乱。若要放弃本次流式结果，请先停止生成。");
+      return;
+    }
     if (isDirty && !confirm("有未保存的更改，确定切换？")) return;
     navigate(`/products/${productId}/requirements/${reqId}/doc`);
   };
 
   const handleGenerateChildrenDocs = async (parentId: number) => {
-    if (childGenParentId !== null) return;
+    if (childGenParentId !== null || isGenerating) return;
     try {
-      const { can_generate_children } = await canGenerateChildren(productId, parentId);
+      const { can_generate_children, reason } = await canGenerateChildren(productId, parentId);
       if (!can_generate_children) {
-        setError("请先完成当前需求文档后再生成子级文档");
+        setError(reason ?? "请先完成当前需求文档后再生成子级文档");
         return;
       }
       setChildGenParentId(parentId);
@@ -163,16 +200,27 @@ export function RequirementDocPage() {
           const { requirement_id } = data as { requirement_id: number };
           setChildGenEntries((prev) => prev.map((c) => c.reqId === requirement_id ? { ...c, status: "running" } : c));
         },
+        child_progress: (data: unknown) => {
+          const { requirement_id, step, status } = data as { requirement_id: number; step?: string; status?: string };
+          if (!requirement_id || !step) return;
+          const suffix = status === "failed" ? "失败" : status === "done" ? "完成" : "进行中";
+          const label = `${STEP_LABELS[step] ?? step} · ${suffix}`;
+          setChildGenEntries((prev) => prev.map((c) => c.reqId === requirement_id ? { ...c, status: label } : c));
+        },
         child_done: (data: unknown) => {
           const { requirement_id, status } = data as { requirement_id: number; status: string };
           setChildGenEntries((prev) => prev.map((c) => c.reqId === requirement_id ? { ...c, status } : c));
-          loadTree();
+          void loadTree();
+        },
+        error: (data: unknown) => {
+          const d = data as { message?: string };
+          setError(d.message ?? "子文档生成连接中断，请稍后刷新需求树确认结果。");
         },
         workflow_done: () => {
           setChildGenParentId(null);
           setChildGenEntries([]);
           childGenAbortRef.current = null;
-          loadTree();
+          void loadTree();
         },
       } as Partial<Record<DocWorkflowEventType, (data: unknown) => void>>);
     } catch (e) {
@@ -224,8 +272,9 @@ export function RequirementDocPage() {
     try {
       const list = await listDocVersions(productId, requirementId);
       setVersions(list);
-    } catch {
+    } catch (e) {
       setVersions([]);
+      setError((prev) => prev ?? (e instanceof Error ? e.message : "版本列表加载失败"));
     }
   }, [productId, requirementId]);
 
@@ -268,18 +317,25 @@ export function RequirementDocPage() {
     try {
       const st = await getDocGenerationStatus(productId, requirementId);
       setGenerationStatus(st.generation_status);
-      if (st.generation_status === "completed") {
+      if (st.generation_status === "running") {
+        setGenerationNotice("页面已恢复后台生成状态，会继续轮询直到生成完成或失败。");
+        setWorkflowSteps((prev) => prev.some((step) => step.status !== "pending") ? prev : buildWorkflowSteps());
+      } else if (st.generation_status === "completed") {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         setGenerationStatus(null);
-        loadDoc();
-        loadVersions();
+        setGenerationNotice("后台生成已完成，已自动同步最新草稿。");
+        void loadDoc();
+        void loadVersions();
       } else if (st.generation_status === "failed") {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         setGenerationStatus(null);
         setGenerationError(st.generation_error || "生成失败");
+        setGenerationNotice("后台生成失败，已保留你生成前的草稿，可直接继续编辑或重试。" );
         setContent((prev) => prev || draftBeforeGenerateRef.current);
       }
-    } catch { /* ignore */ }
+    } catch (e) {
+      setGenerationNotice((prev) => prev ?? (e instanceof Error ? `生成状态同步失败：${e.message}` : "生成状态同步失败，请稍后重试刷新。"));
+    }
   }, [productId, requirementId, loadDoc, loadVersions]);
 
   useEffect(() => {
@@ -375,29 +431,56 @@ export function RequirementDocPage() {
   const handleGenerate = (userOverview?: string) => {
     if (!productId || !requirementId) return;
     draftBeforeGenerateRef.current = content;
+    generationHasContentRef.current = false;
     setGenerateStreaming(true);
     setGenerateStep(null);
     setError(null);
     setGenerationError(null);
+    setGenerationNotice("正在生成文档。生成期间会禁用保存、切换需求和差异对比；你仍然可以查看当前状态。\n失败后会保留原草稿，便于继续编辑或重试。");
     setSaveFeedback(null);
-    setContent("");
     setSplitSuggestions(null);
+    setWorkflowSteps(buildWorkflowSteps());
     setViewMode("edit");
     setShowGenerateModal(false);
     streamAbortRef.current = streamGenerateDoc(productId, requirementId, {
       token: (data: unknown) => {
         const text = typeof data === "string" ? data : (data as { text?: string; content?: string })?.text ?? (data as { content?: string })?.content ?? "";
-        if (text) setContent((prev) => prev + text);
+        if (!text) return;
+        setContent((prev) => {
+          if (!generationHasContentRef.current) {
+            generationHasContentRef.current = true;
+            return text;
+          }
+          return prev + text;
+        });
       },
       workflow_step: (data: unknown) => {
-        const d = data as { step?: string; status?: string };
-        if (d?.status === "running" && d?.step) {
+        const d = data as { step?: string; status?: string; detail?: string | null };
+        if (!d?.step) return;
+        if (d.status === "running") {
           setGenerateStep(d.step);
         }
+        setWorkflowSteps((prev) => {
+          const activeIndex = WORKFLOW_STEP_ORDER.indexOf(d.step as (typeof WORKFLOW_STEP_ORDER)[number]);
+          return prev.map((step, index) => {
+            if (step.key === d.step) {
+              return {
+                ...step,
+                status: d.status === "failed" ? "failed" : d.status === "done" ? "done" : "running",
+                detail: d.detail ?? null,
+              };
+            }
+            if (d.status === "running" && activeIndex >= 0 && index < activeIndex && step.status === "running") {
+              return { ...step, status: "done" };
+            }
+            return step;
+          });
+        });
         if (d?.status === "failed") {
           setGenerateStreaming(false);
           setGenerateStep(null);
-          setGenerationError("生成失败");
+          setGenerationError(d.detail || "生成失败");
+          setGenerationNotice("本次生成在流程中断开，已恢复到生成前草稿。你可以继续编辑，或直接重试续生成。");
           setContent(draftBeforeGenerateRef.current);
           streamAbortRef.current = null;
         }
@@ -409,18 +492,30 @@ export function RequirementDocPage() {
           setShowSplitModal(true);
         }
       },
+      error: (data: unknown) => {
+        const d = data as { message?: string };
+        setGenerateStreaming(false);
+        setGenerateStep(null);
+        setGenerationError(d.message ?? "生成连接已中断");
+        setGenerationNotice("SSE 连接中断。若后台仍在运行，页面会继续轮询；否则你可以继续编辑或手动重试。" );
+        setContent((prev) => prev || draftBeforeGenerateRef.current);
+        streamAbortRef.current = null;
+      },
       workflow_done: (data: unknown) => {
         setGenerateStreaming(false);
         setGenerateStep(null);
         streamAbortRef.current = null;
         const d = data as { status?: string; error?: string };
-        if (d?.status === "failed" && d?.error) {
-          setGenerationError(d.error);
+        if (d?.status === "failed") {
+          setGenerationError(d.error ?? "生成失败");
+          setGenerationNotice("文档生成失败，已保留原草稿。你可以修正文档后续生成，或继续手动编辑。" );
           setContent(draftBeforeGenerateRef.current);
-        } else {
-          loadDoc();
-          loadVersions();
+          return;
         }
+        setWorkflowSteps((prev) => prev.map((step) => (step.status === "pending" ? step : { ...step, status: "done" })));
+        setGenerationNotice("文档生成完成，已同步最新草稿。建议先预览或查看差异，再决定是否继续编辑。" );
+        void loadDoc();
+        void loadVersions();
       },
     }, userOverview);
   };
@@ -431,6 +526,7 @@ export function RequirementDocPage() {
     if (generateStreaming) {
       setGenerateStreaming(false);
       setGenerateStep(null);
+      setGenerationNotice("已停止当前流式连接。若后端已继续执行，页面仍会通过状态轮询恢复结果；当前先保留生成前草稿。" );
       setContent(draftBeforeGenerateRef.current);
     }
   };
@@ -514,8 +610,9 @@ export function RequirementDocPage() {
     try {
       const d = await getDocDiff(productId, requirementId, v1, v2);
       setDiffContent(d);
-    } catch {
+    } catch (e) {
       setDiffContent(null);
+      setError(e instanceof Error ? e.message : "加载版本对比失败");
     }
   }, [productId, requirementId]);
 
@@ -640,8 +737,8 @@ export function RequirementDocPage() {
                   : hasPersistedDoc ? "ready"
                     : "empty";
   const statusInfo = statusMeta[visibleStatus];
-  const canEnterPreview = !hasBlockingLoadError;
-  const canSwitchToDiff = hasComparableVersions || diffContent !== null;
+  const canEnterPreview = !hasBlockingLoadError && !isGenerating;
+  const canSwitchToDiff = !isGenerating && (hasComparableVersions || diffContent !== null);
   const canSave = !loading && !saving && !isGenerating && !hasReviewChanges && isDirty;
   const canGenerate = !loading && !saving && !hasReviewChanges && !isGenerating;
 
@@ -696,6 +793,7 @@ export function RequirementDocPage() {
                 onGenerateChildren={handleGenerateChildrenDocs}
                 childGenParentId={childGenParentId}
                 childGenEntries={childGenEntries}
+                disableActions={isGenerating}
               />
             )}
           </div>
@@ -854,6 +952,25 @@ export function RequirementDocPage() {
             </div>
           )}
 
+          {generationNotice && (
+            <div className="req-doc-progress" data-testid="generation-notice">
+              <span className="req-doc-progress-dot" />
+              {generationNotice}
+              {hasGenerationFailure && (
+                <button
+                  type="button"
+                  className="secondary xs"
+                  onClick={() => {
+                    setGenerationError(null);
+                    setGenerationNotice("已退出失败态，当前保留草稿，可继续编辑或稍后重试。");
+                  }}
+                  style={{ marginLeft: 8 }}
+                >
+                  继续编辑
+                </button>
+              )}
+            </div>
+          )}
           {generateStreaming && generateStep && (
             <div className="req-doc-progress">
               <span className="req-doc-progress-dot" />
@@ -864,6 +981,20 @@ export function RequirementDocPage() {
             <div className="req-doc-progress">
               <span className="req-doc-progress-dot" />
               文档生成中（后台运行）…
+            </div>
+          )}
+          {(isGenerating || hasGenerationFailure || workflowSteps.some((step) => step.status !== "pending")) && (
+            <div className="req-doc-state-panel card" data-testid="generation-steps-panel">
+              <h3>生成进度</h3>
+              <p>统一展示流式事件、后台轮询恢复和失败恢复口径。</p>
+              <div className="req-doc-generation-steps">
+                {workflowSteps.map((step) => (
+                  <div key={step.key} className={`req-doc-generation-step req-doc-generation-step--${step.status}`}>
+                    <span>{step.label}</span>
+                    <span>{step.status === "done" ? "已完成" : step.status === "running" ? "进行中" : step.status === "failed" ? "失败" : "待执行"}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -957,11 +1088,16 @@ export function RequirementDocPage() {
                       </button>
                     </div>
                   </div>
-                  {diffContent && (
+                  {diffContent ? (
                     <MarkdownDiffRenderer
                       oldContent={diffContent.v1_content}
                       newContent={diffContent.v2_content}
                     />
+                  ) : (
+                    <div className="req-doc-state-panel card">
+                      <h3>还没有可展示的版本差异</h3>
+                      <p>{hasComparableVersions ? "请选择两个版本后点击“对比”。" : "至少保存两个版本后，才能查看历史差异。"}</p>
+                    </div>
                   )}
                 </div>
               )}
@@ -1093,6 +1229,7 @@ function ReqTreeSidebar({
   onGenerateChildren,
   childGenParentId,
   childGenEntries,
+  disableActions,
 }: {
   requirements: ProductRequirement[];
   currentReqId: number;
@@ -1102,6 +1239,7 @@ function ReqTreeSidebar({
   onGenerateChildren: (parentId: number) => void;
   childGenParentId: number | null;
   childGenEntries: { reqId: number; title: string; status: string }[];
+  disableActions: boolean;
 }) {
   const epics = requirements.filter((r) => r.level === "epic");
   const stories = requirements.filter((r) => r.level === "story");
@@ -1149,7 +1287,7 @@ function ReqTreeSidebar({
               type="button"
               className="req-sidebar-gen-btn"
               onClick={(e) => { e.stopPropagation(); onGenerateChildren(req.id); }}
-              disabled={childGenParentId !== null}
+              disabled={childGenParentId !== null || disableActions}
               title="生成子级文档"
             >
               {isGenerating ? "…" : "⚡"}
@@ -1165,17 +1303,23 @@ function ReqTreeSidebar({
         })}
         {isGenerating && childGenEntries.length > 0 && !isCollapsed && (
           <div className="req-sidebar-gen-progress" style={{ paddingLeft: 8 + (indent + 1) * 16 }}>
-            {childGenEntries.map((e) => (
-              <div key={e.reqId} className={`req-sidebar-gen-entry ${e.status}`}>
-                <span className="req-sidebar-gen-icon">
-                  {e.status === "pending" && "○"}
-                  {e.status === "running" && "◌"}
-                  {e.status === "completed" && "✓"}
-                  {e.status === "failed" && "✗"}
-                </span>
-                <span className="req-sidebar-gen-title">{e.title}</span>
-              </div>
-            ))}
+            {childGenEntries.map((e) => {
+              const normalizedStatus = e.status.includes("失败") ? "failed"
+                : e.status.includes("完成") || e.status === "completed" ? "completed"
+                  : e.status.includes("进行中") || e.status === "running" ? "running"
+                    : "pending";
+              return (
+                <div key={e.reqId} className={`req-sidebar-gen-entry ${normalizedStatus}`}>
+                  <span className="req-sidebar-gen-icon">
+                    {normalizedStatus === "pending" && "○"}
+                    {normalizedStatus === "running" && "◌"}
+                    {normalizedStatus === "completed" && "✓"}
+                    {normalizedStatus === "failed" && "✗"}
+                  </span>
+                  <span className="req-sidebar-gen-title">{e.title} · {e.status}</span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

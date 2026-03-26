@@ -56,7 +56,7 @@ describe("RequirementDocPage", () => {
       expect(screen.getAllByText("当前还没有需求文档").length).toBeGreaterThan(0);
     });
 
-    expect(screen.getByRole("button", { name: "生成文档" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "生成文档" }).length).toBeGreaterThan(0);
     expect(screen.getByPlaceholderText("从这里开始写第一版需求文档…")).toBeInTheDocument();
   });
 
@@ -73,6 +73,22 @@ describe("RequirementDocPage", () => {
 
     expect(screen.getByText("文档读取失败")).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("从这里开始写第一版需求文档…")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "重试加载" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "重试加载" }).length).toBeGreaterThan(0);
+  });
+
+  it("restores running generation state after refresh and surfaces progress panel", async () => {
+    server.use(
+      http.get(`${API_BASE}/products/1/requirements/1/doc/generation-status`, () => HttpResponse.json({ generation_status: "running", generation_error: null })),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("doc-status-card")).toHaveAttribute("data-status", "generating");
+    });
+
+    expect(screen.getByTestId("generation-notice")).toHaveTextContent("页面已恢复后台生成状态");
+    expect(screen.getByTestId("generation-steps-panel")).toBeInTheDocument();
+    expect(screen.getByText("文档生成中（后台运行）…")).toBeInTheDocument();
   });
 });

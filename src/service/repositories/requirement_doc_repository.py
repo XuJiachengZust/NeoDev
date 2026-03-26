@@ -2,7 +2,7 @@
 
 from psycopg2.extras import RealDictCursor
 
-_COLUMNS = "id, requirement_id, version, generated_by, file_path, created_at, updated_at"
+_COLUMNS = "id, requirement_id, version, generated_by, file_path, generation_status, generation_started_at, generation_error, created_at, updated_at"
 
 
 def find_meta(conn, requirement_id: int) -> dict | None:

@@ -4,6 +4,16 @@ type JsonRequestOptions = Omit<RequestInit, "body"> & {
   body?: object;
 };
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 async function request<T>(
   path: string,
   options: JsonRequestOptions = {}
@@ -19,7 +29,7 @@ async function request<T>(
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error((data as { detail?: string }).detail ?? res.statusText);
+    throw new ApiError(res.status, (data as { detail?: string }).detail ?? res.statusText);
   }
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => ({}));
@@ -879,8 +889,8 @@ export function getDocDiff(
 export function canGenerateChildren(
   productId: number,
   reqId: number
-): Promise<{ can_generate_children: boolean }> {
-  return request<{ can_generate_children: boolean }>(
+): Promise<{ can_generate_children: boolean; reason?: string | null }> {
+  return request<{ can_generate_children: boolean; reason?: string | null }>(
     `/api/products/${productId}/requirements/${reqId}/doc/can-generate-children`
   );
 }
@@ -954,7 +964,7 @@ export function streamDocEditorChat(
 /** 工作流 SSE 事件类型 */
 export type DocWorkflowEventType =
   | "workflow_step" | "token" | "workflow_done" | "split_suggestions"
-  | "decompose_done" | "child_start" | "child_progress" | "child_done";
+  | "decompose_done" | "child_start" | "child_progress" | "child_done" | "error";
 
 export interface DocWorkflowStreamHandle {
   abort(): void;
@@ -964,11 +974,12 @@ function parseSSEStream(
   res: Response,
   callbacks: Partial<Record<DocWorkflowEventType, (data: unknown) => void>>
 ): { abort: () => void } {
-  const ac = new AbortController();
   const reader = res.body?.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let eventType: string = "message";
+  let finished = false;
+  let aborted = false;
 
   async function pump() {
     if (!reader) return;
@@ -976,7 +987,9 @@ function parseSSEStream(
       for (;;) {
         const { done, value } = await reader.read();
         if (done) {
-          callbacks.workflow_done?.({ status: "completed" });
+          if (!finished && !aborted) {
+            callbacks.workflow_done?.({ status: "completed" });
+          }
           break;
         }
         buffer += decoder.decode(value, { stream: true });
@@ -989,6 +1002,9 @@ function parseSSEStream(
             const raw = line.slice(5).trim();
             try {
               const data = raw ? JSON.parse(raw) : {};
+              if (eventType === "workflow_done") {
+                finished = true;
+              }
               const fn = callbacks[eventType as DocWorkflowEventType];
               if (fn) fn(data);
             } catch {
@@ -999,15 +1015,19 @@ function parseSSEStream(
           }
         }
       }
+    } catch (error) {
+      if (!aborted && (error as Error).name !== "AbortError") {
+        callbacks.error?.({ message: (error as Error).message || "Request failed" });
+      }
     } finally {
       reader.releaseLock();
     }
   }
-  pump();
+  void pump();
   return {
     abort() {
-      ac.abort();
-      reader?.cancel();
+      aborted = true;
+      reader?.cancel().catch(() => undefined);
     },
   };
 }
@@ -1033,7 +1053,11 @@ export function streamGenerateDoc(
       if (!res.ok) throw new Error(res.statusText);
       parseSSEStream(res, callbacks);
     })
-    .catch(() => {});
+    .catch((error) => {
+      if ((error as Error).name !== "AbortError") {
+        callbacks.error?.({ message: (error as Error).message || "Request failed" });
+      }
+    });
   return { abort: () => ac.abort() };
 }
 
@@ -1178,7 +1202,11 @@ export function streamGenerateChildrenDocs(
       if (!res.ok) throw new Error(res.statusText);
       parseSSEStream(res, callbacks);
     })
-    .catch(() => {});
+    .catch((error) => {
+      if ((error as Error).name !== "AbortError") {
+        callbacks.error?.({ message: (error as Error).message || "Request failed" });
+      }
+    });
   return { abort: () => ac.abort() };
 }
 

@@ -90,10 +90,30 @@ def get_diff_contents(
     return {"v1": c1, "v2": c2}
 
 
-def can_generate_children(conn, requirement_id: int) -> bool:
-    """当前需求是否已有文档（有文档才允许生成子级文档）。"""
+def can_generate_children(conn, requirement_id: int) -> dict:
+    """检查当前需求是否允许生成子级文档，并返回失败原因。"""
+    req = requirement_repo.find_by_id(conn, requirement_id)
+    if not req:
+        return {"can_generate_children": False, "reason": "需求不存在"}
+
+    level = (req.get("level") or "").lower()
+    if level not in ("epic", "story"):
+        return {"can_generate_children": False, "reason": "只有 Epic / Story 可以生成子级文档"}
+
     meta = doc_repo.find_meta(conn, requirement_id)
-    return meta is not None
+    if not meta:
+        return {"can_generate_children": False, "reason": "请先完成当前需求文档后再生成子级文档"}
+
+    version = meta.get("version") or 0
+    generation_status = meta.get("generation_status")
+    if generation_status in ("pending", "running"):
+        return {"can_generate_children": False, "reason": "当前文档仍在生成中，完成后再生成子级文档"}
+    if generation_status == "failed":
+        return {"can_generate_children": False, "reason": "当前文档生成失败，请先重试或修正后再生成子级文档"}
+    if version <= 0:
+        return {"can_generate_children": False, "reason": "当前文档草稿尚未落盘，请先完成文档生成或保存草稿"}
+
+    return {"can_generate_children": True, "reason": None}
 
 
 def get_generation_context(
