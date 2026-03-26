@@ -68,6 +68,29 @@ class TestRequirementDocChildrenGate:
         assert generate.status_code == 409
         assert isinstance(generate.json()["detail"], str) and generate.json()["detail"]
 
+    def test_can_generate_children_returns_failed_reason_code_when_parent_doc_failed(self, client_with_db, pg_conn):
+        product_id, version_id = _make_product_version(client_with_db)
+        requirement_id = _create_requirement(client_with_db, product_id, version_id, "Story Failed", "story")
+
+        with pg_conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO requirement_doc_meta (requirement_id, version, generation_status, generation_error)
+                VALUES (%s, 1, 'failed', 'workflow exploded')
+                """,
+                (requirement_id,),
+            )
+        pg_conn.commit()
+
+        response = client_with_db.get(
+            f"/api/products/{product_id}/requirements/{requirement_id}/doc/can-generate-children"
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["can_generate_children"] is False
+        assert payload["reason_code"] == "doc_failed"
+        assert isinstance(payload["detail"], str) and payload["detail"]
+
     def test_can_generate_children_allows_saved_doc(self, client_with_db, pg_conn):
         product_id, version_id = _make_product_version(client_with_db)
         requirement_id = _create_requirement(client_with_db, product_id, version_id, "Epic Ready", "epic")

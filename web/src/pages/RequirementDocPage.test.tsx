@@ -158,6 +158,24 @@ describe("RequirementDocPage", () => {
     expect(screen.getByText("文档生成中（后台运行）…")).toBeInTheDocument();
   });
 
+  it("shows failed generation state when generation-status returns failed", async () => {
+    server.use(
+      http.get(`${API_BASE}/products/1/requirements/1/doc/generation-status`, () =>
+        HttpResponse.json({ generation_status: "failed", generation_error: "workflow exploded" })),
+      http.get(`${API_BASE}/products/1/requirements/1/doc`, () => HttpResponse.json({ detail: "Not found" }, { status: 404 })),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("doc-status-card")).toHaveAttribute("data-status", "generate_failed");
+    });
+
+    expect(screen.getByText("文档生成失败")).toBeInTheDocument();
+    expect(screen.getByText("workflow exploded")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "AI 生成文档" }).length).toBeGreaterThan(0);
+  });
+
   it("shows child-generation gate reason for current epic/story when gating fails", async () => {
     server.use(
       http.get(`${API_BASE}/products/1/requirements/1`, () => HttpResponse.json({
