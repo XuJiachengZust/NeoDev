@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -49,6 +49,67 @@ function renderPage() {
 }
 
 describe("RequirementDocPage", () => {
+  it("shows explicit version feedback after saving and refreshes diff path", async () => {
+    let docVersions = [{ version: 1 }, { version: 2 }];
+    let currentDoc = {
+      content: "# draft\n\nupdated",
+      version: 2,
+      generated_by: "manual",
+      updated_at: "2026-03-27T00:00:00Z",
+    };
+
+    server.use(
+      http.get(`${API_BASE}/products/1/requirements/1/doc`, () => HttpResponse.json(currentDoc)),
+      http.get(`${API_BASE}/products/1/requirements/1/doc/versions`, () => HttpResponse.json(docVersions)),
+      http.put(`${API_BASE}/products/1/requirements/1/doc`, async () => {
+        currentDoc = {
+          ...currentDoc,
+          content: "# draft\n\nupdated again",
+          version: 3,
+          updated_at: "2026-03-27T00:05:00Z",
+        };
+        docVersions = [{ version: 1 }, { version: 2 }, { version: 3 }];
+        return HttpResponse.json(currentDoc);
+      }),
+    );
+
+    renderPage();
+
+    const editor = await screen.findByRole("textbox");
+    fireEvent.change(editor, { target: { value: "# draft\n\nupdated again" } });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("未保存").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("保存完成 · 已生成 v3").length).toBeGreaterThan(0);
+    });
+
+    expect(screen.getAllByText("已保存为 v3").length).toBeGreaterThan(0);
+    expect(screen.getByText("当前 v3")).toBeInTheDocument();
+  });
+
+  it("disables diff entry when there are not enough versions and keeps guidance visible", async () => {
+    server.use(
+      http.get(`${API_BASE}/products/1/requirements/1/doc`, () => HttpResponse.json({
+        content: "# only one version",
+        version: 1,
+        generated_by: "manual",
+        updated_at: "2026-03-27T00:00:00Z",
+      })),
+      http.get(`${API_BASE}/products/1/requirements/1/doc/versions`, () => HttpResponse.json([{ version: 1 }])),
+    );
+
+    renderPage();
+
+    await screen.findByDisplayValue("# only one version");
+    expect(screen.getByRole("button", { name: "变更" })).toBeDisabled();
+    expect(screen.getAllByText("当前版本为 v1，建议先看“当前稿 vs 上一版本”差异，再决定是否继续编辑。").length).toBeGreaterThan(0);
+  });
+
   it("shows empty-doc initial state when doc endpoint returns 404", async () => {
     renderPage();
 

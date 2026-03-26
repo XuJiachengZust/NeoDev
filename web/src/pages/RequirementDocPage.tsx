@@ -93,12 +93,14 @@ export function RequirementDocPage() {
   const [requirement, setRequirement] = useState<ProductRequirement | null>(null);
   const [content, setContent] = useState("");
   const [savedContent, setSavedContent] = useState("");
-  const [, setVersion] = useState(0);
+  const [currentVersion, setCurrentVersion] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("edit");
   const [versions, setVersions] = useState<DocVersion[]>([]);
   const [diffV1, setDiffV1] = useState<number | null>(null);
   const [diffV2, setDiffV2] = useState<number | null>(null);
   const [diffContent, setDiffContent] = useState<{ v1_content: string; v2_content: string } | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [docLoadState, setDocLoadState] = useState<DocLoadState>("idle");
   const [docLoadError, setDocLoadError] = useState<string | null>(null);
@@ -106,12 +108,14 @@ export function RequirementDocPage() {
   const [error, setError] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [lastSavedVersion, setLastSavedVersion] = useState<number | null>(null);
   const [generationNotice, setGenerationNotice] = useState<string | null>(null);
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStepItem[]>(() => buildWorkflowSteps());
 
   // Review mode (agent → direct edit)
   const [pendingContent, setPendingContent] = useState<string | null>(null);
   const [preChangeContent, setPreChangeContent] = useState<string>("");
+  const [reviewSource, setReviewSource] = useState<"agent" | "draft">("agent");
 
   // Generation
   const [generateStreaming, setGenerateStreaming] = useState(false);
@@ -250,12 +254,12 @@ export function RequirementDocPage() {
       const doc = await getRequirementDoc(productId, requirementId);
       setContent(doc.content);
       setSavedContent(doc.content);
-      setVersion(doc.version);
+      setCurrentVersion(doc.version);
       setDocLoadState("ready");
     } catch (e) {
       setContent("");
       setSavedContent("");
-      setVersion(0);
+      setCurrentVersion(null);
       if (e instanceof ApiError && e.status === 404) {
         setDocLoadState("missing");
         return;
@@ -386,6 +390,7 @@ export function RequirementDocPage() {
       onModifiedDoc: (modified: string, preChange: string) => {
         setPreChangeContent(preChange || contentRef.current);
         setPendingContent(modified);
+        setReviewSource("agent");
         setViewMode("review");
       },
     });
@@ -401,11 +406,13 @@ export function RequirementDocPage() {
     setGenerationError(null);
     try {
       const doc = await saveRequirementDoc(productId, requirementId, content, "manual");
-      setVersion(doc.version);
+      setCurrentVersion(doc.version);
+      setLastSavedVersion(doc.version);
       setSavedContent(content);
       setDocLoadState("ready");
-      setSaveFeedback("saved");
-      loadVersions();
+      setSaveFeedback(`已保存为 v${doc.version}`);
+      void loadVersions();
+      void loadTree();
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败");
     } finally {
@@ -513,7 +520,10 @@ export function RequirementDocPage() {
           return;
         }
         setWorkflowSteps((prev) => prev.map((step) => (step.status === "pending" ? step : { ...step, status: "done" })));
-        setGenerationNotice("文档生成完成，已同步最新草稿。建议先预览或查看差异，再决定是否继续编辑。" );
+        setGenerationNotice("文档生成完成，已同步最新草稿。现在会直接进入“当前稿 vs 上一版本”的差异审阅路径。" );
+        setDiffContent(null);
+        setDiffError(null);
+        setViewMode("diff");
         void loadDoc();
         void loadVersions();
       },
@@ -607,27 +617,37 @@ export function RequirementDocPage() {
 
   const loadDiff = useCallback(async (v1: number, v2: number) => {
     if (!productId || !requirementId) return;
+    setDiffLoading(true);
+    setDiffError(null);
     try {
       const d = await getDocDiff(productId, requirementId, v1, v2);
       setDiffContent(d);
     } catch (e) {
       setDiffContent(null);
-      setError(e instanceof Error ? e.message : "加载版本对比失败");
+      setDiffError(e instanceof Error ? e.message : "加载版本对比失败");
+    } finally {
+      setDiffLoading(false);
     }
   }, [productId, requirementId]);
 
   const handleSwitchToDiff = () => {
     setViewMode("diff");
-    // 自动选择最新两个版本
-    if (versions.length >= 2 && diffV1 == null && diffV2 == null) {
+    setDiffError(null);
+    // 默认走“当前稿 vs 上一版本”的最短路径
+    if (versions.length >= 2) {
       const sorted = [...versions].sort((a, b) => a.version - b.version);
-      const v1 = sorted[sorted.length - 2].version;
-      const v2 = sorted[sorted.length - 1].version;
-      setDiffV1(v1);
-      setDiffV2(v2);
-      loadDiff(v1, v2);
-    } else if (diffV1 != null && diffV2 != null) {
-      loadDiff(diffV1, diffV2);
+      const latest = currentVersion ?? sorted[sorted.length - 1].version;
+      const earlierVersions = sorted.filter((item) => item.version < latest);
+      const previous = earlierVersions[earlierVersions.length - 1]?.version ?? sorted[sorted.length - 2].version;
+      if (latest != null && previous != null && (diffV1 !== previous || diffV2 !== latest || diffContent == null)) {
+        setDiffV1(previous);
+        setDiffV2(latest);
+        void loadDiff(previous, latest);
+      }
+      return;
+    }
+    if (diffV1 != null && diffV2 != null) {
+      void loadDiff(diffV1, diffV2);
     }
   };
 
@@ -637,15 +657,23 @@ export function RequirementDocPage() {
     setError(null);
     setGenerationError(null);
     try {
-      const doc = await saveRequirementDoc(productId, requirementId, rebuiltContent, "agent");
+      const doc = await saveRequirementDoc(
+        productId,
+        requirementId,
+        rebuiltContent,
+        reviewSource === "agent" ? "agent" : "manual",
+      );
       setContent(rebuiltContent);
       setSavedContent(rebuiltContent);
-      setVersion(doc.version);
+      setCurrentVersion(doc.version);
+      setLastSavedVersion(doc.version);
       setDocLoadState("ready");
-      setSaveFeedback("saved");
-      loadVersions();
+      setSaveFeedback(`已保存为 v${doc.version}`);
+      void loadVersions();
+      void loadTree();
       setPendingContent(null);
       setPreChangeContent("");
+      setReviewSource("agent");
       setViewMode("edit");
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存失败");
@@ -657,7 +685,16 @@ export function RequirementDocPage() {
   const handleRejectChanges = () => {
     setPendingContent(null);
     setPreChangeContent("");
+    setReviewSource("agent");
     setViewMode("edit");
+  };
+
+  const handleReviewCurrentDraft = () => {
+    if (!diffContent) return;
+    setPreChangeContent(diffContent.v1_content);
+    setPendingContent(diffContent.v2_content);
+    setReviewSource("draft");
+    setViewMode("review");
   };
 
   const hasPersistedDoc = docLoadState === "ready" || versions.length > 0 || savedContent.trim().length > 0;
@@ -685,7 +722,9 @@ export function RequirementDocPage() {
       ready: {
         tone: "success",
         title: hasPersistedDoc ? "已有草稿 / 文档" : "文档已就绪",
-        description: "可以继续编辑、预览或查看版本差异。",
+        description: currentVersion != null
+          ? `当前版本为 v${currentVersion}，建议先看“当前稿 vs 上一版本”差异，再决定是否继续编辑。`
+          : "可以继续编辑、预览或查看版本差异。",
       },
       generating: {
         tone: "info",
@@ -709,7 +748,9 @@ export function RequirementDocPage() {
       review: {
         tone: "warning",
         title: "待审阅",
-        description: "Agent 修改已生成，先审阅并决定是否应用，再继续保存或生成。",
+        description: reviewSource === "draft"
+          ? "当前稿与上一版本存在差异，先审阅并决定是否应用，再继续保存或编辑。"
+          : "Agent 修改已生成，先审阅并决定是否应用，再继续保存或生成。",
         cta: "review",
       },
       dirty: {
@@ -720,12 +761,14 @@ export function RequirementDocPage() {
       },
       saved: {
         tone: "success",
-        title: "保存完成",
-        description: "最新修改已经写入当前需求文档。",
+        title: lastSavedVersion != null ? `保存完成 · 已生成 v${lastSavedVersion}` : "保存完成",
+        description: lastSavedVersion != null
+          ? `最新修改已经写入当前需求文档，版本列表已刷新到 v${lastSavedVersion}。`
+          : "最新修改已经写入当前需求文档。",
       },
     };
     return meta;
-  }, [docLoadError, generateStep, generateStreaming, generationError, hasPersistedDoc]);
+  }, [currentVersion, docLoadError, generateStep, generateStreaming, generationError, hasPersistedDoc, lastSavedVersion, reviewSource]);
   const visibleStatus: VisibleStatus =
     loading ? "loading"
       : isGenerating ? "generating"
@@ -738,7 +781,7 @@ export function RequirementDocPage() {
                     : "empty";
   const statusInfo = statusMeta[visibleStatus];
   const canEnterPreview = !hasBlockingLoadError && !isGenerating;
-  const canSwitchToDiff = !isGenerating && (hasComparableVersions || diffContent !== null);
+  const canSwitchToDiff = !isGenerating && (hasComparableVersions || diffContent !== null || diffV1 != null || diffV2 != null);
   const canSave = !loading && !saving && !isGenerating && !hasReviewChanges && isDirty;
   const canGenerate = !loading && !saving && !hasReviewChanges && !isGenerating;
 
@@ -753,6 +796,19 @@ export function RequirementDocPage() {
       setViewMode("preview");
     }
   }, [canSwitchToDiff, viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "diff" || isGenerating || diffLoading || versions.length < 2) return;
+    if (diffContent) return;
+    const sorted = [...versions].sort((a, b) => a.version - b.version);
+    const latest = currentVersion ?? sorted[sorted.length - 1].version;
+    const earlierVersions = sorted.filter((item) => item.version < latest);
+    const previous = earlierVersions[earlierVersions.length - 1]?.version ?? sorted[sorted.length - 2].version;
+    if (latest == null || previous == null) return;
+    setDiffV1(previous);
+    setDiffV2(latest);
+    void loadDiff(previous, latest);
+  }, [currentVersion, diffContent, diffLoading, isGenerating, loadDiff, versions, viewMode]);
 
   // ── Render ──
 
@@ -827,10 +883,11 @@ export function RequirementDocPage() {
               <div className="req-doc-status-card__desc">{statusInfo.description}</div>
             </div>
             <div className="req-doc-status-card__meta">
+              {currentVersion != null && <span className="req-doc-status-pill">当前 v{currentVersion}</span>}
               {hasPersistedDoc && <span className="req-doc-status-pill">已有文档</span>}
               {hasReviewChanges && <span className="req-doc-status-pill">待审阅</span>}
               {isDirty && !hasReviewChanges && <span className="req-doc-status-pill">未保存</span>}
-              {saveFeedback && !isDirty && <span className="req-doc-status-pill req-doc-status-pill--success">刚保存</span>}
+              {saveFeedback && !isDirty && <span className="req-doc-status-pill req-doc-status-pill--success">{saveFeedback}</span>}
             </div>
           </div>
 
@@ -872,7 +929,7 @@ export function RequirementDocPage() {
               )}
             </div>
             <div className="req-doc-actions">
-              {(isDirty || visibleStatus === "saved") && <span className="req-doc-dirty-badge">{isDirty ? "未保存" : "已保存"}</span>}
+              {(isDirty || visibleStatus === "saved") && <span className="req-doc-dirty-badge">{isDirty ? "未保存" : saveFeedback ?? "已保存"}</span>}
               <button
                 type="button"
                 className="primary"
@@ -955,7 +1012,7 @@ export function RequirementDocPage() {
           {generationNotice && (
             <div className="req-doc-progress" data-testid="generation-notice">
               <span className="req-doc-progress-dot" />
-              {generationNotice}
+              <span style={{ whiteSpace: "pre-line" }}>{generationNotice}</span>
               {hasGenerationFailure && (
                 <button
                   type="button"
@@ -1077,26 +1134,62 @@ export function RequirementDocPage() {
                       <button
                         type="button"
                         className="primary xs"
-                        disabled={diffV1 == null || diffV2 == null}
+                        disabled={diffV1 == null || diffV2 == null || diffLoading}
                         onClick={() => {
                           if (diffV1 != null && diffV2 != null) {
-                            loadDiff(diffV1, diffV2);
+                            void loadDiff(diffV1, diffV2);
                           }
                         }}
                       >
-                        对比
+                        {diffLoading ? "对比中..." : "对比"}
                       </button>
+                      {diffContent && (
+                        <button
+                          type="button"
+                          className="secondary xs"
+                          onClick={handleReviewCurrentDraft}
+                        >
+                          审阅当前稿
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-muted" style={{ marginTop: 8 }}>
+                      默认路径：先对比当前稿与上一版本，再决定是否进入逐块审阅并保存新版本。
                     </div>
                   </div>
-                  {diffContent ? (
+                  {diffLoading ? (
+                    <div className="req-doc-state-panel card">
+                      <h3>正在加载版本差异</h3>
+                      <p>正在准备“当前稿 vs 上一版本”的对比内容。</p>
+                    </div>
+                  ) : diffError ? (
+                    <div className="req-doc-state-panel req-doc-state-panel--danger card">
+                      <h3>版本差异加载失败</h3>
+                      <p>{diffError}</p>
+                      <div className="req-doc-state-panel-actions">
+                        <button
+                          type="button"
+                          className="primary"
+                          disabled={diffV1 == null || diffV2 == null}
+                          onClick={() => {
+                            if (diffV1 != null && diffV2 != null) {
+                              void loadDiff(diffV1, diffV2);
+                            }
+                          }}
+                        >
+                          重试对比
+                        </button>
+                      </div>
+                    </div>
+                  ) : diffContent ? (
                     <MarkdownDiffRenderer
                       oldContent={diffContent.v1_content}
                       newContent={diffContent.v2_content}
                     />
                   ) : (
-                    <div className="req-doc-state-panel card">
+                    <div className="req-doc-state-panel card" data-testid="diff-empty-state">
                       <h3>还没有可展示的版本差异</h3>
-                      <p>{hasComparableVersions ? "请选择两个版本后点击“对比”。" : "至少保存两个版本后，才能查看历史差异。"}</p>
+                      <p>{hasComparableVersions ? "请选择两个版本后点击“对比”，或直接使用默认的当前稿 vs 上一版本路径。" : "至少保存两个版本后，才能查看历史差异。先保存当前草稿形成新版本，再回来审阅。"}</p>
                     </div>
                   )}
                 </div>
