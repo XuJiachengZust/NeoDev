@@ -12,7 +12,7 @@ import {
   deleteVersion,
   listRequirements,
   listCommits,
-  listCommitsByVersion,
+  listCommitsByBranch,
   createImpactAnalysis,
   listImpactAnalyses,
   getImpactAnalysis,
@@ -95,10 +95,13 @@ describe("impact API client", () => {
       expect(list[0]).toMatchObject({ commit_sha: "abc123", project_id: 1 });
     });
 
-    it("listCommitsByVersion returns Commit[]", async () => {
-      const list = await listCommitsByVersion(1, 1);
-      expect(list).toHaveLength(1);
-      expect(list[0]).toMatchObject({ commit_sha: "abc123" });
+    it("listCommitsByBranch returns paged commits", async () => {
+      const page = await listCommitsByBranch(1, "main", { page: 2, page_size: 1 });
+      expect(page.items).toHaveLength(1);
+      expect(page.items[0]).toMatchObject({ commit_sha: "def456" });
+      expect(page.total).toBe(2);
+      expect(page.page).toBe(2);
+      expect(page.page_size).toBe(1);
     });
   });
 

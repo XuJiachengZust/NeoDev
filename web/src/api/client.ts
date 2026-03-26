@@ -216,6 +216,18 @@ export interface ListCommitsByVersionParams {
   sha?: string;
 }
 
+export interface BranchCommitsPage {
+  items: Commit[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export interface ListCommitsByBranchParams extends ListCommitsByVersionParams {
+  page?: number;
+  page_size?: number;
+}
+
 export function listCommitsByVersion(
   projectId: number,
   versionId: number,
@@ -233,6 +245,40 @@ export function listCommitsByVersion(
   return request<Commit[]>(
     `/api/projects/${projectId}/versions/${versionId}/commits${q ? `?${q}` : ""}`
   );
+}
+
+export async function listCommitsByBranch(
+  projectId: number,
+  branch: string,
+  params?: ListCommitsByBranchParams
+): Promise<BranchCommitsPage> {
+  const search = new URLSearchParams();
+  search.set("branch", branch);
+  if (params?.message != null && params.message !== "") search.set("message", params.message);
+  if (params?.committed_at_from != null && params.committed_at_from !== "")
+    search.set("committed_at_from", params.committed_at_from);
+  if (params?.committed_at_to != null && params.committed_at_to !== "")
+    search.set("committed_at_to", params.committed_at_to);
+  if (params?.id != null) search.set("id", String(params.id));
+  if (params?.sha != null && params.sha !== "") search.set("sha", params.sha);
+  if (params?.page != null) search.set("page", String(params.page));
+  if (params?.page_size != null) search.set("page_size", String(params.page_size));
+  const q = search.toString();
+
+  const response = await request<Commit[] | BranchCommitsPage>(
+    `/api/projects/${projectId}/commits-by-branch${q ? `?${q}` : ""}`
+  );
+
+  if (Array.isArray(response)) {
+    return {
+      items: response,
+      total: response.length,
+      page: params?.page ?? 1,
+      page_size: params?.page_size ?? response.length,
+    };
+  }
+
+  return response;
 }
 
 export interface GraphNode {

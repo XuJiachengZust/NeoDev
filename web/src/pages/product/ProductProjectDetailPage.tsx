@@ -8,7 +8,7 @@ import {
   listProductVersions,
   listVersionBranches,
   listVersions,
-  listCommitsByVersion,
+  listCommitsByBranch,
   syncCommitsForVersion,
   getPreprocessStatus,
   postPreprocess,
@@ -66,6 +66,9 @@ export function ProductProjectDetailPage() {
   // 提交列表 & 筛选
   const [commits, setCommits] = useState<Commit[]>([]);
   const [commitsLoading, setCommitsLoading] = useState(false);
+  const [commitsPage, setCommitsPage] = useState(1);
+  const [commitsTotal, setCommitsTotal] = useState(0);
+  const commitsPageSize = 50;
   const [filterText, setFilterText] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
@@ -87,6 +90,41 @@ export function ProductProjectDetailPage() {
 
   // Toast 通知
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const loadCommits = useCallback(async (
+    branch?: string | null,
+    page: number = 1
+  ) => {
+    const targetBranch = branch ?? currentBranch;
+    if (!targetBranch) return;
+    setCommitsLoading(true);
+    try {
+      const params: {
+        message?: string;
+        committed_at_from?: string;
+        committed_at_to?: string;
+        id?: number;
+        sha?: string;
+        page: number;
+        page_size: number;
+      } = {
+        page,
+        page_size: commitsPageSize,
+      };
+      if (filterDateFrom) params.committed_at_from = filterDateFrom;
+      if (filterDateTo) params.committed_at_to = filterDateTo;
+      const resp = await listCommitsByBranch(projectId, targetBranch, params);
+      setCommits(resp.items);
+      setCommitsTotal(resp.total);
+      setCommitsPage(resp.page);
+    } catch {
+      setCommits([]);
+      setCommitsTotal(0);
+      setCommitsPage(page);
+    } finally {
+      setCommitsLoading(false);
+    }
+  }, [commitsPageSize, currentBranch, filterDateFrom, filterDateTo, projectId]);
 
 
   const loadProject = useCallback(async () => {
@@ -159,35 +197,40 @@ export function ProductProjectDetailPage() {
           if (cancelled) return;
           setProjectVersion(pv);
 
-          if (pv) {
-            // 加载提交 + 预处理状态
-            setCommitsLoading(true);
-            const [cmts, preprocessResp] = await Promise.all([
-              listCommitsByVersion(projectId, pv.id),
+          if (match.branch) {
+            // 重置筛选与分页
+            setFilterText("");
+            setFilterDateFrom("");
+            setFilterDateTo("");
+            setFilterIdInput("");
+            setCommitsPage(1);
+
+            const [commitsResp, preprocessResp] = await Promise.all([
+              listCommitsByBranch(projectId, match.branch, { page: 1, page_size: commitsPageSize }),
               getPreprocessStatus(projectId, match.branch).catch(() => null),
             ]);
             if (!cancelled) {
-              setCommits(cmts);
+              setCommits(commitsResp.items);
+              setCommitsTotal(commitsResp.total);
+              setCommitsPage(commitsResp.page);
               if (preprocessResp && "status" in preprocessResp) {
                 setPreprocessStatus(preprocessResp as PreprocessStatusItem);
               } else if (preprocessResp && "items" in preprocessResp) {
                 const items = (preprocessResp as { items: PreprocessStatusItem[] }).items;
                 setPreprocessStatus(items.find((i) => i.branch === match.branch) ?? null);
               }
-              setCommitsLoading(false);
             }
-            // 重置筛选
-            setFilterText("");
-            setFilterDateFrom("");
-            setFilterDateTo("");
-            setFilterIdInput("");
           } else {
             setCommits([]);
+            setCommitsTotal(0);
+            setCommitsPage(1);
             setPreprocessStatus(null);
           }
         } else {
           setProjectVersion(null);
           setCommits([]);
+          setCommitsTotal(0);
+          setCommitsPage(1);
           setPreprocessStatus(null);
         }
       } catch {
@@ -195,12 +238,14 @@ export function ProductProjectDetailPage() {
           setCurrentBranch(null);
           setProjectVersion(null);
           setCommits([]);
+          setCommitsTotal(0);
+          setCommitsPage(1);
         }
       }
     })();
 
     return () => { cancelled = true; };
-  }, [productId, projectId, selectedVersionId]);
+  }, [commitsPageSize, productId, projectId, selectedVersionId]);
 
   // 加载需求完成情况
   const loadReqCounts = useCallback(async () => {
@@ -222,24 +267,6 @@ export function ProductProjectDetailPage() {
   useEffect(() => {
     loadReqCounts();
   }, [loadReqCounts]);
-
-  // 加载提交（带服务端日期过滤）
-  const loadCommits = useCallback(async (pv?: Version | null) => {
-    const ver = pv ?? projectVersion;
-    if (!ver) return;
-    setCommitsLoading(true);
-    try {
-      const params: { message?: string; committed_at_from?: string; committed_at_to?: string; id?: number; sha?: string } = {};
-      if (filterDateFrom) params.committed_at_from = filterDateFrom;
-      if (filterDateTo) params.committed_at_to = filterDateTo;
-      const cmts = await listCommitsByVersion(projectId, ver.id, params);
-      setCommits(cmts);
-    } catch {
-      setCommits([]);
-    } finally {
-      setCommitsLoading(false);
-    }
-  }, [projectId, projectVersion, filterDateFrom, filterDateTo]);
 
   // 客户端筛选：消息/SHA/ID
   const filteredCommits = useMemo(() => {
@@ -342,7 +369,7 @@ export function ProductProjectDetailPage() {
     setError(null);
     try {
       await syncCommitsForVersion(projectId, projectVersion.id);
-      await loadCommits();
+      await loadCommits(currentBranch, 1);
       setSuccess("同步完成");
     } catch (e) {
       setError(e instanceof Error ? e.message : "同步提交失败");
@@ -455,11 +482,13 @@ export function ProductProjectDetailPage() {
   if (loading) return <div className="loading-state">加载中...</div>;
   if (!project) return <div className="result error">{error ?? "项目不存在"}</div>;
 
-  const hasBranch = !!(currentBranch && projectVersion);
+  const hasBranch = !!currentBranch;
   const progress = preprocessStatus?.extra?.progress as { done?: number; total?: number } | undefined;
   const progressTotal = progress?.total ?? 0;
   const progressDone = progress?.done ?? 0;
   const progressPct = progressTotal > 0 ? Math.round((progressDone / progressTotal) * 100) : null;
+  const isCurrentPageFullySelected =
+    filteredCommits.length > 0 && filteredCommits.every((c) => selectedCommits.has(c.id));
 
   return (
     <div data-testid="page-product-project-detail" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -611,7 +640,7 @@ export function ProductProjectDetailPage() {
       <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
           <div className="flex-between mb-8">
             <h3 style={{ margin: 0 }}>提交列表（{currentBranch}）</h3>
-            <span className="text-caption text-muted">{filteredCommits.length} / {commits.length}</span>
+            <span className="text-caption text-muted">当前页 {filteredCommits.length} / {commits.length} · 总计 {commitsTotal}</span>
           </div>
 
           {/* 筛选栏 */}
@@ -648,13 +677,21 @@ export function ProductProjectDetailPage() {
               title="截止日期"
             />
             {(filterDateFrom || filterDateTo) && (
-              <button type="button" className="secondary xs" onClick={() => loadCommits()}>查询</button>
+              <button type="button" className="secondary xs" onClick={() => loadCommits(currentBranch, 1)}>查询</button>
             )}
             {(filterText || filterDateFrom || filterDateTo || filterIdInput) && (
               <button
                 type="button"
                 className="secondary xs"
-                onClick={() => { setFilterText(""); setFilterDateFrom(""); setFilterDateTo(""); setFilterIdInput(""); loadCommits(); }}
+                onClick={() => {
+                  setFilterText("");
+                  setFilterDateFrom("");
+                  setFilterDateTo("");
+                  setFilterIdInput("");
+                  window.setTimeout(() => {
+                    void loadCommits(currentBranch, 1);
+                  }, 0);
+                }}
               >清除</button>
             )}
           </div>
@@ -689,7 +726,7 @@ export function ProductProjectDetailPage() {
               >
                 <input
                   type="checkbox"
-                  checked={filteredCommits.length > 0 && filteredCommits.every((c) => selectedCommits.has(c.id))}
+                  checked={isCurrentPageFullySelected}
                   onChange={toggleAllFiltered}
                 />
                 <span className="text-caption text-muted" style={{ minWidth: 56 }}>SHA</span>
@@ -734,6 +771,25 @@ export function ProductProjectDetailPage() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+              <div className="flex-between mt-12" style={{ gap: 12, flexWrap: "wrap" }}>
+                <span className="text-caption text-muted">
+                  第 {commitsPage} 页 · 每页 {commitsPageSize} 条 · 总计 {commitsTotal} 条
+                </span>
+                <div className="flex-center gap-8">
+                  <button
+                    type="button"
+                    className="secondary xs"
+                    disabled={commitsLoading || commitsPage <= 1}
+                    onClick={() => loadCommits(currentBranch, commitsPage - 1)}
+                  >上一页</button>
+                  <button
+                    type="button"
+                    className="secondary xs"
+                    disabled={commitsLoading || commitsPage * commitsPageSize >= commitsTotal}
+                    onClick={() => loadCommits(currentBranch, commitsPage + 1)}
+                  >下一页</button>
                 </div>
               </div>
             </>

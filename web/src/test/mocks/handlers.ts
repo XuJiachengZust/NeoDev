@@ -110,9 +110,21 @@ export const handlers = [
     if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project not found" }, { status: 404 });
     return HttpResponse.json([commitFixture, { ...commitFixture, id: 2, commit_sha: "def456" }]);
   }),
-  http.get(`${API_BASE}/projects/:project_id/versions/:version_id/commits`, ({ params }) => {
-    if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project or version not found" }, { status: 404 });
-    return HttpResponse.json([commitFixture]);
+  http.get(`${API_BASE}/projects/:project_id/commits-by-branch`, ({ params, request }) => {
+    if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project not found" }, { status: 404 });
+    const url = new URL(request.url);
+    const branch = url.searchParams.get("branch");
+    if (branch !== "main") return HttpResponse.json({ items: [], total: 0, page: 1, page_size: 50 });
+    const page = Number(url.searchParams.get("page") ?? "1");
+    const pageSize = Number(url.searchParams.get("page_size") ?? "50");
+    const all = [commitFixture, { ...commitFixture, id: 2, commit_sha: "def456" }];
+    const start = Math.max(page - 1, 0) * pageSize;
+    return HttpResponse.json({
+      items: all.slice(start, start + pageSize),
+      total: all.length,
+      page,
+      page_size: pageSize,
+    });
   }),
   http.get(`${API_BASE}/projects/:project_id/versions/:version_id/nodes`, ({ params }) => {
     if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project or version not found" }, { status: 404 });
