@@ -43,7 +43,7 @@ def list_by_product(
 
 
 def list_tree(conn, product_id: int, version_id: int | None = None) -> list[dict]:
-    """以平铺列表返回产品下所有需求（含 parent_id、has_doc），前端自行构建树。"""
+    """以平铺列表返回产品下所有需求（含 parent_id、has_doc、doc_status），前端自行构建树。"""
     conditions = ["r.product_id = %s"]
     args: list = [product_id]
     if version_id is not None:
@@ -55,7 +55,14 @@ def list_tree(conn, product_id: int, version_id: int | None = None) -> list[dict
             f"""SELECT r.id, r.product_id, r.parent_id, r.level, r.title, r.description,
                        r.external_id, r.status, r.priority, r.assignee, r.version_id,
                        r.sort_order, r.created_at, r.updated_at,
-                       (m.id IS NOT NULL) AS has_doc
+                       (COALESCE(m.version, 0) > 0) AS has_doc,
+                       CASE
+                           WHEN m.generation_status = 'running' THEN 'generating'
+                           WHEN m.generation_status = 'pending' THEN 'pending'
+                           WHEN m.generation_status = 'failed' THEN 'failed'
+                           WHEN COALESCE(m.version, 0) > 0 THEN 'ready'
+                           ELSE 'none'
+                       END AS doc_status
                 FROM product_requirements r
                 LEFT JOIN requirement_doc_meta m ON m.requirement_id = r.id
                 WHERE {where}

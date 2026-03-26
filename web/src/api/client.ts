@@ -596,8 +596,10 @@ export interface ProductRequirement {
   sort_order: number;
   created_at?: string;
   updated_at?: string;
-  /** 是否有需求文档（来自 list_tree 的 LEFT JOIN） */
+  /** 是否已有真实落盘文档（version > 0） */
   has_doc?: boolean;
+  /** 需求树侧文档状态：none | pending | generating | failed | ready */
+  doc_status?: "none" | "pending" | "generating" | "failed" | "ready";
 }
 
 export interface ProductRequirementCreate {

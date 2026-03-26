@@ -142,6 +142,7 @@ export function RequirementDocPage() {
   const generationHasContentRef = useRef(false);
 
   const isDirty = content !== savedContent;
+  const hasUnsavedTransitionState = isDirty || pendingContent !== null;
 
   // ── 侧边栏需求树 ──
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -177,7 +178,9 @@ export function RequirementDocPage() {
       setError("当前文档仍在生成中，暂不允许切换需求，避免状态混乱。若要放弃本次流式结果，请先停止生成。");
       return;
     }
-    if (isDirty && !confirm("有未保存的更改，确定切换？")) return;
+    if (hasUnsavedTransitionState && !confirm(pendingContent !== null ? "当前还有待审阅/未落盘的改动，确定切换需求并放弃当前审阅状态吗？" : "有未保存的更改，确定切换？")) {
+      return;
+    }
     navigate(`/products/${productId}/requirements/${reqId}/doc`);
   };
 
@@ -286,6 +289,31 @@ export function RequirementDocPage() {
   useEffect(() => { loadDoc(); loadVersions(); }, [loadDoc, loadVersions]);
 
   useEffect(() => {
+    setViewMode("edit");
+    setDiffV1(null);
+    setDiffV2(null);
+    setDiffContent(null);
+    setDiffError(null);
+    setPendingContent(null);
+    setPreChangeContent("");
+    setReviewSource("agent");
+    setError(null);
+    setGenerationError(null);
+    setGenerationNotice(null);
+    setSaveFeedback(null);
+    setLastSavedVersion(null);
+    setGenerateStep(null);
+    setWorkflowSteps(buildWorkflowSteps());
+    setSplitSuggestions(null);
+    setShowSplitModal(false);
+    setGenerationStatus(null);
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, [requirementId]);
+
+  useEffect(() => {
     if (!saveFeedback) return;
     const timer = window.setTimeout(() => setSaveFeedback(null), 2400);
     return () => window.clearTimeout(timer);
@@ -295,11 +323,11 @@ export function RequirementDocPage() {
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) { e.preventDefault(); }
+      if (hasUnsavedTransitionState) { e.preventDefault(); }
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [isDirty]);
+  }, [hasUnsavedTransitionState]);
 
   // ── Keyboard shortcuts ──
 
@@ -330,12 +358,14 @@ export function RequirementDocPage() {
         setGenerationNotice("后台生成已完成，已自动同步最新草稿。");
         void loadDoc();
         void loadVersions();
+        void loadTree();
       } else if (st.generation_status === "failed") {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
         setGenerationStatus(null);
         setGenerationError(st.generation_error || "生成失败");
         setGenerationNotice("后台生成失败，已保留你生成前的草稿，可直接继续编辑或重试。" );
         setContent((prev) => prev || draftBeforeGenerateRef.current);
+        void loadTree();
       }
     } catch (e) {
       setGenerationNotice((prev) => prev ?? (e instanceof Error ? `生成状态同步失败：${e.message}` : "生成状态同步失败，请稍后重试刷新。"));
@@ -517,6 +547,7 @@ export function RequirementDocPage() {
           setGenerationError(d.error ?? "生成失败");
           setGenerationNotice("文档生成失败，已保留原草稿。你可以修正文档后续生成，或继续手动编辑。" );
           setContent(draftBeforeGenerateRef.current);
+          void loadTree();
           return;
         }
         setWorkflowSteps((prev) => prev.map((step) => (step.status === "pending" ? step : { ...step, status: "done" })));
@@ -526,6 +557,7 @@ export function RequirementDocPage() {
         setViewMode("diff");
         void loadDoc();
         void loadVersions();
+        void loadTree();
       },
     }, userOverview);
   };
@@ -1313,6 +1345,22 @@ export function RequirementDocPage() {
 
 // ── 侧边栏需求树组件 ──
 
+function getTreeDocIndicator(req: ProductRequirement): { icon: string; label: string; tone: "none" | "pending" | "generating" | "failed" | "ready" } {
+  const status = req.doc_status ?? (req.has_doc ? "ready" : "none");
+  switch (status) {
+    case "pending":
+      return { icon: "◌", label: "文档排队中", tone: "pending" };
+    case "generating":
+      return { icon: "◔", label: "文档生成中", tone: "generating" };
+    case "failed":
+      return { icon: "✗", label: "文档生成失败", tone: "failed" };
+    case "ready":
+      return { icon: "●", label: "已有文档", tone: "ready" };
+    default:
+      return { icon: "○", label: "暂无文档", tone: "none" };
+  }
+}
+
 function ReqTreeSidebar({
   requirements,
   currentReqId,
@@ -1344,6 +1392,7 @@ function ReqTreeSidebar({
     const isCurrent = req.id === currentReqId;
     const canGenChildren = req.level === "epic" || req.level === "story";
     const isGenerating = childGenParentId === req.id;
+    const docIndicator = getTreeDocIndicator(req);
 
     return (
       <div key={req.id}>
@@ -1361,9 +1410,10 @@ function ReqTreeSidebar({
           <span
             className="req-sidebar-doc-dot"
             data-has-doc={req.has_doc ? "true" : undefined}
-            title={req.has_doc ? "有文档" : "无文档"}
+            data-doc-status={docIndicator.tone}
+            title={docIndicator.label}
           >
-            {req.has_doc ? "●" : "○"}
+            {docIndicator.icon}
           </span>
           <span className={`req-level-badge ${req.level}`} style={{ fontSize: 10, padding: "0 4px" }}>
             {req.level[0].toUpperCase()}

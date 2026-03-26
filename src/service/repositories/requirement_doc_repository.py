@@ -55,14 +55,14 @@ def delete_meta(conn, requirement_id: int) -> bool:
 
 def batch_has_doc(conn, requirement_ids: list[int]) -> dict[int, bool]:
     """
-    批量检查需求是否有关联文档（存在元数据记录）。
+    批量检查需求是否已有真实落盘文档（version > 0）。
     返回 requirement_id -> True/False；未传入的 id 不出现在结果中。
     """
     if not requirement_ids:
         return {}
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
-            "SELECT requirement_id FROM requirement_doc_meta WHERE requirement_id = ANY(%s)",
+            "SELECT requirement_id FROM requirement_doc_meta WHERE requirement_id = ANY(%s) AND COALESCE(version, 0) > 0",
             (requirement_ids,),
         )
         has_set = {row["requirement_id"] for row in cur.fetchall()}

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterEach, afterAll, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { http, HttpResponse } from "msw";
@@ -33,7 +33,10 @@ const server = setupServer(
 );
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  vi.restoreAllMocks();
+});
 afterAll(() => server.close());
 
 function renderPage() {
@@ -151,5 +154,58 @@ describe("RequirementDocPage", () => {
     expect(screen.getByTestId("generation-notice")).toHaveTextContent("页面已恢复后台生成状态");
     expect(screen.getByTestId("generation-steps-panel")).toBeInTheDocument();
     expect(screen.getByText("文档生成中（后台运行）…")).toBeInTheDocument();
+  });
+
+  it("shows tree doc statuses and blocks tree navigation when review state is pending", async () => {
+    const treeRequirements = [
+      {
+        ...requirement,
+        id: 1,
+        title: "用户登录",
+        has_doc: false,
+        doc_status: "generating",
+      },
+      {
+        ...requirement,
+        id: 2,
+        title: "找回密码",
+        has_doc: true,
+        doc_status: "ready",
+      },
+    ];
+
+    server.use(
+      http.get(`${API_BASE}/products/1/requirements/tree`, () => HttpResponse.json(treeRequirements)),
+      http.get(`${API_BASE}/products/1/requirements/1/doc`, () => HttpResponse.json({
+        content: "# current draft",
+        version: 2,
+        generated_by: "manual",
+        updated_at: "2026-03-27T00:00:00Z",
+      })),
+      http.get(`${API_BASE}/products/1/requirements/1/doc/versions`, () => HttpResponse.json([{ version: 1 }, { version: 2 }])),
+      http.get(`${API_BASE}/products/1/requirements/1/doc/diff`, () => HttpResponse.json({ v1: "# old", v2: "# current draft" })),
+    );
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    renderPage();
+
+    await screen.findByDisplayValue("# current draft");
+    await waitFor(() => {
+      expect(screen.getByTitle("文档生成中")).toBeInTheDocument();
+      expect(screen.getByTitle("已有文档")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "变更" }));
+    await screen.findByRole("button", { name: "审阅当前稿" });
+    fireEvent.click(screen.getByRole("button", { name: "审阅当前稿" }));
+
+    const targetNode = await screen.findByText("找回密码");
+    fireEvent.click(targetNode);
+
+    expect(confirmSpy).toHaveBeenCalledWith("当前还有待审阅/未落盘的改动，确定切换需求并放弃当前审阅状态吗？");
+    expect(screen.getByText("找回密码")).toBeInTheDocument();
+    expect(screen.getByTestId("doc-status-card")).toHaveAttribute("data-status", "review");
+    expect(screen.getByRole("button", { name: "应用选择" })).toBeInTheDocument();
   });
 });
