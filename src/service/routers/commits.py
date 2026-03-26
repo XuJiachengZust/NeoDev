@@ -24,6 +24,18 @@ def list_commits(
     return out
 
 
+@router.get("/{project_id}/commits-by-branch", response_model=list)
+def list_commits_by_branch(
+    project_id: int,
+    branch: str = Query(...),
+    db=Depends(get_db),
+):
+    out = service.list_commits_by_branch(db, project_id, branch)
+    if out is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return out
+
+
 @router.get("/{project_id}/versions/{version_id}/commits", response_model=list)
 def list_commits_by_version(
     project_id: int,

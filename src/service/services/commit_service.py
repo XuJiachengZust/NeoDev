@@ -18,6 +18,19 @@ def list_commits(
     )
 
 
+def list_commits_by_branch(
+    conn,
+    project_id: int,
+    branch: str,
+) -> list[dict] | None:
+    if project_repo.find_by_id(conn, project_id) is None:
+        return None
+    ver = version_repo.find_by_project_and_branch(conn, project_id, branch)
+    if ver is None:
+        return []
+    return commit_repo.list_by_version_id(conn, project_id, ver["id"])
+
+
 def list_commits_by_version(
     conn,
     project_id: int,
