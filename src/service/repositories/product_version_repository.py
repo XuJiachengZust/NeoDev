@@ -120,3 +120,22 @@ def remove_branch(conn, version_id: int, project_id: int) -> bool:
             (version_id, project_id),
         )
         return cur.rowcount > 0
+
+
+def list_unversioned_project_branches(conn, project_id: int) -> list[str]:
+    """列出已映射但尚未存在项目级 version 的 branch。"""
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """SELECT DISTINCT pvb.branch
+               FROM product_version_branches pvb
+               LEFT JOIN versions v
+                 ON v.project_id = pvb.project_id
+                AND v.branch = pvb.branch
+               WHERE pvb.project_id = %s
+                 AND pvb.branch IS NOT NULL
+                 AND btrim(pvb.branch) <> ''
+                 AND v.id IS NULL
+               ORDER BY pvb.branch""",
+            (project_id,),
+        )
+        return [str(row["branch"]) for row in cur.fetchall()]

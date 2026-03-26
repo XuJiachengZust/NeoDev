@@ -10,6 +10,25 @@ def _make_project(client, repo_path: str = "/tmp/p"):
     return r.json()["id"]
 
 
+def _make_product_version_branch_mapping(client, project_id: int, branch: str):
+    product = client.post("/api/products", json={"name": "neo"})
+    assert product.status_code == 201
+    product_id = product.json()["id"]
+
+    version = client.post(
+        f"/api/products/{product_id}/versions",
+        json={"version_name": "1.0.0"},
+    )
+    assert version.status_code == 201
+    version_id = version.json()["id"]
+
+    mapping = client.post(
+        f"/api/products/{product_id}/versions/{version_id}/branches",
+        json={"project_id": project_id, "branch": branch},
+    )
+    assert mapping.status_code == 200
+
+
 class TestSyncApi:
     def test_sync_commits_returns_200_with_summary(self, client_with_db):
         pid = _make_project(client_with_db)
@@ -28,6 +47,29 @@ class TestSyncApi:
         r = client_with_db.post("/api/projects/999999/sync-commits")
         assert r.status_code == 404
         assert r.json()["detail"] == "Project not found"
+
+    def test_sync_commits_auto_creates_missing_version_for_mapped_branch(self, client_with_db):
+        pid = _make_project(client_with_db)
+        _make_product_version_branch_mapping(client_with_db, pid, "release/1.0")
+
+        with patch("service.services.sync_service._resolve_local_repo", return_value="/tmp/p"), patch(
+            "service.services.sync_service.git_ops.fetch_repo"
+        ), patch(
+            "service.services.sync_service.git_ops.list_commits",
+            return_value=[{"commit_sha": "d" * 40, "message": "m", "author": "bot", "committed_at": None}],
+        ):
+            r = client_with_db.post(f"/api/projects/{pid}/sync-commits")
+
+        assert r.status_code == 200
+        data = r.json()
+        assert data["project_id"] == pid
+        assert data["versions_synced"] == 1
+        assert data["commits_synced"] == 1
+
+        versions = client_with_db.get(f"/api/projects/{pid}/versions")
+        assert versions.status_code == 200
+        assert len(versions.json()) == 1
+        assert versions.json()[0]["branch"] == "release/1.0"
 
     def test_sync_commits_for_version_returns_200_with_summary(self, client_with_db):
         pid = _make_project(client_with_db)

@@ -10,8 +10,10 @@ from gitnexus_parser.ingestion.repo_resolve import ensure_repo_from_url, resolve
 from service import git_ops
 from service.path_allowlist import ensure_path_allowed
 from service.repositories import commit_repository as commit_repo
+from service.repositories import product_version_repository as product_version_repo
 from service.repositories import project_repository as project_repo
 from service.repositories import version_repository as version_repo
+from service.services import version_service
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +234,26 @@ def sync_commits_for_version(conn, project_id: int, version_id: int) -> dict | N
     return result
 
 
+def _ensure_versions_for_mapped_branches(conn, project_id: int) -> list[dict]:
+    """Auto-create missing project versions for product-mapped branches."""
+    created: list[dict] = []
+    for branch in product_version_repo.list_unversioned_project_branches(conn, project_id):
+        row, err = version_service.create_version(conn, project_id, branch)
+        if row is not None:
+            created.append(row)
+            continue
+        if err != "duplicate_branch":
+            logger.warning(
+                "project_id=%s: auto-create mapped version failed for branch=%s, err=%s",
+                project_id,
+                branch,
+                err,
+            )
+    if created:
+        conn.commit()
+    return created
+
+
 def sync_commits_for_project(conn, project_id: int) -> dict | None:
     """
     Sync commits and run graph pipeline for all versions of the project (each version independently).
@@ -242,6 +264,7 @@ def sync_commits_for_project(conn, project_id: int) -> dict | None:
     project = project_repo.find_by_id(conn, project_id)
     if not project:
         return None
+    created_versions = _ensure_versions_for_mapped_branches(conn, project_id)
     versions = version_repo.list_by_project_id(conn, project_id)
     total_commits = 0
     graph_actions = []
@@ -264,7 +287,7 @@ def sync_commits_for_project(conn, project_id: int) -> dict | None:
         "graph_errors": graph_errors if graph_errors else None,
     }
     logger.info(
-        "project_id=%s: sync-commits done, versions_synced=%s, commits_synced=%s",
-        project_id, result["versions_synced"], result["commits_synced"],
+        "project_id=%s: sync-commits done, versions_synced=%s, commits_synced=%s, auto_created_versions=%s",
+        project_id, result["versions_synced"], result["commits_synced"], len(created_versions),
     )
     return result

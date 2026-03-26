@@ -27,6 +27,22 @@ def _make_version(conn, project_id: int, branch: str = "main"):
         return cur.fetchone()[0]
 
 
+def _make_product_version_branch_mapping(conn, project_id: int, branch: str):
+    with conn.cursor() as cur:
+        cur.execute("INSERT INTO products (name) VALUES ('neo') RETURNING id")
+        product_id = cur.fetchone()[0]
+        cur.execute(
+            "INSERT INTO product_versions (product_id, version_name) VALUES (%s, '1.0.0') RETURNING id",
+            (product_id,),
+        )
+        product_version_id = cur.fetchone()[0]
+        cur.execute(
+            """INSERT INTO product_version_branches (product_version_id, project_id, branch)
+               VALUES (%s, %s, %s)""",
+            (product_version_id, project_id, branch),
+        )
+
+
 class TestSyncCommitsForProject:
     def test_returns_none_when_project_not_found(self, pg_conn):
         result = sync_service.sync_commits_for_project(pg_conn, 999999)
@@ -56,3 +72,30 @@ class TestSyncCommitsForProject:
 
         listed = commit_repo.list_by_version_id(pg_conn, pid, vid)
         assert len(listed) == 2
+
+    def test_auto_creates_missing_version_for_mapped_branch_before_sync(self, pg_conn):
+        pg_conn.rollback()
+        pid = _make_project(pg_conn, repo_path="/tmp/repo")
+        _make_product_version_branch_mapping(pg_conn, pid, "release/1.0")
+        pg_conn.commit()
+
+        mock_commits = [
+            {"commit_sha": "c" * 40, "message": "mapped", "author": "a3", "committed_at": None},
+        ]
+        with (
+            patch("service.services.sync_service._resolve_local_repo", return_value="/tmp/repo"),
+            patch("service.services.sync_service.git_ops.fetch_repo"),
+            patch("service.services.sync_service.git_ops.list_commits", return_value=mock_commits),
+        ):
+            result = sync_service.sync_commits_for_project(pg_conn, pid)
+
+        assert result is not None
+        assert result["versions_synced"] == 1
+        assert result["commits_synced"] == 1
+
+        created = version_repo.find_by_project_and_branch(pg_conn, pid, "release/1.0")
+        assert created is not None
+
+        listed = commit_repo.list_by_version_id(pg_conn, pid, created["id"])
+        assert len(listed) == 1
+        assert listed[0]["commit_sha"] == "c" * 40
