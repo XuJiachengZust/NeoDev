@@ -17,20 +17,30 @@ def _get_test_repo_path() -> str:
 
 
 def _run_migration_if_needed(conn) -> None:
-    """Apply all SQL migrations in docker/migrations (idempotent)."""
+    """Apply SQL migrations only when the test database is not initialized yet."""
     migration_dir = Path(__file__).resolve().parent.parent / "docker" / "migrations"
     if not migration_dir.is_dir():
         return
     conn.rollback()
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('public.projects'), to_regclass('public.requirement_split_suggestions')")
+        projects_table, latest_table = cur.fetchone()
+    if projects_table and latest_table:
+        return
     for migration_path in sorted(migration_dir.glob("*.sql")):
         sql = migration_path.read_text(encoding="utf-8")
         with conn.cursor() as cur:
-            for stmt in sql.split(";"):
+            normalized_sql = "\n".join(
+                line for line in sql.splitlines() if not line.strip().startswith("--")
+            ).strip()
+            if not normalized_sql:
+                continue
+            # Keep PL/pgSQL blocks intact; naive ';' splitting breaks DO $$ ... $$; migrations.
+            if "$$" in normalized_sql:
+                cur.execute(normalized_sql)
+                continue
+            for stmt in normalized_sql.split(";"):
                 stmt = stmt.strip()
-                # Drop leading comment lines so "-- comment\nCREATE TABLE ..." is executed
-                stmt = "\n".join(
-                    line for line in stmt.split("\n") if not line.strip().startswith("--")
-                ).strip()
                 if stmt:
                     cur.execute(stmt)
     conn.commit()
@@ -65,6 +75,8 @@ def test_repo_path() -> str:
 @pytest.fixture
 def client_with_db(pg_conn):
     """TestClient with get_db overridden to use test PG connection. Rolls back before yield for isolation."""
+    from unittest.mock import AsyncMock, patch
+
     from fastapi.testclient import TestClient
 
     from service.dependencies import get_db
@@ -76,7 +88,10 @@ def client_with_db(pg_conn):
     app.dependency_overrides[get_db] = override_get_db
     try:
         pg_conn.rollback()
-        with TestClient(app) as c:
-            yield c
+        with patch("service.checkpointer.init_checkpointer", new=AsyncMock(return_value=None)), patch(
+            "service.checkpointer.close_checkpointer", new=AsyncMock(return_value=None)
+        ):
+            with TestClient(app) as c:
+                yield c
     finally:
         app.dependency_overrides.pop(get_db, None)
