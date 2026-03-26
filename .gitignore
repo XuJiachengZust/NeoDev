@@ -1,3 +1,21 @@
 # 本地环境与密钥（勿提交）
 .env
 .env.local
+
+# Python 缓存
+__pycache__/
+**/__pycache__/
+
+# 前端本地生成物
+web/node_modules/
+web/dist/
+
+# 本地 AI / 编辑器工作产物
+.cursor/plans/
+.claude/
+
+# 本地导出的 Docker 镜像包
+/docker/images/*.tar
+
+# Windows 崩溃转储
+bash.exe.stackdump
