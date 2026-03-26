@@ -1,6 +1,8 @@
 """Product version service: orchestration for product-level versions."""
 
 from service.repositories import product_version_repository as repo
+from service.repositories import version_repository
+from service.services import version_service
 
 
 def list_versions(conn, product_id: int, status: str | None = None) -> list[dict]:
@@ -38,7 +40,11 @@ def list_branches(conn, version_id: int) -> list[dict]:
 
 
 def set_branch(conn, version_id: int, project_id: int, branch: str) -> dict:
-    return repo.set_branch(conn, version_id, project_id, branch)
+    row = repo.set_branch(conn, version_id, project_id, branch)
+    branch = (branch or "").strip()
+    if branch and version_repository.find_by_project_and_branch(conn, project_id, branch) is None:
+        version_service.create_version(conn, project_id, branch)
+    return row
 
 
 def remove_branch(conn, version_id: int, project_id: int) -> bool:

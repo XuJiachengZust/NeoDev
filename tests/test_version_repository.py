@@ -22,6 +22,21 @@ def _make_version(conn, project_id: int, branch: str = "main"):
         return cur.fetchone()[0]
 
 
+class TestFindByProjectAndBranch:
+    def test_returns_matching_version(self, pg_conn):
+        pg_conn.rollback()
+        pid = _make_project(pg_conn)
+        vid = _make_version(pg_conn, pid, "release/1.0")
+        pg_conn.commit()
+
+        result = version_repo.find_by_project_and_branch(pg_conn, pid, "release/1.0")
+
+        assert result is not None
+        assert result["id"] == vid
+        assert result["project_id"] == pid
+        assert result["branch"] == "release/1.0"
+
+
 class TestUpdateLastParsedCommit:
     def test_updates_and_returns_row(self, pg_conn):
         pg_conn.rollback()

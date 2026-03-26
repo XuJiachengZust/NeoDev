@@ -25,6 +25,17 @@ def find_by_id(conn, version_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+def find_by_project_and_branch(conn, project_id: int, branch: str) -> dict | None:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """SELECT id, project_id, branch, version_name, created_at, last_parsed_commit
+             FROM versions WHERE project_id = %s AND branch = %s""",
+            (project_id, branch),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 def create(
     conn,
     project_id: int,
