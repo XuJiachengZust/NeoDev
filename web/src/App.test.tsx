@@ -12,14 +12,14 @@ afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
 describe("App routes", () => {
-  it("renders projects page at /", async () => {
+  it("renders products page at /", async () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <App />
       </MemoryRouter>
     );
     await waitFor(() => {
-      expect(screen.getByTestId("page-projects")).toBeInTheDocument();
+      expect(screen.getByTestId("page-products")).toBeInTheDocument();
     });
   });
 
@@ -34,15 +34,14 @@ describe("App routes", () => {
     });
   });
 
-  it("renders projects page at /projects", async () => {
+  it("redirects /projects to products page", async () => {
     render(
       <MemoryRouter initialEntries={["/projects"]}>
         <App />
       </MemoryRouter>
     );
     await waitFor(() => {
-      expect(screen.getByTestId("page-projects")).toBeInTheDocument();
+      expect(screen.getByTestId("page-products")).toBeInTheDocument();
     });
   });
-
 });

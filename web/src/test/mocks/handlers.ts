@@ -60,6 +60,9 @@ export const handlers = [
   http.get(`${API_BASE}/projects`, () => {
     return HttpResponse.json([projectFixture]);
   }),
+  http.get(`${API_BASE}/products`, () => {
+    return HttpResponse.json([]);
+  }),
   http.post(`${API_BASE}/projects`, async ({ request }) => {
     const body = (await request.json()) as { name: string; repo_path: string };
     return HttpResponse.json(
@@ -125,6 +128,11 @@ export const handlers = [
       page,
       page_size: pageSize,
     });
+  }),
+  http.get(`${API_BASE}/projects/:project_id/versions/:version_id/commits`, ({ params }) => {
+    if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project or version not found" }, { status: 404 });
+    if (Number(params.version_id) !== 1) return HttpResponse.json({ detail: "Version not found" }, { status: 404 });
+    return HttpResponse.json([commitFixture, { ...commitFixture, id: 2, commit_sha: "def456" }]);
   }),
   http.get(`${API_BASE}/projects/:project_id/versions/:version_id/nodes`, ({ params }) => {
     if (Number(params.project_id) !== 1) return HttpResponse.json({ detail: "Project or version not found" }, { status: 404 });
@@ -206,6 +214,25 @@ export const handlers = [
       commits_synced: 0,
       graph_action: "full",
       graph_errors: undefined,
+    });
+  }),
+  http.post(`${API_BASE}/agent/sessions/resolve`, async ({ request }) => {
+    const body = (await request.json()) as {
+      session_id?: string;
+      route_context_key?: string;
+      product_id?: number | null;
+      version_id?: number | null;
+    };
+    return HttpResponse.json({
+      conversation_id: 1,
+      thread_id: body.session_id ?? "test-session",
+      agent_profile: "default",
+      route_context_key: body.route_context_key ?? "default",
+      product_id: body.product_id ?? null,
+      version_id: body.version_id ?? null,
+      version_name: body.version_id ? `V${body.version_id}` : null,
+      product_name: body.product_id ? "Mock Product" : null,
+      project_branches: [],
     });
   }),
 

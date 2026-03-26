@@ -138,7 +138,13 @@ describe("impact API client", () => {
 
     it("syncCommits returns summary", async () => {
       const result = await syncCommits(1);
-      expect(result).toMatchObject({ synced: true });
+      expect(result).toMatchObject({
+        project_id: 1,
+        versions_synced: 1,
+        commits_synced: 0,
+        graph_actions: [],
+        graph_errors: null,
+      });
     });
   });
 });
