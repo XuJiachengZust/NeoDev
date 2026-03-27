@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterEach, afterAll, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -171,9 +171,10 @@ describe("RequirementDocPage", () => {
       expect(screen.getByTestId("doc-status-card")).toHaveAttribute("data-status", "generate_failed");
     });
 
-    expect(screen.getByText("文档生成失败")).toBeInTheDocument();
-    expect(screen.getByText("workflow exploded")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "AI 生成文档" }).length).toBeGreaterThan(0);
+    const statusCard = screen.getByTestId("doc-status-card");
+    expect(within(statusCard).getByText("文档生成失败")).toBeInTheDocument();
+    expect(within(statusCard).getByText("workflow exploded")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "生成文档" }).length).toBeGreaterThan(0);
   });
 
   it("shows child-generation gate reason for current epic/story when gating fails", async () => {
