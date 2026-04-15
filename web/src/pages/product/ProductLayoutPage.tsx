@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate, useOutletContext, useParams } from "react-router-dom";
+import { NavLink, Outlet, useOutletContext, useParams } from "react-router-dom";
 import { getProduct, type Product } from "../../api/client";
 
 export interface ProductPageContext {
@@ -14,11 +14,11 @@ export function useProductPageContext(): ProductPageContext {
 
 export function ProductLayoutPage() {
   const { productId: pid } = useParams<{ productId: string }>();
-  const navigate = useNavigate();
   const productId = pid ? Number(pid) : NaN;
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const loadProduct = async () => {
     if (!Number.isFinite(productId)) return;
@@ -35,7 +35,7 @@ export function ProductLayoutPage() {
   };
 
   useEffect(() => {
-    loadProduct();
+    void loadProduct();
   }, [productId]);
 
   if (!Number.isFinite(productId)) return <div className="result error">无效产品</div>;
@@ -43,38 +43,53 @@ export function ProductLayoutPage() {
   if (error || !product) return <div className="result error">{error ?? "产品不存在"}</div>;
 
   return (
-    <div data-testid="page-product-layout" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ flexShrink: 0 }}>
-        <button type="button" className="secondary" onClick={() => navigate("/products")}>
-          返回产品列表
-        </button>
-        <h2 className="page-title mt-16">
-          {product.name}
-          {product.code && (
-            <span className="text-caption text-muted" style={{ marginLeft: 8 }}>
-              [{product.code}]
-            </span>
-          )}
-        </h2>
+    <div data-testid="page-product-layout" className="product-shell">
+      <aside className={`product-shell-sidebar${sidebarCollapsed ? " is-collapsed" : ""}`}>
+        <div className="product-shell-sidebar-head">
+          <div className="product-shell-brand">
+            <span className="product-shell-kicker">Product</span>
+            {!sidebarCollapsed && (
+              <>
+                <span className="product-shell-title" title={product.name}>{product.name}</span>
+                {product.code && <span className="product-shell-code">{product.code}</span>}
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            className="product-shell-collapse"
+            onClick={() => setSidebarCollapsed((value) => !value)}
+            aria-label={sidebarCollapsed ? "展开产品导航" : "收起产品导航"}
+            title={sidebarCollapsed ? "展开产品导航" : "收起产品导航"}
+          >
+            {sidebarCollapsed ? "»" : "«"}
+          </button>
+        </div>
 
-        <nav role="tablist" className="cockpit-tabs mb-16">
-          <NavLink to="dashboard" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
-            仪表盘
+        <nav className="product-shell-nav" aria-label="产品导航">
+          <NavLink to="dashboard" className={({ isActive }) => `product-shell-link ${isActive ? "active" : ""}`}>
+            <span className="product-shell-link-mark">D</span>
+            {!sidebarCollapsed && <span>仪表盘</span>}
           </NavLink>
-          <NavLink to="projects" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
-            项目
+          <NavLink to="projects" className={({ isActive }) => `product-shell-link ${isActive ? "active" : ""}`}>
+            <span className="product-shell-link-mark">P</span>
+            {!sidebarCollapsed && <span>项目</span>}
           </NavLink>
-          <NavLink to="versions" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
-            版本
+          <NavLink to="versions" className={({ isActive }) => `product-shell-link ${isActive ? "active" : ""}`}>
+            <span className="product-shell-link-mark">V</span>
+            {!sidebarCollapsed && <span>版本</span>}
           </NavLink>
-          <NavLink to="reports" className={({ isActive }) => `cockpit-tab ${isActive ? "active" : ""}`} role="tab">
-            报告
+          <NavLink to="reports" className={({ isActive }) => `product-shell-link ${isActive ? "active" : ""}`}>
+            <span className="product-shell-link-mark">R</span>
+            {!sidebarCollapsed && <span>报告</span>}
           </NavLink>
         </nav>
-      </div>
+      </aside>
 
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-        <Outlet context={{ productId, product, reloadProduct: loadProduct }} />
+      <div className="product-shell-main">
+        <div className="product-shell-main-scroll">
+          <Outlet context={{ productId, product, reloadProduct: loadProduct }} />
+        </div>
       </div>
     </div>
   );

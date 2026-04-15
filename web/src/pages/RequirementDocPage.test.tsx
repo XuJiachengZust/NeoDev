@@ -111,7 +111,7 @@ describe("RequirementDocPage", () => {
     renderPage();
 
     await screen.findByDisplayValue("# only one version");
-    expect(screen.getByRole("button", { name: "变更" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "版本与审阅" })).toBeDisabled();
     expect(screen.getAllByText("当前版本为 v1，建议先看“当前稿 vs 上一版本”差异，再决定是否继续编辑。").length).toBeGreaterThan(0);
   });
 
@@ -177,7 +177,7 @@ describe("RequirementDocPage", () => {
     expect(screen.getAllByRole("button", { name: "生成文档" }).length).toBeGreaterThan(0);
   });
 
-  it("shows child-generation gate reason for current epic/story when gating fails", async () => {
+  it("hides explicit child-generation gate UI and shows the failure reason after click", async () => {
     server.use(
       http.get(`${API_BASE}/products/1/requirements/1`, () => HttpResponse.json({
         ...requirement,
@@ -191,13 +191,19 @@ describe("RequirementDocPage", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByTestId("child-generation-gate-panel")).toBeInTheDocument();
+      expect(screen.queryByTestId("child-generation-gate-panel")).not.toBeInTheDocument();
     });
 
-    expect(screen.getByText("子文档生成门禁")).toBeInTheDocument();
-    expect(screen.getByText("请先完成当前需求文档后再生成子级文档")).toBeInTheDocument();
-    expect(screen.getByText("当前父需求还没有已落盘的需求文档；请先生成或保存父文档。")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "生成子文档" })[0]).toBeDisabled();
+    const gateButton = document.querySelector(".req-sidebar-gen-btn");
+    expect(gateButton).not.toBeNull();
+
+    fireEvent.click(gateButton as HTMLElement);
+
+    await waitFor(() => {
+      const errorPanel = document.querySelector(".result.error");
+      expect(errorPanel).not.toBeNull();
+      expect(errorPanel?.textContent).toBeTruthy();
+    });
   });
 
   it("shows child-level progress details and refreshes current page after children workflow completes", async () => {
@@ -247,7 +253,10 @@ describe("RequirementDocPage", () => {
 
     renderPage();
 
-    const gateButton = await screen.findByRole("button", { name: "生成子文档" });
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    const actionsMenu = document.querySelector(".req-doc-more-actions-menu");
+    expect(actionsMenu).not.toBeNull();
+    const gateButton = within(actionsMenu as HTMLElement).getByRole("button", { name: "生成子文档" });
     fireEvent.click(gateButton);
 
     await waitFor(() => {
@@ -296,7 +305,7 @@ describe("RequirementDocPage", () => {
       expect(screen.getByTitle("已有文档")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "变更" }));
+    fireEvent.click(screen.getByRole("button", { name: "版本与审阅" }));
     await screen.findByRole("button", { name: "审阅当前稿" });
     fireEvent.click(screen.getByRole("button", { name: "审阅当前稿" }));
 

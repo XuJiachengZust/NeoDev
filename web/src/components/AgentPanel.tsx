@@ -201,7 +201,11 @@ export function AgentPanel({ collapsed, onToggle }: AgentPanelProps) {
                 有什么我可以帮助你的？
                 {sessionProductId && (
                   <div style={{ marginTop: 16 }}>
-                    <AgentQuickCommands onSelect={send} disabled={streaming} />
+                    <AgentQuickCommands
+                      onSelect={send}
+                      routeContextKey={routeContextKey}
+                      disabled={streaming}
+                    />
                   </div>
                 )}
               </div>

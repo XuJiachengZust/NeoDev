@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   getProductRequirement,
@@ -213,6 +213,10 @@ export function RequirementDocPage() {
   const [preGenSessionId] = useState(() => `pre-gen-${Date.now()}`);
   const preGenAbortRef = useRef<{ abort: () => void } | null>(null);
   const preGenChatEndRef = useRef<HTMLDivElement>(null);
+  const [showMoreActions, setShowMoreActions] = useState(false);
+  const [headerActionMode, setHeaderActionMode] = useState<"full" | "compact" | "overflow">("full");
+  const moreActionsRef = useRef<HTMLDivElement>(null);
+  const stickyHeaderRef = useRef<HTMLDivElement>(null);
 
   const streamAbortRef = useRef<{ abort: () => void } | null>(null);
   const contentAreaRef = useRef<HTMLDivElement>(null);
@@ -228,7 +232,7 @@ export function RequirementDocPage() {
   const [treeCollapsed, setTreeCollapsed] = useState<Set<number>>(new Set());
   const [childGenParentId, setChildGenParentId] = useState<number | null>(null);
   const [childGenEntries, setChildGenEntries] = useState<ChildGenerationEntry[]>([]);
-  const [currentChildGate, setCurrentChildGate] = useState<ChildGenerationGateInfo | null>(null);
+  const [, setCurrentChildGate] = useState<ChildGenerationGateInfo | null>(null);
   const childGenAbortRef = useRef<{ abort: () => void } | null>(null);
 
   const loadTree = useCallback(async () => {
@@ -968,13 +972,44 @@ export function RequirementDocPage() {
   const canSwitchToDiff = !isGenerating && (hasComparableVersions || diffContent !== null || diffV1 != null || diffV2 != null);
   const canSave = !loading && !saving && !isGenerating && !hasReviewChanges && isDirty;
   const canGenerate = !loading && !saving && !hasReviewChanges && !isGenerating;
-  const currentRequirementChildGate = useMemo(() => {
-    if (!requirement || (requirement.level !== "epic" && requirement.level !== "story")) {
-      return null;
-    }
-    return currentChildGate ?? deriveChildGenerationGate(requirement, treeRequirements);
-  }, [currentChildGate, requirement, treeRequirements]);
-
+  const hasHierarchyActions = requirement != null && (requirement.level === "epic" || requirement.level === "story");
+  const showInlineSave = headerActionMode === "full";
+  const showInlineGenerate = headerActionMode !== "overflow";
+  const hasContextActions = canSwitchToDiff || hasReviewChanges || hasHierarchyActions;
+  const hasOverflowActions =
+    (canSave && !showInlineSave)
+    || ((!isGenerating && canGenerate) && !showInlineGenerate)
+    || (isGenerating && !showInlineGenerate);
+  const showMoreActionsTrigger = hasContextActions || hasOverflowActions;
+  const showEmptyWorkspace = visibleStatus === "empty";
+  const showStatusNotice = visibleStatus === "generating"
+    || visibleStatus === "generate_failed"
+    || visibleStatus === "load_failed"
+    || visibleStatus === "review"
+    || visibleStatus === "dirty"
+    || visibleStatus === "saved";
+  const showFooterMetrics = !loading && !hasBlockingLoadError && !showEmptyWorkspace;
+  const workspaceTitle =
+    viewMode === "edit" ? "当前草稿"
+      : viewMode === "preview" ? "阅读视图"
+        : viewMode === "diff" ? "版本与审阅"
+          : "待确认变更";
+  const contentMetrics = useMemo(() => {
+    const trimmed = content.trim();
+    const lineCount = trimmed ? content.split(/\r?\n/).length : 0;
+    const headingCount = trimmed ? content.split(/\r?\n/).filter((line) => /^#{1,6}\s/.test(line)).length : 0;
+    const wordCount = trimmed
+      ? trimmed
+        .replace(/[#>*`~\-\[\]()]/g, " ")
+        .split(/\s+/)
+        .filter(Boolean)
+        .length
+      : 0;
+    return { lineCount, headingCount, wordCount };
+  }, [content]);
+  const diffEntryGuidance = currentVersion != null
+    ? `当前版本为 v${currentVersion}，建议先看“当前稿 vs 上一版本”差异，再决定是否继续编辑。`
+    : null;
   useEffect(() => {
     if (viewMode === "review" && !hasReviewChanges) {
       setViewMode("edit");
@@ -986,6 +1021,49 @@ export function RequirementDocPage() {
       setViewMode("preview");
     }
   }, [canSwitchToDiff, viewMode]);
+
+  useEffect(() => {
+    if (!showMoreActions) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (moreActionsRef.current?.contains(event.target as Node)) return;
+      setShowMoreActions(false);
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [showMoreActions]);
+
+  useEffect(() => {
+    setShowMoreActions(false);
+  }, [requirementId, viewMode]);
+
+  useEffect(() => {
+    const node = stickyHeaderRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+
+    const updateMode = (width: number) => {
+      if (width < 1180) {
+        setHeaderActionMode("overflow");
+        return;
+      }
+      if (width < 1380) {
+        setHeaderActionMode("compact");
+        return;
+      }
+      setHeaderActionMode("full");
+    };
+
+    updateMode(node.getBoundingClientRect().width);
+
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (typeof width === "number") {
+        updateMode(width);
+      }
+    });
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (viewMode !== "diff" || isGenerating || diffLoading || versions.length < 2) return;
@@ -1015,7 +1093,14 @@ export function RequirementDocPage() {
       {/* ── 左侧需求树侧边栏 ── */}
       <div className={`req-doc-sidebar${sidebarOpen ? "" : " req-doc-sidebar--collapsed"}`}>
         <div className="req-doc-sidebar-header">
-          {sidebarOpen && <span className="req-doc-sidebar-title">需求树</span>}
+          {sidebarOpen && (
+            <div className="req-doc-sidebar-header-copy">
+              <span className="req-doc-sidebar-title">需求树</span>
+              <span className="req-doc-sidebar-subtitle">
+                {treeRequirements.length > 0 ? `${treeRequirements.length} 项需求` : "等待需求同步"}
+              </span>
+            </div>
+          )}
           <button
             type="button"
             className="req-doc-sidebar-toggle"
@@ -1048,228 +1133,187 @@ export function RequirementDocPage() {
 
       <div className="req-doc-main">
         {/* 固定头部区域 */}
-        <div className="req-doc-sticky-header">
-          <div className="req-doc-header">
-            <button type="button" className="secondary xs" onClick={() => navigate(-1)}>
-              &larr; 返回
-            </button>
-            {requirement && (
-              <div className="req-doc-info card">
-                <span className={`req-level-badge ${requirement.level}`}>{requirement.level}</span>
-                <strong title={requirement.title}>{requirement.title}</strong>
-                <span className="text-muted">状态: {requirement.status}</span>
-                <span className="text-muted">优先级: {requirement.priority}</span>
-              </div>
-            )}
-          </div>
-
-          <div
-            className={`req-doc-status-card req-doc-status-card--${statusInfo.tone}`}
-            data-testid="doc-status-card"
-            data-status={visibleStatus}
-          >
-            <div>
-              <div className="req-doc-status-card__title">{statusInfo.title}</div>
-              <div className="req-doc-status-card__desc">{statusInfo.description}</div>
+        <div className="req-doc-sticky-header" ref={stickyHeaderRef} data-header-mode={headerActionMode}>
+          <div className="req-doc-shell-bar">
+            <div className="req-doc-breadcrumbs">
+              <span>产品</span>
+              <span>/</span>
+              <span>{requirement?.version_id != null ? `版本 ${requirement.version_id}` : "需求文档"}</span>
+              <span>/</span>
+              <span className="req-doc-breadcrumbs-current">{requirement?.title ?? `需求 #${requirementId}`}</span>
             </div>
-            <div className="req-doc-status-card__meta">
-              {currentVersion != null && <span className="req-doc-status-pill">当前 v{currentVersion}</span>}
-              {hasPersistedDoc && <span className="req-doc-status-pill">已有文档</span>}
-              {hasReviewChanges && <span className="req-doc-status-pill">待审阅</span>}
-              {isDirty && !hasReviewChanges && <span className="req-doc-status-pill">未保存</span>}
-              {saveFeedback && !isDirty && <span className="req-doc-status-pill req-doc-status-pill--success">{saveFeedback}</span>}
-            </div>
-          </div>
-
-          <div className="req-doc-toolbar">
-            <div className="req-doc-view-mode">
-              <button
-                type="button"
-                className={viewMode === "edit" ? "primary xs" : "secondary xs"}
-                onClick={() => setViewMode("edit")}
-                disabled={loading || isGenerating}
-                data-testid="doc-action-edit"
-              >
-                编辑
-              </button>
-              <button
-                type="button"
-                className={viewMode === "preview" ? "primary xs" : "secondary xs"}
-                onClick={() => setViewMode("preview")}
-                disabled={!canEnterPreview}
-              >
-                预览
-              </button>
-              <button
-                type="button"
-                className={viewMode === "diff" ? "primary xs" : "secondary xs"}
-                onClick={handleSwitchToDiff}
-                disabled={!canSwitchToDiff}
-              >
-                变更
-              </button>
-              {hasReviewChanges && (
+            <div className="req-doc-shell-bar-center">
+              <div className="req-doc-shell-toggle" role="tablist" aria-label="文档视图切换">
                 <button
                   type="button"
-                  className={viewMode === "review" ? "primary xs" : "secondary xs"}
-                  onClick={() => setViewMode("review")}
+                  className={viewMode === "edit" ? "primary xs" : "secondary xs"}
+                  onClick={() => setViewMode("edit")}
+                  disabled={loading || isGenerating}
+                  data-testid="doc-action-edit"
+                  aria-label="编辑"
                 >
-                  审阅变更
+                  <span className="req-doc-toggle-label req-doc-toggle-label--full">编辑</span>
+                  <span className="req-doc-toggle-label req-doc-toggle-label--compact" aria-hidden="true">编</span>
                 </button>
-              )}
-            </div>
-            <div className="req-doc-actions">
-              {(isDirty || visibleStatus === "saved") && <span className="req-doc-dirty-badge">{isDirty ? "未保存" : saveFeedback ?? "已保存"}</span>}
-              <button
-                type="button"
-                className="primary"
-                onClick={handleSave}
-                disabled={!canSave}
-                title="Ctrl+S"
-              >
-                {saveButtonLabel}
-              </button>
-              {isGenerating ? (
-                <button type="button" className="secondary" onClick={handleStopStream}>
-                  停止
-                </button>
-              ) : (
                 <button
                   type="button"
-                  className="primary"
-                  onClick={handleGenerateClick}
-                  disabled={!canGenerate || hasBlockingLoadError}
+                  className={viewMode === "preview" ? "primary xs" : "secondary xs"}
+                  onClick={() => setViewMode("preview")}
+                  disabled={!canEnterPreview}
+                  aria-label="预览"
                 >
-                  {primaryGenerateLabel}
+                  <span className="req-doc-toggle-label req-doc-toggle-label--full">预览</span>
+                  <span className="req-doc-toggle-label req-doc-toggle-label--compact" aria-hidden="true">预</span>
                 </button>
-              )}
-              {requirement && (requirement.level === "epic" || requirement.level === "story") && !isGenerating && (
                 <button
                   type="button"
-                  className="secondary"
-                  onClick={() => { setSplitSuggestions(null); setShowSplitModal(true); }}
-                  disabled={hasBlockingLoadError}
+                  className={viewMode === "diff" ? "primary xs" : "secondary xs"}
+                  onClick={handleSwitchToDiff}
+                  disabled={!canSwitchToDiff}
+                  aria-label="版本与审阅"
                 >
-                  拆分建议
+                  <span className="req-doc-toggle-label req-doc-toggle-label--full">版本与审阅</span>
+                  <span className="req-doc-toggle-label req-doc-toggle-label--compact" aria-hidden="true">审</span>
                 </button>
-              )}
-            </div>
-          </div>
-
-          <div className={`req-doc-status-banner req-doc-status-banner--${statusInfo.tone}`}>
-            <div>
-              <div className="req-doc-status-banner-title">{statusInfo.title}</div>
-              <div className="req-doc-status-banner-description">{statusInfo.description}</div>
-            </div>
-            <div className="req-doc-status-banner-actions">
-              {statusInfo.cta === "save" && (
-                <button type="button" className="primary xs" onClick={handleSave} disabled={!canSave}>
-                  保存当前草稿
-                </button>
-              )}
-              {statusInfo.cta === "generate" && (
-                <button type="button" className="primary xs" onClick={handleGenerateClick} disabled={!canGenerate || hasBlockingLoadError}>
-                  {primaryGenerateLabel}
-                </button>
-              )}
-              {statusInfo.cta === "retry_load" && (
-                <button type="button" className="primary xs" onClick={() => { void loadDoc(); void loadVersions(); }}>
-                  重试加载
-                </button>
-              )}
-              {statusInfo.cta === "review" && hasReviewChanges && (
-                <button type="button" className="primary xs" onClick={() => setViewMode("review")}>
-                  打开审阅
-                </button>
-              )}
-            </div>
-          </div>
-
-          {error && (
-            <div className="result error" style={{ margin: 0 }}>
-              {error}
-              <button
-                type="button"
-                className="secondary xs"
-                onClick={() => setError(null)}
-                style={{ marginLeft: 8, padding: "2px 8px", fontSize: 11 }}
-              >
-                关闭
-              </button>
-            </div>
-          )}
-
-          {generationNotice && (
-            <div className="req-doc-progress" data-testid="generation-notice">
-              <span className="req-doc-progress-dot" />
-              <span style={{ whiteSpace: "pre-line" }}>{generationNotice}</span>
-              {hasGenerationFailure && (
-                <button
-                  type="button"
-                  className="secondary xs"
-                  onClick={() => {
-                    setGenerationError(null);
-                    setGenerationNotice("已退出失败态，当前保留草稿，可继续编辑或稍后重试。");
-                  }}
-                  style={{ marginLeft: 8 }}
-                >
-                  继续编辑
-                </button>
-              )}
-            </div>
-          )}
-          {generateStreaming && generateStep && (
-            <div className="req-doc-progress">
-              <span className="req-doc-progress-dot" />
-              {STEP_LABELS[generateStep] ?? generateStep}
-            </div>
-          )}
-          {!generateStreaming && generationStatus === "running" && (
-            <div className="req-doc-progress">
-              <span className="req-doc-progress-dot" />
-              文档生成中（后台运行）…
-            </div>
-          )}
-          {(isGenerating || hasGenerationFailure || workflowSteps.some((step) => step.status !== "pending")) && (
-            <div className="req-doc-state-panel card" data-testid="generation-steps-panel">
-              <h3>生成进度</h3>
-              <p>统一展示流式事件、后台轮询恢复和失败恢复口径。</p>
-              <div className="req-doc-generation-steps">
-                {workflowSteps.map((step) => (
-                  <div key={step.key} className={`req-doc-generation-step req-doc-generation-step--${step.status}`}>
-                    <span>{step.label}</span>
-                    <span>{step.status === "done" ? "已完成" : step.status === "running" ? "进行中" : step.status === "failed" ? "失败" : "待执行"}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {currentRequirementChildGate && (
-            <div
-              className={`req-doc-state-panel card${currentRequirementChildGate.allowed ? "" : " req-doc-state-panel--warning"}`}
-              data-testid="child-generation-gate-panel"
-            >
-              <h3>子文档生成门禁</h3>
-              <p>{currentRequirementChildGate.allowed ? "当前节点已满足子文档生成条件。" : (currentRequirementChildGate.reason ?? "当前节点暂不允许生成子文档。")}</p>
-              {currentRequirementChildGate.detail && <p>{currentRequirementChildGate.detail}</p>}
-              <div className="req-doc-state-panel-actions">
-                {currentRequirementChildGate.allowed ? (
+                {hasReviewChanges && (
                   <button
                     type="button"
-                    className="primary"
-                    onClick={() => handleGenerateChildrenDocs(requirementId)}
-                    disabled={childGenParentId !== null || isGenerating}
+                    className={viewMode === "review" ? "primary xs" : "secondary xs"}
+                    onClick={() => setViewMode("review")}
+                    aria-label="待审阅变更"
                   >
-                    生成子文档
-                  </button>
-                ) : (
-                  <button type="button" className="secondary" disabled>
-                    生成子文档
+                    <span className="req-doc-toggle-label req-doc-toggle-label--full">待审阅变更</span>
+                    <span className="req-doc-toggle-label req-doc-toggle-label--compact" aria-hidden="true">改</span>
                   </button>
                 )}
               </div>
             </div>
-          )}
+            <div className="req-doc-shell-bar-actions">
+              <div className="req-doc-actions">
+                {(isDirty || visibleStatus === "saved") && (
+                  <span className="req-doc-dirty-badge">{isDirty ? "未保存" : saveFeedback ?? "已保存"}</span>
+                )}
+                {showInlineSave && (
+                  <button
+                    type="button"
+                    className="secondary req-doc-action-save"
+                    onClick={handleSave}
+                    disabled={!canSave}
+                    title="Ctrl+S"
+                  >
+                    {saveButtonLabel}
+                  </button>
+                )}
+                {showInlineGenerate && (isGenerating ? (
+                  <button type="button" className="secondary req-doc-action-stop" onClick={handleStopStream}>
+                    停止
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="primary req-doc-action-generate"
+                    onClick={handleGenerateClick}
+                    disabled={!canGenerate || hasBlockingLoadError}
+                  >
+                    {primaryGenerateLabel}
+                  </button>
+                ))}
+                {showMoreActionsTrigger && (
+                  <div className="req-doc-more-actions" ref={moreActionsRef}>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => setShowMoreActions((value) => !value)}
+                      aria-expanded={showMoreActions}
+                    >
+                      更多操作
+                    </button>
+                    {showMoreActions && (
+                      <div className="req-doc-more-actions-menu">
+                        {!isGenerating && !showInlineGenerate && (
+                          <button
+                            type="button"
+                            className="req-doc-more-actions-item"
+                            onClick={() => {
+                              setShowMoreActions(false);
+                              void handleGenerateClick();
+                            }}
+                            disabled={!canGenerate || hasBlockingLoadError}
+                          >
+                            {primaryGenerateLabel}
+                          </button>
+                        )}
+                        {isGenerating && !showInlineGenerate && (
+                          <button
+                            type="button"
+                            className="req-doc-more-actions-item"
+                            onClick={() => {
+                              setShowMoreActions(false);
+                              handleStopStream();
+                            }}
+                          >
+                            停止生成
+                          </button>
+                        )}
+                        {(isDirty || canSave) && !showInlineSave && (
+                          <button
+                            type="button"
+                            className="req-doc-more-actions-item"
+                            onClick={() => {
+                              setShowMoreActions(false);
+                              void handleSave();
+                            }}
+                            disabled={!canSave}
+                          >
+                            保存当前草稿
+                          </button>
+                        )}
+                        {hasReviewChanges && (
+                          <button
+                            type="button"
+                            className="req-doc-more-actions-item"
+                            onClick={() => {
+                              setShowMoreActions(false);
+                              setViewMode("review");
+                            }}
+                          >
+                            打开待审阅变更
+                          </button>
+                        )}
+                        {hasHierarchyActions && !isGenerating && (
+                          <button
+                            type="button"
+                            className="req-doc-more-actions-item"
+                            onClick={() => {
+                              setShowMoreActions(false);
+                              void handleGenerateChildrenDocs(requirementId);
+                            }}
+                            disabled={childGenParentId !== null || hasBlockingLoadError}
+                          >
+                            生成子文档
+                          </button>
+                        )}
+                        {hasHierarchyActions && !isGenerating && (
+                          <button
+                            type="button"
+                            className="req-doc-more-actions-item"
+                            onClick={() => {
+                              setShowMoreActions(false);
+                              setSplitSuggestions(null);
+                              setShowSplitModal(true);
+                            }}
+                            disabled={hasBlockingLoadError}
+                          >
+                            拆分建议
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* 可滚动内容区域：编辑模式由 textarea 自带滚动，其余模式外层滚动 */}
@@ -1278,7 +1322,8 @@ export function RequirementDocPage() {
             <div className="loading-state">加载中...</div>
           ) : hasBlockingLoadError ? (
             <div className="req-doc-state-panel req-doc-state-panel--danger card">
-              <h3>文档读取失败</h3>
+              <h3>文档加载失败</h3>
+              <div className="req-doc-state-panel-subtle">文档读取失败</div>
               <p>{docLoadError ?? "当前无法读取文档内容，因此先不展示空编辑器，避免和“无文档”状态混淆。"}</p>
               <div className="req-doc-state-panel-actions">
                 <button type="button" className="primary" onClick={() => { void loadDoc(); void loadVersions(); }}>
@@ -1287,34 +1332,143 @@ export function RequirementDocPage() {
               </div>
             </div>
           ) : (
-            <>
+            <div className="req-doc-surface">
+              {showStatusNotice && (
+                <div
+                  className={`req-doc-inline-status req-doc-inline-status--${statusInfo.tone}`}
+                  data-testid="doc-status-card"
+                  data-status={visibleStatus}
+                >
+                  <div className="req-doc-inline-status-copy">
+                    <span className="req-doc-inline-status-title">{statusInfo.title}</span>
+                    <span className="req-doc-inline-status-text">{statusInfo.description}</span>
+                  </div>
+                  <div className="req-doc-inline-status-actions">
+                    {statusInfo.cta === "save" && (
+                      <button type="button" className="primary xs" onClick={handleSave} disabled={!canSave}>
+                        保存当前草稿
+                      </button>
+                    )}
+                    {statusInfo.cta === "generate" && (
+                      <button type="button" className="primary xs" onClick={handleGenerateClick} disabled={!canGenerate || hasBlockingLoadError}>
+                        {primaryGenerateLabel}
+                      </button>
+                    )}
+                    {statusInfo.cta === "retry_load" && (
+                      <button type="button" className="primary xs" onClick={() => { void loadDoc(); void loadVersions(); }}>
+                        重试加载
+                      </button>
+                    )}
+                    {statusInfo.cta === "review" && hasReviewChanges && (
+                      <button type="button" className="primary xs" onClick={() => setViewMode("review")}>
+                        打开审阅
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {error && (
+                <div className="result error" style={{ margin: 0 }}>
+                  {error}
+                  <button
+                    type="button"
+                    className="secondary xs"
+                    onClick={() => setError(null)}
+                    style={{ marginLeft: 8, padding: "2px 8px", fontSize: 11 }}
+                  >
+                    关闭
+                  </button>
+                </div>
+              )}
+              {generationNotice && (
+                <div className="req-doc-progress" data-testid="generation-notice">
+                  <span className="req-doc-progress-dot" />
+                  <span style={{ whiteSpace: "pre-line" }}>{generationNotice}</span>
+                  {hasGenerationFailure && (
+                    <button
+                      type="button"
+                      className="secondary xs"
+                      onClick={() => {
+                        setGenerationError(null);
+                        setGenerationNotice("已退出失败态，当前保留草稿，可继续编辑或稍后重试。");
+                      }}
+                      style={{ marginLeft: 8 }}
+                    >
+                      继续编辑
+                    </button>
+                  )}
+                </div>
+              )}
+              {generateStreaming && generateStep && (
+                <div className="req-doc-progress">
+                  <span className="req-doc-progress-dot" />
+                  {STEP_LABELS[generateStep] ?? generateStep}
+                </div>
+              )}
+              {!generateStreaming && generationStatus === "running" && (
+                <div className="req-doc-progress">
+                  <span className="req-doc-progress-dot" />
+                  文档生成中（后台运行）…
+                </div>
+              )}
+              {(isGenerating || hasGenerationFailure || workflowSteps.some((step) => step.status !== "pending")) && (
+                <div className="req-doc-state-panel card" data-testid="generation-steps-panel">
+                  <h3>生成进度</h3>
+                  <p>统一展示流式事件、后台轮询恢复和失败恢复口径。</p>
+                  <div className="req-doc-generation-steps">
+                    {workflowSteps.map((step) => (
+                      <div key={step.key} className={`req-doc-generation-step req-doc-generation-step--${step.status}`}>
+                        <span>{step.label}</span>
+                        <span>{step.status === "done" ? "已完成" : step.status === "running" ? "进行中" : step.status === "failed" ? "失败" : "待执行"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {requirement && (
+                <div className={`req-doc-dochead${showEmptyWorkspace ? " req-doc-dochead--empty" : ""}`}>
+                  <div className="req-doc-dochead-meta">
+                    <span className={`req-level-badge ${requirement.level}`}>{requirement.level}</span>
+                    <span>状态 {requirement.status}</span>
+                    <span>优先级 {requirement.priority}</span>
+                    {currentVersion != null && <span>当前 v{currentVersion}</span>}
+                    {hasReviewChanges && <span>待审阅变更</span>}
+                  </div>
+                  <div className="req-doc-dochead-title" title={requirement.title}>
+                    {requirement.title || "无标题文档"}
+                  </div>
+                  {!showEmptyWorkspace && !canSwitchToDiff && diffEntryGuidance && (
+                    <div className="req-doc-dochead-note">{diffEntryGuidance}</div>
+                  )}
+                </div>
+              )}
               {viewMode === "edit" && (
-                <>
-                  {visibleStatus === "empty" && (
-                    <div className="req-doc-state-panel card">
-                      <h3>当前还没有文档</h3>
-                      <p>这是文档初始态，不是异常。你可以直接输入第一版内容，或点击上方“{primaryGenerateLabel}”。</p>
+                <div className={`req-doc-editor-shell${showEmptyWorkspace ? " req-doc-editor-shell--empty" : ""}`}>
+                  {showEmptyWorkspace && (
+                    <div className="req-doc-editor-empty-state" aria-hidden="true">
+                      <span className="req-doc-editor-empty-title">当前还没有需求文档</span>
+                      <span className="req-doc-editor-empty-text">点击此处开始编写，或使用顶部 AI 生成文档。</span>
                     </div>
                   )}
                   <textarea
-                    className="req-doc-editor"
+                    className={`req-doc-editor${showEmptyWorkspace ? " req-doc-editor--empty" : ""}`}
                     value={content}
                     onChange={(e) => {
                       setContent(e.target.value);
                       if (pendingContent !== null) { setPendingContent(null); setPreChangeContent(""); }
                     }}
-                    placeholder={visibleStatus === "empty" ? "从这里开始写第一版需求文档…" : "在此编辑 Markdown 文档…"}
+                    placeholder={showEmptyWorkspace ? "从这里开始写第一版需求文档…" : "在此编辑 Markdown 文档…"}
                     spellCheck={false}
                   />
-                </>
+                </div>
               )}
               {viewMode === "preview" && (
-                <div className="req-doc-preview card">
+                <div className="req-doc-preview">
                   <MarkdownRenderer content={content || "*暂无内容*"} />
                 </div>
               )}
               {viewMode === "diff" && (
-                <div className="req-doc-diff card">
+                <div className="req-doc-diff">
                   <div className="req-doc-versions">
                     <div className="flex gap-8 flex-wrap" style={{ alignItems: "center" }}>
                       <label>
@@ -1419,9 +1573,22 @@ export function RequirementDocPage() {
                   saving={saving}
                 />
               )}
-            </>
+            </div>
           )}
         </div>
+        {showFooterMetrics && (
+          <div className="req-doc-footerbar">
+            <div className="req-doc-footerbar-group">
+              <span>{workspaceTitle}</span>
+              {currentVersion != null && <span>v{currentVersion}</span>}
+            </div>
+            <div className="req-doc-footerbar-group">
+              <span>{contentMetrics.wordCount} 字</span>
+              <span>{contentMetrics.headingCount} 标题</span>
+              <span>{contentMetrics.lineCount} 行</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Epic 预生成引导弹窗 */}
@@ -1615,10 +1782,10 @@ function ReqTreeSidebar({
               type="button"
               className="req-sidebar-gen-btn"
               onClick={(e) => { e.stopPropagation(); onGenerateChildren(req.id); }}
-              disabled={childGenParentId !== null || disableActions || !childGate.allowed}
-              title={childGate.allowed ? "生成子级文档" : (childGate.reason ?? "当前不允许生成子级文档")}
+              disabled={childGenParentId !== null || disableActions}
+              title={childGate.allowed ? "生成子文档" : (childGate.reason ?? "当前不允许生成子文档")}
             >
-              {isGenerating ? "…" : childGate.allowed ? "⚡" : "🔒"}
+              {isGenerating ? "…" : "⚡"}
             </button>
           )}
         </div>

@@ -90,7 +90,7 @@ function ChildrenProgressPanel({
 }
 
 export function ProductRequirementsPage() {
-  const { productId, versionId } = useVersionPageContext();
+  const { productId, versionId, setHeaderActions } = useVersionPageContext();
   const [requirements, setRequirements] = useState<ProductRequirement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -140,8 +140,17 @@ export function ProductRequirementsPage() {
   };
 
   useEffect(() => {
-    load();
+    void load();
   }, [productId, versionId]);
+
+  useEffect(() => {
+    setHeaderActions(
+      <button type="button" className="primary" onClick={() => setShowCreate((value) => !value)}>
+        {showCreate ? "取消" : "新建 Epic"}
+      </button>
+    );
+    return () => setHeaderActions(null);
+  }, [setHeaderActions, showCreate]);
 
   const handleCreateEpic = async () => {
     if (!epicForm.title.trim()) return;
@@ -330,7 +339,13 @@ export function ProductRequirementsPage() {
   };
 
   return (
-    <div data-testid="page-product-requirements">
+    <div data-testid="page-product-requirements" className="requirements-workspace">
+      <div className="requirements-summary-row">
+        <span className="requirements-summary-label">需求结构</span>
+        <span className="requirements-summary-item">Epic {epics.length}</span>
+        <span className="requirements-summary-item">Story {stories.length}</span>
+        <span className="requirements-summary-item">Task {tasks.length}</span>
+      </div>
       <div className="page-toolbar">
         <h3>需求管理</h3>
         <button type="button" className="primary" onClick={() => setShowCreate(!showCreate)}>
