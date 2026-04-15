@@ -7,8 +7,13 @@ Or (Windows): PYTHONPATH=src python -m uvicorn service.main:app --reload
 Environment: 从项目根目录加载 .env（OPENAI_API_KEY、OPENAI_BASE、OPENAI_MODEL_CHAT、NEO4J_* 等）。
 """
 
+import asyncio
 import os
+import sys
 from pathlib import Path
+
+if sys.platform.startswith("win"):
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # 优先加载 .env，使 OPENAI_API_KEY 等对后续 import 可见（在项目根或 src 同级查找）
 try:
@@ -19,7 +24,6 @@ except Exception:
     pass
 
 import logging
-import sys
 import traceback
 
 from fastapi import FastAPI, Request
