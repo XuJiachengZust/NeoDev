@@ -1,0 +1,8 @@
+# Local-only codex harness artifacts
+artifacts/**
+!artifacts/.gitkeep
+memory/**
+!memory/.gitkeep
+tasks/**
+!tasks/.gitkeep
+ledger/*.local.json
