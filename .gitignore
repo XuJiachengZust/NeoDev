@@ -19,3 +19,8 @@ web/dist/
 
 # Windows 崩溃转储
 bash.exe.stackdump
+
+# 本地运行日志 / 临时产物
+.tmp_*.log
+.tmp_pytest_requirement_docs/
+web/tsconfig.tsbuildinfo
