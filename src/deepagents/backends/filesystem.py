@@ -268,7 +268,10 @@ class FilesystemBackend(BackendProtocol):
         Returns:
             Formatted file content with line numbers, or error message.
         """
-        resolved_path = self._resolve_path(file_path)
+        try:
+            resolved_path = self._resolve_path(file_path)
+        except ValueError as e:
+            return f"Error reading file '{file_path}': {e}"
 
         if not resolved_path.exists() or not resolved_path.is_file():
             return f"Error: File '{file_path}' not found"

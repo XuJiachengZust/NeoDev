@@ -27,9 +27,10 @@ VALID_LABELS: frozenset[str] = frozenset({
     "Annotation", "Constructor", "Template",
 })
 
-# Cypher 写操作关键字检测（大小写不敏感）
+# Cypher 写操作关键字检测（大小写不敏感）。
+# 额外避开被单/双引号直接包裹的字符串字面量，例如 "CONTAINS 'create'"。
 _WRITE_PATTERN = re.compile(
-    r"\b(CREATE|DELETE|DETACH\s+DELETE|SET|MERGE|REMOVE|DROP|CALL\s*\{)\b",
+    r"(?<!['\"])\b(CREATE|DELETE|DETACH\s+DELETE|SET|MERGE|REMOVE|DROP|CALL\s*\{)\b",
     re.IGNORECASE,
 )
 
