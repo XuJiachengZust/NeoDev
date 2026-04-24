@@ -247,7 +247,7 @@ CLI 采用薄命令层包裹仓储与服务能力：
 
 - 创建缺失表
 - 增加所需索引与约束
-- 本切片不对已有表做破坏性修改
+- 用户已确认 metadata 旧数据无需迁移，允许直接彻底删除；因此本切片允许为收敛到最终 schema 进行必要的破坏性清理，包括 `DROP COLUMN change_summary`
 
 这样可以兼容当前 `service.migrate.run_migrations()` 的启动迁移方式。
 
