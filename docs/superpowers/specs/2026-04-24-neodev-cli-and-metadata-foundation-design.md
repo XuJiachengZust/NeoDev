@@ -1,42 +1,42 @@
-# NeoDev CLI And Metadata Foundation Design
+# NeoDev CLI 与元数据基础设计
 
-## 1. Scope
+## 1. 范围
 
-This design covers only the first implementation slice of the RD knowledge graph MVP:
+本设计只覆盖研发知识图谱 MVP 的第一批实现切片：
 
-- `T001` CLI shell and unified result contract
-- `T002` lightweight metadata model and migration
+- `T001` CLI 壳层与统一结果契约
+- `T002` 轻量元数据模型与迁移
 
-Explicitly out of scope for this slice:
+明确不包含在本切片内的内容：
 
-- product/version business workflows in `T003`
-- document scan and DocChange lifecycle commands in `T004` and `T005`
-- branch analysis orchestration, graph refresh, semantic search, git verification, plugin, and skill delivery
+- `T003` 中的产品 / 版本业务工作流
+- `T004` 与 `T005` 中的文档扫描与 `DocChange` 生命周期命令
+- 分支分析编排、图谱刷新、语义检索、Git 校验、插件与 skill 交付
 
-The goal of this slice is to establish a stable command execution shell and a persistent metadata foundation that later tasks can build on without reworking the base contract.
+本切片的目标是先建立稳定的命令执行壳层和可持久化的元数据基础，使后续任务可以在不返工底层契约的前提下继续叠加。
 
-## 2. Design Decisions
+## 2. 设计决策
 
-### 2.1 CLI form
+### 2.1 CLI 形式
 
-The CLI will use Python standard library `argparse` instead of adding a new framework.
+CLI 采用 Python 标准库 `argparse`，不引入新的 CLI 框架。
 
-Reasons:
+原因：
 
-- the repository does not currently use Typer or Click
-- `argparse` avoids new dependency and environment churn
-- this slice needs contract stability more than CLI ergonomics
+- 当前仓库并未使用 Typer 或 Click
+- `argparse` 不会引入新的依赖和环境变动
+- 这一阶段更看重契约稳定性，而不是命令声明语法的美观度
 
-Two entry styles will be supported and will share the same implementation:
+本轮同时支持两种入口形式，并共享同一套实现：
 
-- internal module entry: `python -m service.cli.main ...`
-- repo root launcher: `python neodev.py ...`
+- 内部模块入口：`python -m service.cli.main ...`
+- 仓库根级入口：`python neodev.py ...`
 
-The repo root launcher exists so future plugin and skill code can call a stable top-level command without knowing Python module layout.
+根级入口的存在，是为了让后续插件和 skill 可以调用一个稳定的顶层命令，而不需要感知 Python 模块路径。
 
-### 2.2 Result contract
+### 2.2 结果契约
 
-Every CLI command in this slice will support `--json` and return a unified top-level structure:
+本切片内的所有 CLI 命令都支持 `--json`，并返回统一的顶层结构：
 
 - `ok`
 - `command`
@@ -44,9 +44,9 @@ Every CLI command in this slice will support `--json` and return a unified top-l
 - `data`
 - `errors`
 
-Human-readable output may exist for local use, but JSON is the canonical protocol for automation.
+人类可读输出可以保留给本地使用，但 JSON 将作为自动化调用的唯一权威协议。
 
-Error categories implemented in this slice:
+本切片实现的错误分类包括：
 
 - `invalid_argument`
 - `not_found`
@@ -55,45 +55,45 @@ Error categories implemented in this slice:
 - `internal_error`
 - `version_mismatch`
 
-Each error category will map to a stable process exit code through a shared CLI error adapter.
+每种错误分类都将通过统一的 CLI 错误适配层映射到稳定的进程退出码。
 
-### 2.3 Initial command surface
+### 2.3 初始命令面
 
-This slice will not pretend later business features already exist. Command groups will be introduced in a controlled way:
+本切片不会假装后续业务能力已经完成。命令组会按受控方式引入：
 
-- `cli version-check` will be implemented for real
-- the shared CLI framework will be ready for `product`, `doc`, `graph`, and `git` groups
-- only command groups needed to prove routing and contract behavior will be registered now
+- `cli version-check` 会真实实现
+- 公共 CLI 框架会为 `product`、`doc`、`graph`、`git` 命令组预留扩展能力
+- 当前只注册能够证明路由和契约稳定性的最小命令面
 
-If a future-facing command is registered early, it must fail explicitly with structured `not_ready` output instead of partial behavior.
+如果某个面向未来的命令组提前暴露出来，它必须显式返回结构化 `not_ready`，而不是提供半成品行为。
 
-## 3. File Layout
+## 3. 文件布局
 
-New CLI code will be added under `src/service/cli/`:
+新的 CLI 代码放在 `src/service/cli/` 下：
 
-- `main.py`: parser bootstrap and top-level dispatch
-- `output.py`: success/error JSON payload builders and human-readable rendering helpers
-- `errors.py`: typed CLI errors, category mapping, exit-code mapping
-- `commands/__init__.py`: command registration entry
-- `commands/cli.py`: `cli version-check`
-- `commands/product.py`: reserved command-group registration if needed for parser shape
+- `main.py`：解析器初始化与顶层分发入口
+- `output.py`：成功 / 失败 JSON 结果构造器，以及人类可读渲染辅助
+- `errors.py`：CLI 类型化错误、错误分类映射、退出码映射
+- `commands/__init__.py`：命令注册入口
+- `commands/cli.py`：`cli version-check`
+- `commands/product.py`：如有需要，用于先占位产品命令组的解析结构
 
-New repo-root launcher:
+新增仓库根级入口：
 
 - `neodev.py`
 
-The launcher will only delegate into `service.cli.main` and will not contain business logic.
+该入口只负责转发到 `service.cli.main`，不承载业务逻辑。
 
-## 4. Metadata Boundary
+## 4. 元数据边界
 
-Existing tables and repositories already present in the codebase will be treated as baseline instead of being redesigned in this slice:
+当前代码库中已经存在的表和仓储，在本切片中视为基础能力，不重新设计：
 
 - `products`
 - `product_versions`
 - `product_version_branches`
 - `ai_preprocess_status`
 
-New metadata introduced in this slice:
+本切片新增的元数据对象包括：
 
 - `doc_bindings`
 - `documents`
@@ -101,18 +101,18 @@ New metadata introduced in this slice:
 - `code_change_links`
 - `dangerous_commit_records`
 
-These tables are the minimum needed to support later document governance, DocChange lifecycle, commit linkage, and dangerous-commit tracking without forcing those facts into graph storage.
+这些表是支撑后续文档治理、`DocChange` 生命周期、代码提交关联以及危险提交追踪的最小事实源，不需要把这类运营态数据强行塞进图数据库。
 
-`BranchAnalysisTask` will not get a new table yet. The existing `ai_preprocess_status` table remains the temporary system of record for branch-analysis runtime state, and later tasks will access it through an adapter instead of binding directly to raw table semantics everywhere.
+`BranchAnalysisTask` 在本轮不新增独立表。现有 `ai_preprocess_status` 继续作为分支分析运行态的临时事实源，后续任务通过适配层使用它，而不是让各处都直接依赖其原始表语义。
 
-## 5. Metadata Model
+## 5. 元数据模型
 
 ### 5.1 `doc_bindings`
 
-Purpose:
-associate a product with its controlled documentation repository and scanning root.
+用途：
+将产品与其受控文档仓库及扫描根目录绑定起来。
 
-Minimum fields:
+最小字段：
 
 - `id`
 - `product_id`
@@ -123,17 +123,17 @@ Minimum fields:
 - `created_at`
 - `updated_at`
 
-Constraints:
+约束：
 
-- one active doc binding per product in MVP
-- foreign key to `products`
+- MVP 阶段每个产品只允许一个激活中的文档绑定
+- 外键关联到 `products`
 
 ### 5.2 `documents`
 
-Purpose:
-persist scanned document metadata independent from graph enrichment.
+用途：
+持久化扫描得到的文档元数据，不与图谱增强结果混用。
 
-Minimum fields:
+最小字段：
 
 - `id`
 - `doc_binding_id`
@@ -149,17 +149,17 @@ Minimum fields:
 - `created_at`
 - `updated_at`
 
-Constraints:
+约束：
 
-- unique `doc_id`
-- unique `(doc_binding_id, relative_path)`
+- `doc_id` 唯一
+- `(doc_binding_id, relative_path)` 唯一
 
 ### 5.3 `doc_changes`
 
-Purpose:
-represent implementation-facing change records generated from controlled documentation changes.
+用途：
+表示由受控文档变更生成、面向实现闭环的变更记录。
 
-Minimum fields:
+最小字段：
 
 - `id`
 - `doc_change_id`
@@ -173,20 +173,20 @@ Minimum fields:
 - `created_at`
 - `updated_at`
 
-Constraints:
+约束：
 
-- unique `doc_change_id`
-- status limited to MVP states:
+- `doc_change_id` 唯一
+- 状态限定为 MVP 阶段的以下枚举：
   - `pending_implementation`
   - `in_implementation`
   - `implemented`
 
 ### 5.4 `code_change_links`
 
-Purpose:
-persist the fact that a code commit references a DocChange.
+用途：
+持久化“某次代码提交引用了某个 `DocChange`”这一事实。
 
-Minimum fields:
+最小字段：
 
 - `id`
 - `doc_change_id`
@@ -196,17 +196,17 @@ Minimum fields:
 - `commit_message`
 - `created_at`
 
-Constraints:
+约束：
 
-- foreign key to `doc_changes`
-- index on `(project_id, branch, commit_sha)`
+- 外键关联到 `doc_changes`
+- 对 `(project_id, branch, commit_sha)` 建索引
 
 ### 5.5 `dangerous_commit_records`
 
-Purpose:
-track risky commits that were explicitly allowed to proceed and need follow-up resolution.
+用途：
+追踪那些被显式放行、但仍需要后续处理和关闭的高风险提交。
 
-Minimum fields:
+最小字段：
 
 - `id`
 - `project_id`
@@ -221,107 +221,107 @@ Minimum fields:
 - `created_at`
 - `updated_at`
 
-Constraints:
+约束：
 
-- index on `(project_id, status, created_at)`
-- status supports at least `open` and `resolved`
+- 对 `(project_id, status, created_at)` 建索引
+- 状态至少支持 `open` 与 `resolved`
 
-## 6. Implementation Approach
+## 6. 实现方式
 
-### 6.1 CLI architecture
+### 6.1 CLI 架构
 
-The CLI will use a thin command layer over repository and service code:
+CLI 采用薄命令层包裹仓储与服务能力：
 
-- parser layer parses arguments only
-- command handlers call service/repository functions
-- output layer formats results
-- error layer translates exceptions into category + exit code
+- 解析层只负责解析参数
+- 命令处理器负责调用 service / repository
+- 输出层负责结果格式化
+- 错误层负责把异常翻译成错误分类与退出码
 
-This avoids coupling CLI payload shape to FastAPI response shape and keeps later HTTP and CLI evolution independent.
+这样可以避免 CLI 返回结构和 FastAPI HTTP 返回结构耦合在一起，也能让后续 HTTP 与 CLI 各自演进。
 
-### 6.2 Migration strategy
+### 6.2 迁移策略
 
-Migration will follow the existing `docker/migrations/*.sql` pattern with a new incremental SQL file.
+数据库迁移沿用当前 `docker/migrations/*.sql` 机制，通过新增增量 SQL 文件落地。
 
-The migration must be idempotent and additive:
+迁移必须满足幂等和增量原则：
 
-- create missing tables
-- add needed indexes and constraints
-- avoid destructive alteration of existing tables in this slice
+- 创建缺失表
+- 增加所需索引与约束
+- 本切片不对已有表做破坏性修改
 
-This keeps startup migration behavior safe under the current `service.migrate.run_migrations()` model.
+这样可以兼容当前 `service.migrate.run_migrations()` 的启动迁移方式。
 
-### 6.3 Repository strategy
+### 6.3 仓储策略
 
-For new metadata tables, repository modules will be added under `src/service/repositories/`.
+针对新增元数据表，在 `src/service/repositories/` 下增加对应 repository 模块。
 
-Repository rules for this slice:
+本切片的 repository 规则：
 
-- direct SQL is acceptable and consistent with the existing codebase
-- return plain `dict` rows to match current repository style
-- keep write operations narrow and explicit
-- do not prematurely add orchestration logic into repositories
+- 直接写 SQL 是可接受的，且与现有仓库风格一致
+- 返回值继续使用 plain `dict`，保持与当前仓储风格一致
+- 写操作保持小而明确
+- 不提前把编排逻辑塞进 repository
 
-No new service layer will be created unless the command flow needs orchestration beyond a single repository call. This keeps the first slice small and avoids speculative abstractions.
+除非某个命令确实需要跨多个仓储做编排，否则本轮不主动新增新的 service 层抽象，以避免过早设计。
 
-## 7. Testing Strategy
+## 7. 测试策略
 
-### 7.1 CLI tests
+### 7.1 CLI 测试
 
-Tests for `T001` will verify:
+`T001` 的测试重点包括：
 
-- `python neodev.py ... --json` returns the required top-level fields
-- `python -m service.cli.main ... --json` returns equivalent behavior
-- `cli version-check --json` succeeds with stable shape
-- invalid arguments map to structured error payloads and stable non-zero exit codes
-- not-yet-implemented command surfaces return explicit `not_ready` if exposed
+- `python neodev.py ... --json` 返回包含约定顶层字段
+- `python -m service.cli.main ... --json` 与根级入口行为一致
+- `cli version-check --json` 成功并返回稳定结构
+- 非法参数被映射为结构化错误结果和稳定的非零退出码
+- 若暴露了未完成命令面，则它们必须显式返回 `not_ready`
 
-### 7.2 Metadata tests
+### 7.2 元数据测试
 
-Tests for `T002` will verify:
+`T002` 的测试重点包括：
 
-- migration creates the new tables successfully
-- repository create/get/list/update operations behave correctly
-- unique constraints hold for `doc_change_id`, `doc_id`, and document path scope
-- dangerous commit resolution writes `resolved_by` and `resolved_at`
-- audit timestamps are present
+- 迁移可成功创建新增表
+- repository 的 create / get / list / update 行为正确
+- `doc_change_id`、`doc_id` 和文档路径范围约束生效
+- 危险提交关闭时能正确回写 `resolved_by` 和 `resolved_at`
+- 审计时间字段存在且可用
 
-### 7.3 Acceptance evidence
+### 7.3 验收证据
 
-Before claiming completion, the following evidence must exist:
+在宣称本切片完成前，必须具备以下证据：
 
-- automated tests for CLI contract and metadata repositories pass
-- at least one real command run succeeds, specifically:
+- CLI 契约与元数据 repository 的自动化测试通过
+- 至少有一条真实命令执行成功，具体为：
   - `python neodev.py cli version-check --json`
 
-## 8. Risks And Guardrails
+## 8. 风险与护栏
 
-Risk:
-the CLI may drift into a second application surface with duplicated business logic.
+风险：
+CLI 可能逐渐演变成第二套应用表面，并开始复制业务逻辑。
 
-Guardrail:
-keep the CLI thin and push reusable behavior down into repositories or focused services only when needed.
+护栏：
+保持 CLI 足够薄，只有在确实需要复用时，才把逻辑下沉到 repository 或聚焦明确的 service。
 
-Risk:
-metadata models may overreach and lock in later workflow semantics too early.
+风险：
+元数据模型可能过早绑定后续工作流语义，导致后面难以调整。
 
-Guardrail:
-this slice adds only persistence structures and stable identifiers; later workflow rules remain in later tasks.
+护栏：
+本切片只增加持久化结构和稳定标识，不提前固化后续工作流规则。
 
-Risk:
-future tasks may depend directly on `ai_preprocess_status` table shape.
+风险：
+后续任务可能直接依赖 `ai_preprocess_status` 的表结构。
 
-Guardrail:
-later branch-analysis work must read runtime task state through an adapter, preserving freedom to introduce a dedicated task model later.
+护栏：
+后续分支分析能力必须通过适配层读取运行态任务状态，从而保留未来引入独立任务模型的空间。
 
-## 9. Done Criteria For This Slice
+## 9. 本切片完成判定
 
-This slice is complete when:
+当以下条件全部满足时，可以认为本切片完成：
 
-- `neodev.py` works as a stable repo-root CLI entry
-- `src/service/cli/` provides shared parsing, output, and error infrastructure
-- `cli version-check` is implemented and returns the agreed contract
-- the new metadata tables exist through migration
-- repository access exists for the new metadata objects
-- automated tests cover the CLI contract and metadata persistence
-- at least one real CLI invocation is executed as final verification
+- `neodev.py` 作为稳定的仓库根级 CLI 入口可用
+- `src/service/cli/` 提供共享的解析、输出和错误基础设施
+- `cli version-check` 已实现，并返回约定结果契约
+- 新增元数据表通过迁移落地
+- 新增元数据对象具备 repository 访问能力
+- 自动化测试覆盖 CLI 契约与元数据持久化
+- 至少执行过一次真实 CLI 命令作为最终验证
