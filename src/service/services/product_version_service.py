@@ -13,6 +13,10 @@ def get_version(conn, version_id: int) -> dict | None:
     return repo.find_by_id(conn, version_id)
 
 
+def get_version_by_name(conn, product_id: int, version_name: str) -> dict | None:
+    return repo.find_by_product_and_name(conn, product_id, version_name)
+
+
 def create_version(
     conn,
     product_id: int,

@@ -3,7 +3,7 @@
 from psycopg2.extras import RealDictCursor
 
 
-_COLUMNS = "id, name, repo_path, repo_url, created_at, watch_enabled, neo4j_database, neo4j_identifier, repo_username, repo_password"
+_COLUMNS = "id, name, repo_path, repo_url, created_at, watch_enabled, neo4j_database, neo4j_identifier, repo_username, repo_password, product_id"
 
 
 def list_all(conn) -> list[dict]:
@@ -20,6 +20,15 @@ def find_by_id(conn, project_id: int) -> dict | None:
         )
         row = cur.fetchone()
         return dict(row) if row else None
+
+
+def find_by_name(conn, name: str) -> list[dict]:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"SELECT {_COLUMNS} FROM projects WHERE name = %s ORDER BY id",
+            (name,),
+        )
+        return [dict(row) for row in cur.fetchall()]
 
 
 def create(

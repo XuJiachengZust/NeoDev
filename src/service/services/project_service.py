@@ -15,6 +15,10 @@ def get_project(conn, project_id: int) -> dict | None:
     return repo.find_by_id(conn, project_id)
 
 
+def find_projects_by_name(conn, name: str) -> list[dict]:
+    return repo.find_by_name(conn, name)
+
+
 def _init_repo_and_sync(conn, project: dict) -> dict:
     """创建项目后自动：克隆/解析仓库 → 获取默认分支 → 创建版本 → 同步提交+构建图。
     返回 init_result dict，不会抛出异常。"""

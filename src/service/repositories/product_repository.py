@@ -28,6 +28,16 @@ def find_by_id(conn, product_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+def find_by_code(conn, code: str) -> dict | None:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"SELECT {_COLUMNS} FROM products WHERE code = %s",
+            (code,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 def create(
     conn,
     name: str,

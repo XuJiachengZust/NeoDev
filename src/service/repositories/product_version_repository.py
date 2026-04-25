@@ -31,6 +31,18 @@ def find_by_id(conn, version_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+def find_by_product_and_name(conn, product_id: int, version_name: str) -> dict | None:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""SELECT {_COLUMNS}
+                FROM product_versions
+                WHERE product_id = %s AND version_name = %s""",
+            (product_id, version_name),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 def create(
     conn,
     product_id: int,
