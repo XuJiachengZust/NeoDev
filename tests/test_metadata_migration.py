@@ -24,6 +24,13 @@ REQUIRED_COLUMNS = {
         "last_scanned_at",
         "title",
     },
+    "document_scan_errors": {
+        "doc_binding_id",
+        "relative_path",
+        "error_code",
+        "error_message",
+        "details_json",
+    },
     "doc_changes": {
         "document_id",
         "doc_change_id",
@@ -69,6 +76,9 @@ EXPECTED_DEFAULT_TOKENS = {
     "doc_changes": {
         "details_json": ["{}", "jsonb"],
     },
+    "document_scan_errors": {
+        "details_json": ["{}", "jsonb"],
+    },
     "dangerous_commit_records": {
         "risk_level": ["'medium'"],
         "extra_json": ["{}", "jsonb"],
@@ -94,18 +104,20 @@ def test_cli_metadata_tables_exist(metadata_migration_pg_conn, metadata_migratio
                    to_regclass(%s) IS NOT NULL,
                    to_regclass(%s) IS NOT NULL,
                    to_regclass(%s) IS NOT NULL,
+                   to_regclass(%s) IS NOT NULL,
                    to_regclass(%s) IS NOT NULL
             """,
             (
                 f"{metadata_migration_schema_name}.doc_bindings",
                 f"{metadata_migration_schema_name}.documents",
+                f"{metadata_migration_schema_name}.document_scan_errors",
                 f"{metadata_migration_schema_name}.doc_changes",
                 f"{metadata_migration_schema_name}.code_change_links",
                 f"{metadata_migration_schema_name}.dangerous_commit_records",
             ),
         )
         row = cur.fetchone()
-    assert row == (True, True, True, True, True)
+    assert row == (True, True, True, True, True, True)
 
 
 def test_doc_changes_has_unique_doc_change_id(metadata_migration_pg_conn, metadata_migration_schema_name):
@@ -163,6 +175,7 @@ def test_required_columns_exist(metadata_migration_pg_conn, metadata_migration_s
               AND table_name IN (
                 'doc_bindings',
                 'documents',
+                'document_scan_errors',
                 'doc_changes',
                 'code_change_links',
                 'dangerous_commit_records'
@@ -193,6 +206,7 @@ def test_metadata_key_indexes_and_constraints_exist(metadata_migration_pg_conn, 
               AND tablename IN (
                 'doc_bindings',
                 'documents',
+                'document_scan_errors',
                 'doc_changes',
                 'code_change_links',
                 'dangerous_commit_records'
@@ -236,6 +250,10 @@ def test_metadata_key_indexes_and_constraints_exist(metadata_migration_pg_conn, 
     assert "(product_id)" in index_map["idx_doc_bindings_product_id"]
     assert "idx_doc_changes_document_id" in index_map
     assert "(document_id)" in index_map["idx_doc_changes_document_id"]
+    assert "idx_document_scan_errors_binding_created" in index_map
+    assert "(doc_binding_id, created_at)" in index_map[
+        "idx_document_scan_errors_binding_created"
+    ]
     assert "idx_code_change_links_project_branch_sha" in index_map
     assert "(project_id, branch, commit_sha)" in index_map["idx_code_change_links_project_branch_sha"]
     assert "idx_code_change_links_doc_change_id" in index_map
@@ -333,6 +351,18 @@ def test_metadata_migration_backfills_missing_columns_on_existing_tables(metadat
             )
             cur.execute(
                 f"""
+                CREATE TABLE "{schema_name}".document_scan_errors (
+                    id SERIAL PRIMARY KEY,
+                    doc_binding_id INTEGER NOT NULL REFERENCES "{schema_name}".doc_bindings(id) ON DELETE CASCADE,
+                    relative_path TEXT NOT NULL,
+                    error_code VARCHAR(64) NOT NULL,
+                    error_message TEXT NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+                """
+            )
+            cur.execute(
+                f"""
                 CREATE TABLE "{schema_name}".code_change_links (
                     id SERIAL PRIMARY KEY,
                     doc_change_id INTEGER NOT NULL REFERENCES "{schema_name}".doc_changes(id) ON DELETE CASCADE,
@@ -371,6 +401,7 @@ def test_metadata_migration_backfills_missing_columns_on_existing_tables(metadat
                   AND table_name IN (
                     'doc_bindings',
                     'documents',
+                    'document_scan_errors',
                     'doc_changes',
                     'code_change_links',
                     'dangerous_commit_records'

@@ -17,12 +17,29 @@ def create(
     is_active: bool = True,
 ) -> dict:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(
-            f"""INSERT INTO doc_bindings (product_id, repo_path, repo_url, default_branch, is_active)
-             VALUES (%s, %s, %s, %s, %s)
-             RETURNING {_COLUMNS}""",
-            (product_id, repo_path, repo_url, default_branch, is_active),
-        )
+        if _has_column(conn, "doc_bindings", "binding_name"):
+            cur.execute(
+                f"""INSERT INTO doc_bindings (
+                     product_id, binding_name, repo_path, repo_url, default_branch, is_active
+                 )
+                 VALUES (%s, %s, %s, %s, %s, %s)
+                 RETURNING {_COLUMNS}""",
+                (
+                    product_id,
+                    f"product-{product_id}-docs",
+                    repo_path,
+                    repo_url,
+                    default_branch,
+                    is_active,
+                ),
+            )
+        else:
+            cur.execute(
+                f"""INSERT INTO doc_bindings (product_id, repo_path, repo_url, default_branch, is_active)
+                 VALUES (%s, %s, %s, %s, %s)
+                 RETURNING {_COLUMNS}""",
+                (product_id, repo_path, repo_url, default_branch, is_active),
+            )
         return dict(cur.fetchone())
 
 
@@ -46,3 +63,20 @@ def list_active_by_product(conn, product_id: int) -> list[dict]:
             (product_id,),
         )
         return [dict(row) for row in cur.fetchall()]
+
+
+def _has_column(conn, table_name: str, column_name: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = %s
+                  AND column_name = %s
+            )
+            """,
+            (table_name, column_name),
+        )
+        return bool(cur.fetchone()[0])

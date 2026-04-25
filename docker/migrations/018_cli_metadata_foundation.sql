@@ -70,6 +70,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_binding_path
     ON documents(doc_binding_id, relative_path);
 
 
+CREATE TABLE IF NOT EXISTS document_scan_errors (
+    id              SERIAL PRIMARY KEY,
+    doc_binding_id  INTEGER NOT NULL REFERENCES doc_bindings(id) ON DELETE CASCADE,
+    relative_path   TEXT NOT NULL,
+    error_code      VARCHAR(64) NOT NULL,
+    error_message   TEXT NOT NULL,
+    details_json    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE document_scan_errors
+    ADD COLUMN IF NOT EXISTS details_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+ALTER TABLE document_scan_errors
+    ALTER COLUMN details_json SET DEFAULT '{}'::jsonb;
+
+CREATE INDEX IF NOT EXISTS idx_document_scan_errors_binding_created
+    ON document_scan_errors(doc_binding_id, created_at);
+
+
 CREATE TABLE IF NOT EXISTS doc_changes (
     id              SERIAL PRIMARY KEY,
     document_id     INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
