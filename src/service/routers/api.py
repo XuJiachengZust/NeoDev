@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from service.routers import (
+    cli,
     commits,
     parse,
     preprocess,
@@ -16,6 +17,7 @@ from service.routers import (
 
 router = APIRouter(prefix="/api")
 
+router.include_router(cli.router, prefix="/cli", tags=["cli"])
 router.include_router(repos.router, prefix="/repos", tags=["repos"])
 router.include_router(parse.router, prefix="/parse", tags=["parse"])
 router.include_router(versions.router, prefix="/projects", tags=["versions"])

@@ -1,37 +1,51 @@
-import argparse
 import json
+import os
+import sys
 
-from service.cli.commands import register_commands
-from service.cli.errors import CliError, error_to_exit_code
-from service.cli.output import build_error_payload
-
-
-class JsonArgumentParser(argparse.ArgumentParser):
-    def error(self, message: str) -> None:
-        raise CliError(category="invalid_argument", message=message)
+from service.cli.config import handle_config, load_server_url
+from service.cli.executor import JsonArgumentParser, build_parser, execute_local
+from service.cli.installer import install_client
+from service.cli.remote_client import execute_remote
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = JsonArgumentParser(prog="neodev")
-    parser.add_argument("--json", action="store_true", dest="json_output")
-    subparsers = parser.add_subparsers(dest="command_group", required=True)
-    register_commands(subparsers)
-    return parser
+def _extract_server(argv: list[str]) -> tuple[str | None, list[str]]:
+    cleaned: list[str] = []
+    server_url: str | None = None
+    skip_next = False
+    for index, item in enumerate(argv):
+        if skip_next:
+            skip_next = False
+            continue
+        if item == "--server":
+            if index + 1 < len(argv):
+                server_url = argv[index + 1]
+                skip_next = True
+            continue
+        if item.startswith("--server="):
+            server_url = item.split("=", 1)[1]
+            continue
+        cleaned.append(item)
+    return server_url, cleaned
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = None
-    try:
-        args = parser.parse_args(argv)
-        payload = args.handler(args)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    if raw_argv and raw_argv[0] == "install-client":
+        exit_code, payload = install_client(raw_argv[1:])
         print(json.dumps(payload, ensure_ascii=False))
-        return 0
-    except CliError as exc:
-        command = getattr(args, "command_name", "unknown") if args is not None else "unknown"
-        payload = build_error_payload(command, exc)
+        return exit_code
+    if raw_argv and raw_argv[0] == "config":
+        exit_code, payload = handle_config(raw_argv[1:])
         print(json.dumps(payload, ensure_ascii=False))
-        return error_to_exit_code(exc)
+        return exit_code
+    explicit_server, local_argv = _extract_server(raw_argv)
+    server_url = explicit_server or os.environ.get("NEODEV_API_URL") or load_server_url()
+    if server_url:
+        exit_code, payload = execute_remote(server_url, local_argv)
+    else:
+        exit_code, payload = execute_local(local_argv)
+    print(json.dumps(payload, ensure_ascii=False))
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -1,5 +1,26 @@
 # NeoDev SP
 
+## 本地 CLI 一行安装
+
+远程服务部署完成后，本地只需要安装轻量 CLI 客户端。Windows PowerShell 一行命令：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/XuJiachengZust/NeoDev/neodev-sp/scripts/install-neodev-client.ps1 -OutFile $env:TEMP\install-neodev-client.ps1; & $env:TEMP\install-neodev-client.ps1 -Server http://10.50.3.149"
+```
+
+安装后重新打开终端，直接使用：
+
+```powershell
+neodev config show
+neodev cli version-check --json
+```
+
+如需切换远程服务：
+
+```powershell
+neodev config set-server http://10.50.3.149
+```
+
 ## 核心结论
 
 NeoDev SP 的产品意义，是为 AI 时代的一人团队提供一套以文档和规范为中心的研发秩序。
