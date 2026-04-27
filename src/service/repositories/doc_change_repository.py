@@ -85,3 +85,18 @@ def mark_implemented(conn, change_id: int) -> dict | None:
         if row:
             return dict(row)
     return find_by_id(conn, change_id)
+
+
+def mark_in_implementation(conn, change_id: int) -> dict | None:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""UPDATE doc_changes
+             SET status = 'in_implementation', updated_at = now()
+             WHERE id = %s AND status = 'pending_implementation'
+             RETURNING {_COLUMNS}""",
+            (change_id,),
+        )
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+    return find_by_id(conn, change_id)

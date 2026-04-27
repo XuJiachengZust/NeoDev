@@ -200,6 +200,15 @@ def test_doc_change_commands_are_registered():
     assert "--doc-change-id" in implemented.stdout
 
 
+def test_git_verify_doc_change_command_is_registered():
+    proc = _run("neodev.py", "git", "verify-doc-change", "--help")
+    assert proc.returncode == 0
+    assert "--project-id" in proc.stdout
+    assert "--branch" in proc.stdout
+    assert "--commit-sha" in proc.stdout
+    assert "--commit-message" in proc.stdout
+
+
 def test_graph_semantic_search_command_is_registered():
     proc = _run("neodev.py", "graph", "semantic-search", "--help")
     assert proc.returncode == 0
