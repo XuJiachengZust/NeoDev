@@ -179,3 +179,18 @@ def test_product_version_analysis_commands_are_registered():
     status = _run("neodev.py", "product", "version", "analyze-status", "--help")
     assert status.returncode == 0
     assert "--branch" in status.stdout
+
+
+def test_doc_change_commands_are_registered():
+    register = _run("neodev.py", "doc", "change", "register", "--help")
+    assert register.returncode == 0
+    assert "--document-id" in register.stdout
+    assert "--doc-change-id" in register.stdout
+
+    show = _run("neodev.py", "doc", "change", "show", "--help")
+    assert show.returncode == 0
+    assert "--doc-change-id" in show.stdout
+
+    implemented = _run("neodev.py", "doc", "change", "mark-implemented", "--help")
+    assert implemented.returncode == 0
+    assert "--doc-change-id" in implemented.stdout
