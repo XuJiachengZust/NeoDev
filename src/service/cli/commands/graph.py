@@ -7,6 +7,7 @@ from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
 from service.services import graph_impact_service
 from service.services import graph_query_service
+from service.services import graph_refresh_service
 from service.services import graph_semantic_search_service
 from service.services import product_service
 from service.services import product_version_service
@@ -24,6 +25,19 @@ def register(subparsers) -> None:
     impact_parser.set_defaults(
         handler=handle_impact,
         command_name="graph impact",
+    )
+
+    refresh_parser = graph_subparsers.add_parser("refresh-nodes")
+    _add_version_locator(refresh_parser)
+    _add_project_locator(refresh_parser)
+    refresh_parser.add_argument("--branch", required=True)
+    refresh_parser.add_argument("--node-id", action="append", dest="node_ids")
+    refresh_parser.add_argument("--path", action="append", dest="paths")
+    refresh_parser.add_argument("--commit-sha")
+    refresh_parser.add_argument("--json", action="store_true", dest="json_output")
+    refresh_parser.set_defaults(
+        handler=handle_refresh_nodes,
+        command_name="graph refresh-nodes",
     )
 
     semantic_parser = graph_subparsers.add_parser("semantic-search")
@@ -104,6 +118,12 @@ def _with_db(callback):
             message=exc.message,
             details=exc.details,
         ) from exc
+    except graph_refresh_service.GraphRefreshError as exc:
+        raise CliError(
+            category=exc.category,
+            message=exc.message,
+            details=exc.details,
+        ) from exc
     except psycopg2.Error as exc:
         raise CliError(
             category="internal_error",
@@ -118,6 +138,24 @@ def handle_impact(args) -> dict:
             conn,
             change_id=args.change_id,
             doc_change_id=args.doc_change_id,
+        )
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
+
+
+def handle_refresh_nodes(args) -> dict:
+    def run(conn):
+        version = _resolve_version(conn, args)
+        project = _resolve_project(conn, args)
+        result = graph_refresh_service.refresh_nodes(
+            conn,
+            product_version_id=version["id"],
+            project_id=project["id"],
+            branch=args.branch,
+            node_ids=args.node_ids,
+            paths=args.paths,
+            commit_sha=args.commit_sha,
         )
         return build_success_payload(args.command_name, result)
 

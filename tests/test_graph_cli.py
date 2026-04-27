@@ -182,6 +182,140 @@ def test_graph_impact_returns_docchange_scope(pg_conn):
     assert data["evidence"]
 
 
+def test_graph_refresh_nodes_rejects_branch_outside_product_version(pg_conn):
+    token = uuid.uuid4().hex[:8]
+    product_code = f"GRAPHREFRESH-{token}"
+    project_id = _make_project(pg_conn, f"graph-refresh-project-{token}")
+
+    create_product = _run_cli(
+        "product",
+        "create",
+        "--name",
+        f"Graph Refresh Product {token}",
+        "--product-code",
+        product_code,
+        "--json",
+    )
+    assert create_product.returncode == 0, create_product.stderr
+
+    create_version = _run_cli(
+        "product",
+        "version",
+        "create",
+        "--product-code",
+        product_code,
+        "--version-name",
+        "V1.0",
+        "--json",
+    )
+    assert create_version.returncode == 0, create_version.stderr
+    version_id = _payload(create_version)["data"]["version"]["id"]
+
+    bind_branch = _run_cli(
+        "product",
+        "version",
+        "bind-branch",
+        "--version-id",
+        str(version_id),
+        "--project-id",
+        str(project_id),
+        "--branch",
+        "release/V1.0",
+        "--json",
+    )
+    assert bind_branch.returncode == 0, bind_branch.stderr
+
+    refresh = _run_cli(
+        "graph",
+        "refresh-nodes",
+        "--version-id",
+        str(version_id),
+        "--project-id",
+        str(project_id),
+        "--branch",
+        "feature/not-bound",
+        "--node-id",
+        "Function:auth:login",
+        "--json",
+    )
+
+    assert refresh.returncode == 2
+    payload = _payload(refresh)
+    assert payload["ok"] is False
+    assert payload["command"] == "graph refresh-nodes"
+    assert payload["errors"][0]["category"] == "invalid_scope"
+    assert payload["errors"][0]["details"]["expected_branch"] == "release/V1.0"
+
+
+def test_graph_refresh_nodes_returns_degraded_without_neo4j(pg_conn):
+    token = uuid.uuid4().hex[:8]
+    product_code = f"GRAPHREFOK-{token}"
+    project_id = _make_project(pg_conn, f"graph-refresh-ok-project-{token}")
+
+    create_product = _run_cli(
+        "product",
+        "create",
+        "--name",
+        f"Graph Refresh OK Product {token}",
+        "--product-code",
+        product_code,
+        "--json",
+    )
+    assert create_product.returncode == 0, create_product.stderr
+
+    create_version = _run_cli(
+        "product",
+        "version",
+        "create",
+        "--product-code",
+        product_code,
+        "--version-name",
+        "V1.0",
+        "--json",
+    )
+    assert create_version.returncode == 0, create_version.stderr
+    version_id = _payload(create_version)["data"]["version"]["id"]
+
+    bind_branch = _run_cli(
+        "product",
+        "version",
+        "bind-branch",
+        "--version-id",
+        str(version_id),
+        "--project-id",
+        str(project_id),
+        "--branch",
+        "release/V1.0",
+        "--json",
+    )
+    assert bind_branch.returncode == 0, bind_branch.stderr
+
+    refresh = _run_cli(
+        "graph",
+        "refresh-nodes",
+        "--version-id",
+        str(version_id),
+        "--project-id",
+        str(project_id),
+        "--branch",
+        "release/V1.0",
+        "--path",
+        "src/auth.py",
+        "--json",
+    )
+
+    assert refresh.returncode == 0, refresh.stderr
+    payload = _payload(refresh)
+    assert payload["ok"] is True
+    assert payload["command"] == "graph refresh-nodes"
+    data = payload["data"]
+    assert data["status"] == "degraded"
+    assert data["semantic_status"] == "not_refreshed"
+    assert data["refresh_scope"]["paths"] == ["src/auth.py"]
+    assert data["graph_nodes_updated"] == 0
+    assert data["degraded_reasons"][0]["reason"] == "neo4j_not_configured"
+
+
 def test_graph_entity_context_rejects_branch_outside_product_version(pg_conn):
     token = uuid.uuid4().hex[:8]
     product_code = f"GRAPHCTX-{token}"

@@ -216,6 +216,18 @@ def test_graph_impact_command_is_registered():
     assert "--doc-change-id" in proc.stdout
 
 
+def test_graph_refresh_nodes_command_is_registered():
+    proc = _run("neodev.py", "graph", "refresh-nodes", "--help")
+    assert proc.returncode == 0
+    assert "--product-code" in proc.stdout
+    assert "--version-name" in proc.stdout
+    assert "--project-id" in proc.stdout
+    assert "--branch" in proc.stdout
+    assert "--node-id" in proc.stdout
+    assert "--path" in proc.stdout
+    assert "--commit-sha" in proc.stdout
+
+
 def test_graph_entity_context_command_is_registered():
     proc = _run("neodev.py", "graph", "entity-context", "--help")
     assert proc.returncode == 0
