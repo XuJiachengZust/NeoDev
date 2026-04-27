@@ -28,7 +28,7 @@ related:
 
 - 产品、产品版本、仓库绑定
 - 文档仓库接入与 `DocChange` 闭环
-- 产品版本下的代码分析、AI 语义分析与向量化
+- 仓库地址接入后的自动图谱构建、结构化索引与语义检索
 - 图谱查询、语义检索、节点刷新、链路获取
 - Git 一致性校验、危险提交登记、推送后刷新
 - 官方插件与官方 skill 实现
@@ -38,10 +38,10 @@ related:
 - 本地 `neodev` CLI 客户端是开发者电脑上的唯一执行入口。
 - 统一远程 NeoDev 服务是唯一事实落盘、图谱刷新、分析执行和状态管理入口。
 - 插件 / skill 只负责参数补全、流程引导、风险提示和结果解释，不承担本地事实源或本地执行层。
-- 平台只负责 AI 增强后的事实输出，不负责自主规划和自动改代码。
+- 平台只负责结构化事实和图谱上下文输出，不负责自主规划和自动改代码。
 - `MVP` 不引入独立向量索引层，只增加一个轻量元数据库。
 - 图数据库承载代码/文档关系、图谱节点、链路以及 embedding。
-- 轻量元数据库承载产品、版本、文档变更、分析任务、危险提交和版本检查等必要元数据。
+- 轻量元数据库承载产品、版本、项目仓库、文档变更、图谱构建状态、危险提交和版本检查等必要元数据。
 - 所有命令返回统一结构化结果，至少包含 `ok`、`command`、`timestamp`、`data`、`errors`。
 - 能复用服务端现有实现的能力，不在 MVP 内重复造轮子；开发者本地只保留 CLI/skill/插件客户端。
 - 优先做可串成闭环的命令，再做增强型体验。
@@ -136,48 +136,47 @@ related:
 - 不合法文档不生成 `DocChange`
 - 失败原因可被记录和查询
 
-### 3.4 W004 产品版本下的代码分析编排
+### 3.4 W004 仓库接入与自动图谱构建
 
 目标：
 
-- 支持触发某产品版本下某项目分支的分析
-- 支持查看状态、进度、heartbeat
-- 防止多分支相同代码重复分析
+- 支持通过一条 `project create --repo-url` 接入远程仓库
+- 仓库登记后由远程 NeoDev 自动触发图谱构建
+- 防止相同代码重复构建
 
 核心任务：
 
-- 实现 `BranchAnalysisTask` 持久化模型
-- 实现 `product version analyze`
-- 实现 `product version analyze-status`
-- 实现 `product version watch-status`
-- 接入本地现有 `copy_data / incremental / full` 决策逻辑
+- 实现 `project create --repo-url`
+- 实现 `project show`
+- 接入现有 `copy_data / incremental / full` 决策逻辑
 - 接入 `last_parsed_commit` 和 busy protection
 - 对同 HEAD 或同内容分支优先复用已有图谱结果
+- 将旧显式分析命令保留为兼容入口，但不进入帮助和插件/skill 主流程
 
 依赖现有能力：
 
-- `ai_preprocess_status_repository.py`
-- `preprocess.py`
-- `ai_preprocessor_service.py`
+- `project_service.py`
+- `sync_service.py`
 - `watch_service.py`
+- `ai_preprocess_status_repository.py`
 
 完成标准：
 
-- 同一项目在运行中的分析任务不会并发冲突
-- 可看到分析动作、当前状态、进度、heartbeat 和完成时间
-- 相同代码不会被重复全量分析
+- 用户传入仓库地址即可完成项目登记和图谱构建触发
+- 插件 / skill 不展示旧显式分析入口
+- 相同代码不会被重复全量构建
 
-### 3.5 W005 仓库图谱节点的 AI 语义分析与向量化
+### 3.5 W005 仓库图谱节点的结构化索引与语义检索
 
 目标：
 
-- 在代码解析结果基础上补齐节点 AI 描述与向量化
+- 在代码解析结果基础上补齐可检索索引与向量化
 - 支持产品版本范围内的语义检索
 
 核心任务：
 
 - 为图谱节点落地 `description`、`embedding`、`embedding_model`、`embedding_updated_at`
-- 在节点变更后触发 AI 描述与 embedding 刷新
+- 在节点变更后触发 结构化描述与 embedding 刷新
 - 复用内容哈希，避免对未变化节点重复生成描述和向量
 - 实现 `graph semantic-search`
 - 明确 `semantic_status` 的返回语义
@@ -228,7 +227,7 @@ related:
 
 - 让文档变更和代码提交形成最小一致性闭环
 - 允许危险提交受控放行并登记
-- 支持代码推送后刷新图谱节点和 AI 描述
+- 支持代码推送后刷新图谱节点和 结构化描述
 
 核心任务：
 
@@ -240,7 +239,7 @@ related:
 - 实现危险提交待处理清单查询
 - 实现 `git dangerous-commit resolve`
 - 实现 `git post-push-refresh`
-- 推送后按 commit 或分支范围同步提交、刷新节点、刷新链路、刷新 AI 描述
+- 推送后按 commit 或分支范围同步提交、刷新节点、刷新链路、刷新 结构化描述
 
 依赖现有能力：
 
@@ -254,7 +253,7 @@ related:
 - 危险提交放行后进入待处理清单
 - CLI 支持查询待处理风险记录
 - 风险记录可回写 `resolved_by`、`resolved_at`
-- 推送后可增量刷新受影响节点和 AI 描述
+- 推送后可增量刷新受影响节点和 结构化描述
 - 不引入多级审批、自动升级或定时催办
 
 ### 3.8 W008 官方插件与官方 Skill 实现
@@ -284,7 +283,7 @@ related:
 
 - 官方插件和官方 skill 都能完整引导以下场景：
 - 文档变更到实现方案
-- 分支分析触发与进度查看
+- 仓库接入与自动图谱构建
 - 推送前校验
 - 推送后节点与链路刷新
 - 两者对同一场景给出的 CLI 调用序列保持一致
@@ -304,14 +303,14 @@ related:
 
 ### Phase 2 分析与检索闭环
 
-- W004 产品版本下的代码分析编排
-- W005 仓库图谱节点的 AI 语义分析与向量化
+- W004 仓库接入与自动图谱构建
+- W005 仓库图谱节点的结构化索引与语义检索
 - W006 图谱查询、节点刷新与链路获取
 
 产出：
 
-- 可触发分析
-- 可查状态与进度
+- 传入仓库地址即可自动触发远程图谱构建
+- 可查询项目和图谱上下文
 - 可做产品版本范围语义检索
 - 可获取链路与刷新节点
 
@@ -332,12 +331,12 @@ related:
 | 命令 | CLI 责任 | 插件 / skill 责任 |
 | --- | --- | --- |
 | `doc change register` | 生成 `DocChange`、落库、返回状态 | 判断何时触发、补全文档上下文 |
-| `product version analyze` | 创建任务、选择分析策略、更新状态 | 引导用户选择项目 / 分支并轮询状态 |
+| `project create --repo-url` | 登记项目仓库并自动触发图谱构建 | 引导用户提供仓库地址和项目名称 |
 | `graph semantic-search` | 在产品版本作用域内返回检索结果 | 组织 query、解释命中结果 |
-| `graph refresh-nodes` | 刷新节点、AI 描述、embedding | 推荐刷新范围、解释刷新必要性 |
+| `graph refresh-nodes` | 刷新节点、结构化描述、embedding | 推荐刷新范围、解释刷新必要性 |
 | `graph get-chain` | 返回链路事实 | 解释链路意义、推荐后续动作 |
 | `git verify-doc-change` | 校验 trailer、写回状态、输出风险 | 提示是否继续、补全说明文本 |
-| `git post-push-refresh` | 同步提交并刷新图谱 / AI 描述 | 在推送成功后提醒或自动编排调用 |
+| `git post-push-refresh` | 同步提交并刷新图谱 / 结构化描述 | 在推送成功后提醒或自动编排调用 |
 | `cli version-check` | 检查 CLI/插件/skill 兼容状态并执行拉齐 | 会话启动时调用并决定是否继续后续流程 |
 
 ## 6. 最小测试清单
@@ -346,7 +345,7 @@ related:
 - 文档扫描后可生成 `Document` 节点和文档关系
 - 文档提交后可生成唯一 `DocChange ID`
 - 不合法文档会被阻止登记 `DocChange`，并留下错误记录
-- 相同 HEAD 分支触发分析时优先复用已有结果
+- 相同 HEAD 分支触发图谱构建时优先复用已有结果
 - 分析任务运行中再次触发同项目分析会返回冲突
 - 节点未变化时 embedding 被复用而不是重复生成
 - `graph get-chain` 可返回节点、边、方向和摘要
@@ -354,7 +353,7 @@ related:
 - `git verify-doc-change` 能识别合法 trailer 与非法 trailer
 - 危险提交二次确认后可被登记
 - 危险提交可进入待处理清单并被手工关闭
-- `git post-push-refresh` 可在推送后刷新受影响节点和 AI 描述
+- `git post-push-refresh` 可在推送后刷新受影响节点和 结构化描述
 - 插件 / skill 可通过 `cli version-check` 保持与 CLI 一致
 
 ## 7. 完成判定

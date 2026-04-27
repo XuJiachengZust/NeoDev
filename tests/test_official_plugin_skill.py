@@ -47,7 +47,7 @@ def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
     required = {
         "session_version_check",
         "doc_change_to_implementation",
-        "branch_analysis",
+        "repository_auto_graph",
         "pre_push_verification",
         "post_push_refresh",
     }
@@ -65,14 +65,17 @@ def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
     for expected in [
         "doc change register",
         "graph impact",
-        "product version analyze",
-        "product version analyze-status",
+        "project create --name <project_name> --repo-url <repo_url>",
+        "project show --project-id <project_id>",
         "git verify-doc-change",
         "git dangerous-commit list",
         "git dangerous-commit resolve",
         "git post-push-refresh",
     ]:
         assert expected in joined
+    assert "product version analyze" not in joined
+    assert "product version analyze-status" not in joined
+    assert "product version watch-status" not in joined
 
     forbidden = re.compile(r"\b(psql|psycopg2|neo4j|cypher|insert\s+into|update\s+\w+\s+set)\b", re.I)
     assert not forbidden.search(joined)
@@ -102,6 +105,8 @@ def test_official_skill_is_bundled_and_points_to_the_shared_workflow_contract():
     assert "本地 neodev CLI 客户端调用远程 NeoDev 服务" in skill
     assert "neodev config set-server" in skill
     assert "install-neodev-client.ps1" in skill
+    assert "project create --name <project_name> --repo-url <repo_url>" in skill
+    assert "product version analyze" not in skill
     assert "git verify-doc-change" in skill
     assert "git post-push-refresh" in skill
     assert "不要直接写 PostgreSQL" in skill

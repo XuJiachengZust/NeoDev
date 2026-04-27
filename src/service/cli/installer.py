@@ -124,7 +124,13 @@ def main(argv=None):
             }}],
         }}, ensure_ascii=False))
         return 10
-    print(json.dumps(body.get("payload", body), ensure_ascii=False))
+    payload = body.get("payload", body)
+    if isinstance(payload, dict) and payload.get("command") == "help":
+        text = (payload.get("data") or {{}}).get("text")
+        if isinstance(text, str):
+            print(text, end="" if text.endswith("\\n") else "\\n")
+            return int(body.get("exit_code", 0))
+    print(json.dumps(payload, ensure_ascii=False))
     return int(body.get("exit_code", 0))
 
 

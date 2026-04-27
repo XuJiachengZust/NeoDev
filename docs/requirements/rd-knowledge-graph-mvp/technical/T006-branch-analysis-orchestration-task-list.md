@@ -1,8 +1,8 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-T006-BRANCH-ANALYSIS-ORCHESTRATION-TASK-LIST
-title: "T006 分支分析编排任务清单"
+title: "T006 仓库接入与自动图谱构建任务清单"
 aliases:
-  - "T006 分支分析编排任务清单"
+  - "T006 仓库接入与自动图谱构建任务清单"
 tags:
   - neodev/docs
   - neodev/tech-design
@@ -18,27 +18,27 @@ relations:
 related:
   - "[[01-master-prd]]"
 ---
-# T006 分支分析编排任务清单
+# T006 仓库接入与自动图谱构建任务清单
 
 ## 1. 目标
 
-本清单用于细化 `T006 分支分析编排与状态查看`，重点解决以下问题：
+本清单用于细化 `T006 仓库接入与自动图谱构建`，重点解决以下问题：
 
-- 把当前以 `preprocess` 为入口的项目级能力升级为产品版本作用域下的分支分析能力
-- 保留现有可复用实现，同时允许做服务层和状态模型改造
-- 统一“触发分析、查看状态、查看进度、并发控制、失败恢复、复用策略”这条链路
-- 让 CLI、插件 / skill 和后续推送后刷新都围绕同一任务模型工作
+- 开发者传入仓库地址后，远程 NeoDev 自动登记项目并触发图谱构建
+- 保留旧分析命令作为兼容层，但不在帮助、插件或 skill 主流程中显式展示
+- 统一“仓库登记、图谱构建、并发控制、失败恢复、复用策略”这条链路
+- 让 CLI、插件 / skill 和后续推送后刷新都围绕同一远程图谱构建模型工作
 
 ## 2. 现状基础
 
 当前本地实现已经提供了这几类可复用能力：
 
-- `src/service/services/ai_preprocessor_service.py`
-  已有预检、图谱刷新、AI 分析、进度回写、失败处理的主流程。
+- `src/service/services/project_service.py`
+  已有项目仓库登记、初始化和图谱同步触发能力。
 - `src/service/repositories/ai_preprocess_status_repository.py`
   已有运行态、进度、心跳、超时失败转移能力。
 - `src/service/routers/preprocess.py`
-  已有触发和查询接口，可作为兼容层保留。
+  已有旧触发和查询接口，可作为兼容层保留，不作为用户主流程。
 - `src/service/services/watch_service.py`
   已有 `copy_data / incremental / full` 三段复用策略。
 - `src/service/services/sync_service.py`
@@ -49,46 +49,47 @@ related:
 这说明：
 
 - 核心执行链路不是从零开始
-- 主要缺的是“产品版本作用域、统一任务模型、CLI 封装、兼容改造”
+- 主要缺的是“仓库地址接入、自动图谱构建、CLI 封装、兼容改造”
 
 ## 3. 改造原则
 
-- 不直接删除 `preprocess` 旧能力，先包一层 `branch_analysis_service`
+- 不直接删除旧 `preprocess` / `branch_analysis` 能力，先保留兼容层
 - 运行态和历史态分离，避免继续把所有信息塞进 `ai_preprocess_status.extra`
-- 复用策略统一收口到分支分析编排层，不分散在多个入口里
-- 产品版本视角和项目版本视角都保留，但对外统一暴露产品版本视角
+- 复用策略统一收口到仓库图谱构建编排层，不分散在多个入口里
+- 项目仓库视角和产品版本视角都保留，但对外主入口统一为 `project create --repo-url`
 - 允许保存冗余快照，如 `head_commit`、`analysis_action`、`trigger_source`、`progress_json`
 
 ## 4. 编排模型
 
 建议的标准链路：
 
-1. CLI 接收 `product_key + product_version_id + project_id + branch`
-2. 服务层校验产品版本与项目分支映射
-3. 创建 `BranchAnalysisTask`
+1. CLI 接收 `project_name + repo_url`
+2. 服务层创建或读取项目仓库记录
+3. 远程 NeoDev 自动触发图谱构建
 4. 执行并发控制和忙碌检查
 5. 根据 `HEAD`、`last_parsed_commit` 和图谱现状判定 `copy_data / incremental / full`
-6. 执行图谱刷新
-7. 执行 AI 描述与 embedding 分析
-8. 按阶段回写进度、心跳、错误快照
-9. 输出任务状态给 CLI
+6. 执行图谱刷新和必要索引更新
+7. 按阶段回写进度、心跳、错误快照
+8. 输出项目与图谱构建结果给 CLI
+9. 如需产品版本范围，再通过 `product version bind-branch` 建立映射
 
 ## 5. 专项任务
 
-### BA-01 建立统一分支分析服务入口
+### BA-01 建立统一仓库接入入口
 
 目标：
-新增 `branch_analysis_service`，作为 CLI 的唯一分析入口，并包住旧 `preprocess` 实现。
+新增 `project create --repo-url`，作为 CLI 用户主入口，并复用项目服务的仓库初始化与图谱同步能力。
 
 建议源码落点：
 
-- 新增 `src/service/services/branch_analysis_service.py`
-- 新增 `src/service/cli/commands/product_version.py`
+- 新增 `src/service/cli/commands/project.py`
+- 复用 `src/service/services/project_service.py`
+- 旧 `src/service/services/branch_analysis_service.py` 作为兼容层保留
 
 允许改造：
 
-- `ai_preprocessor_service.run_preprocess` 可下沉为内部 worker
-- 旧 `preprocess` router 改为兼容代理，而不是继续承担主入口语义
+- 旧显式分析命令保留为兼容代理，而不是继续承担主入口语义
+- 自动图谱构建不再调用 AI 预处理 worker
 
 验收口径：
 
@@ -98,7 +99,7 @@ related:
 ### BA-02 产品版本作用域校验
 
 目标：
-在触发分析前，确认该分支确实属于指定产品版本的项目分支映射。
+在触发图谱构建前，确认该分支确实属于指定产品版本的项目分支映射。
 
 建议复用：
 
@@ -141,7 +142,7 @@ related:
 ### BA-04 并发控制与心跳超时治理
 
 目标：
-保留当前忙碌保护能力，并把它从“项目预处理”语义升级为“分支分析任务”语义。
+保留当前忙碌保护能力，并把它从“项目预处理”语义升级为“图谱构建任务”语义。
 
 建议复用：
 
@@ -206,10 +207,10 @@ related:
 - 状态查看可以知道卡在哪个阶段
 - 图谱为空时能自动触发回退策略并留下日志
 
-### BA-07 AI 分析阶段标准化
+### BA-07 图谱构建阶段标准化
 
 目标：
-把 AI 语义分析阶段的进度、缓存命中和失败信息标准化。
+把 图谱语义索引阶段的进度、缓存命中和失败信息标准化。
 
 建议复用：
 
@@ -233,7 +234,7 @@ related:
 
 验收口径：
 
-- `analyze-status` 和 `watch-status` 都能看到统一进度结构
+- `project show` 和图谱查询命令都能看到稳定项目/图谱结果
 - 缓存命中和失败数可追踪
 
 ### BA-08 CLI 命令与状态协议对齐
@@ -243,9 +244,10 @@ related:
 
 对应命令：
 
-- `product version analyze`
-- `product version analyze-status`
-- `product version watch-status`
+- `project create --repo-url`
+- `project show`
+
+旧显式分析命令不进入插件 / skill 主流程。
 
 建议输出字段：
 
@@ -261,7 +263,7 @@ related:
 验收口径：
 
 - 插件 / skill 不需要自己从日志中推断阶段
-- 轮询和 watch 都有稳定输出结构
+- 用户主流程不展示旧显式分析入口
 
 ### BA-09 旧入口兼容策略
 
@@ -301,13 +303,13 @@ related:
 
 ## 6. 建议执行顺序
 
-1. BA-01 建立统一分支分析服务入口
+1. BA-01 建立统一仓库接入入口
 2. BA-02 产品版本作用域校验
 3. BA-03 任务主表与事件流接入
 4. BA-04 并发控制与心跳超时治理
 5. BA-05 复用策略统一收口
 6. BA-06 图谱刷新阶段标准化
-7. BA-07 AI 分析阶段标准化
+7. BA-07 图谱构建阶段标准化
 8. BA-08 CLI 命令与状态协议对齐
 9. BA-09 旧入口兼容策略
 10. BA-10 审计与诊断能力
@@ -322,7 +324,7 @@ related:
 ### BA-11 分支快照语义收口
 
 目标：
-把分支分析的结果语义从“生成分支级整图”改成“生成或更新分支快照”。
+把自动图谱构建的结果语义从“生成分支级整图”改成“生成或更新分支快照”。
 
 建议规则：
 
@@ -338,6 +340,6 @@ related:
 
 验收口径：
 
-- 同 HEAD 分支触发分析时，不重复生成整套图数据
+- 同 HEAD 分支触发图谱构建时，不重复生成整套图数据
 - 增量分析后可以看到快照 entry 被局部替换
-- `analyze-status` 可返回当前快照标识及来源动作
+- `project show` 可返回当前快照标识及来源动作

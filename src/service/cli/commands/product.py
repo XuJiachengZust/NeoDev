@@ -1,3 +1,4 @@
+import argparse
 from contextlib import closing
 
 import psycopg2
@@ -39,7 +40,11 @@ def register(subparsers) -> None:
     show_parser.set_defaults(handler=handle_product_show, command_name="product show")
 
     version_parser = product_subparsers.add_parser("version")
-    version_subparsers = version_parser.add_subparsers(dest="version_command", required=True)
+    version_subparsers = version_parser.add_subparsers(
+        dest="version_command",
+        required=True,
+        metavar="{create,show,bind-branch}",
+    )
 
     version_create_parser = version_subparsers.add_parser("create")
     _add_product_locator(version_create_parser)
@@ -71,7 +76,7 @@ def register(subparsers) -> None:
         command_name="product version bind-branch",
     )
 
-    analyze_parser = version_subparsers.add_parser("analyze")
+    analyze_parser = version_subparsers.add_parser("analyze", help=argparse.SUPPRESS)
     _add_version_locator(analyze_parser)
     _add_project_locator(analyze_parser)
     analyze_parser.add_argument("--branch", required=True)
@@ -82,7 +87,7 @@ def register(subparsers) -> None:
         command_name="product version analyze",
     )
 
-    status_parser = version_subparsers.add_parser("analyze-status")
+    status_parser = version_subparsers.add_parser("analyze-status", help=argparse.SUPPRESS)
     _add_version_locator(status_parser)
     _add_project_locator(status_parser)
     status_parser.add_argument("--branch", required=True)
@@ -92,7 +97,7 @@ def register(subparsers) -> None:
         command_name="product version analyze-status",
     )
 
-    watch_status_parser = version_subparsers.add_parser("watch-status")
+    watch_status_parser = version_subparsers.add_parser("watch-status", help=argparse.SUPPRESS)
     _add_version_locator(watch_status_parser)
     _add_project_locator(watch_status_parser)
     watch_status_parser.add_argument("--branch", required=True)
@@ -101,6 +106,13 @@ def register(subparsers) -> None:
         handler=handle_version_watch_status,
         command_name="product version watch-status",
     )
+    _hide_subparser_choices(version_subparsers, {"analyze", "analyze-status", "watch-status"})
+
+
+def _hide_subparser_choices(subparsers, hidden_names: set[str]) -> None:
+    subparsers._choices_actions = [
+        action for action in subparsers._choices_actions if action.dest not in hidden_names
+    ]
 
 
 def _add_product_locator(parser) -> None:

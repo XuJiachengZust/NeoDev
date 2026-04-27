@@ -2,7 +2,6 @@ import uuid
 
 import pytest
 
-from service.repositories import ai_preprocess_status_repository as status_repo
 from service.services import branch_analysis_service
 from service.services import product_version_service
 
@@ -45,25 +44,17 @@ def test_branch_analysis_service_validates_product_version_scope(pg_conn, monkey
     product_version_service.set_branch(pg_conn, version["id"], project_id, "release/ba")
     pg_conn.commit()
 
-    def fake_run_preprocess(conn, project_id_arg, branch, force=False):
+    def fake_sync(conn, project_id_arg):
         assert project_id_arg == project_id
-        assert branch == "release/ba"
-        assert force is True
-        status_repo.set_running(conn, project_id_arg, branch)
-        status_repo.set_completed(
-            conn,
-            project_id_arg,
-            branch,
-            extra={"progress": {"stage": "completed", "done": 1, "total": 1}},
-        )
-        conn.commit()
-        return {"status": "completed", "project_id": project_id_arg, "branch": branch}
+        return {
+            "project_id": project_id_arg,
+            "versions_synced": 1,
+            "commits_synced": 0,
+            "graph_actions": [],
+            "graph_errors": None,
+        }
 
-    monkeypatch.setattr(
-        branch_analysis_service.ai_preprocessor_service,
-        "run_preprocess",
-        fake_run_preprocess,
-    )
+    monkeypatch.setattr(branch_analysis_service, "_sync_project_graph", fake_sync)
 
     result = branch_analysis_service.analyze_version_branch(
         pg_conn,
@@ -78,6 +69,8 @@ def test_branch_analysis_service_validates_product_version_scope(pg_conn, monkey
     assert result["analysis_task"]["project_id"] == project_id
     assert result["analysis_task"]["branch"] == "release/ba"
     assert result["analysis_task"]["progress"]["stage"] == "completed"
+    assert result["analysis_task"]["analysis_action"] == "graph_sync"
+    assert result["ai_analysis_removed"] is True
 
 
 def test_branch_analysis_service_rejects_branch_outside_version_scope(pg_conn):

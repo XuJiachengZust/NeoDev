@@ -36,7 +36,7 @@ F002 负责向本地智能工具输出“可消费的事实和关系”，包括
 - DocChange 影响范围查询
 - 图谱实体上下文查询
 - 产品版本作用域下的语义检索
-- 仓库图谱节点的 AI 摘要与向量化结果
+- 仓库图谱节点的 结构化摘要与向量化结果
 - 节点刷新与链路获取
 
 这部分能力默认由插件/skill 引导用户使用 CLI，但真正执行、校验和结果输出都落在 CLI。
@@ -50,7 +50,7 @@ F002 负责向本地智能工具输出“可消费的事实和关系”，包括
 - `graph semantic-search`
 - `graph refresh-nodes`
 - `graph get-chain`
-- AI 语义摘要和 embedding 状态输出
+- 结构化摘要和 embedding 状态输出
 - 版本级检索范围控制
 
 ### 3.2 范围外
@@ -72,7 +72,7 @@ F002 负责向本地智能工具输出“可消费的事实和关系”，包括
 ### 4.2 CLI 负责
 
 - 查询图谱事实
-- 刷新节点和 AI 描述
+- 刷新节点和 结构化描述
 - 获取链路
 - 返回结构化结果
 - 做最终参数和作用域校验
@@ -84,7 +84,7 @@ F002 负责向本地智能工具输出“可消费的事实和关系”，包括
 | US-F002-01 | 开发者可以基于 `DocChange` 查询受影响仓库、模块、文件和符号 |
 | US-F002-02 | 研发负责人可以在某个产品版本下执行语义检索，而不是跨全库无边界搜索 |
 | US-F002-03 | 本地智能工具可以读取图谱实体上下文和关系证据，用于生成修改方案 |
-| US-F002-04 | 代码推送后，研发负责人或开发者可以手动刷新受影响节点和 AI 描述 |
+| US-F002-04 | 代码推送后，研发负责人或开发者可以手动刷新受影响节点和 结构化描述 |
 | US-F002-05 | 本地智能工具可以按节点、文件、符号或 commit 获取链路，用于分析调用链、依赖链和影响面 |
 
 ## 6. CLI 能力
@@ -95,7 +95,7 @@ F002 负责向本地智能工具输出“可消费的事实和关系”，包括
 | `graph impact` | 返回 DocChange 的候选影响范围 |
 | `graph entity-context` | 返回图谱实体邻接上下文 |
 | `graph semantic-search` | 在产品版本作用域内执行语义检索 |
-| `graph refresh-nodes` | 按节点、路径、commit 或分支范围刷新代码节点及 AI 描述 |
+| `graph refresh-nodes` | 按节点、路径、commit 或分支范围刷新代码节点及 结构化描述 |
 | `graph get-chain` | 获取节点、文件、符号或 commit 的关系链路 |
 
 ## 7. 业务规则
@@ -107,11 +107,11 @@ F002 负责向本地智能工具输出“可消费的事实和关系”，包括
 | BR-F002-03 | 所有 CLI 查询结果都必须是结构化输出，便于插件/skill 和本地 Agent 消费 | AC-F002-03 |
 | BR-F002-04 | 语义检索必须限制在 `ProductVersion` 映射的项目分支内 | AC-F002-04 |
 | BR-F002-05 | 检索结果必须尽量返回项目、分支、文件、实体和分数，而不是只返回一段文本 | AC-F002-04 |
-| BR-F002-06 | 仓库图谱节点 AI 语义增强结果至少包含 `description/embedding_model/embedding_updated_at/semantic_status` | AC-F002-05 |
+| BR-F002-06 | 仓库图谱节点 图谱语义索引结果至少包含 `description/embedding_model/embedding_updated_at/semantic_status` | AC-F002-05 |
 | BR-F002-07 | embedding preflight 或 embedding 生成失败时，系统仍可退化返回 description 或普通图谱结果，并显式标记 `semantic_status` | AC-F002-05 |
 | BR-F002-08 | 当节点 `content_hash` 未变化时，语义增强应复用已有 description / embedding，不重复向量化 | AC-F002-06 |
 | BR-F002-09 | `graph refresh-nodes` 必须支持按 `project/version/branch/node_id/path/commit` 作为刷新范围输入 | AC-F002-07 |
-| BR-F002-10 | 节点刷新应同时覆盖代码节点关系和 AI 描述刷新结果 | AC-F002-07 |
+| BR-F002-10 | 节点刷新应同时覆盖代码节点关系和 结构化描述刷新结果 | AC-F002-07 |
 | BR-F002-11 | `graph get-chain` 必须支持直接邻接和 N 跳链路查询 | AC-F002-08 |
 | BR-F002-12 | 链路结果必须返回节点、边、方向和简要路径摘要，而不是只返回文本描述 | AC-F002-08 |
 
@@ -175,7 +175,7 @@ F002 负责向本地智能工具输出“可消费的事实和关系”，包括
 - `branch`
 - `refresh_scope`
 - `graph_nodes_updated`
-- `ai_descriptions_updated`
+- `index_descriptions_updated`
 - `embeddings_reused`
 - `embeddings_regenerated`
 - `status`
@@ -222,9 +222,9 @@ F002 负责向本地智能工具输出“可消费的事实和关系”，包括
 | AC-F002-02 | 文档 front matter 中存在 `relations` | 查询 DocChange 上下文 | 返回文档间关系与关联证据 |
 | AC-F002-03 | 插件/skill 或本地智能工具调用 CLI | 查询图谱上下文 | 返回结构化 JSON/表结构输出，而非不可解析文本 |
 | AC-F002-04 | 产品版本已绑定项目分支 | 执行 `graph semantic-search` | 检索结果仅来自该版本作用域内的分支 |
-| AC-F002-05 | 仓库图谱节点已完成 AI 语义增强 | 执行语义检索 | 返回 description、score、semantic_status 等字段 |
+| AC-F002-05 | 仓库图谱节点已完成 图谱语义索引 | 执行语义检索 | 返回 description、score、semantic_status 等字段 |
 | AC-F002-06 | 节点 `content_hash` 未变化 | 再次触发语义增强并检索 | 复用已有向量结果，不重复生成 |
-| AC-F002-07 | 用户指定项目/版本/分支以及节点、路径或 commit 范围 | 执行 `graph refresh-nodes` | 受影响代码节点和 AI 描述被刷新，并返回更新摘要 |
+| AC-F002-07 | 用户指定项目/版本/分支以及节点、路径或 commit 范围 | 执行 `graph refresh-nodes` | 受影响代码节点和 结构化描述被刷新，并返回更新摘要 |
 | AC-F002-08 | 用户指定节点、文件、符号或 commit | 执行 `graph get-chain` | 返回节点、边、方向和路径摘要 |
 
 ## 11. 测试场景
@@ -235,7 +235,7 @@ F002 负责向本地智能工具输出“可消费的事实和关系”，包括
 | TC-F002-02 | P0 | 输出文档关系证据 |
 | TC-F002-03 | P0 | 在产品版本作用域内执行语义检索 |
 | TC-F002-04 | P0 | 检索结果返回项目、分支、文件和分数 |
-| TC-F002-05 | P0 | 按 commit 范围刷新受影响节点和 AI 描述 |
+| TC-F002-05 | P0 | 按 commit 范围刷新受影响节点和 结构化描述 |
 | TC-F002-06 | P0 | 按节点或文件获取直接关系和 N 跳链路 |
 | TC-F002-07 | P1 | embedding 退化场景返回 `semantic_status=degraded` |
 | TC-F002-08 | P1 | `content_hash` 命中后复用已有语义结果 |

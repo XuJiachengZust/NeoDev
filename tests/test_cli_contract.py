@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -10,9 +11,12 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["NEODEV_CONFIG_DIR"] = str(ROOT / ".test-tmp" / "cli-contract-config")
     return subprocess.run(
         [sys.executable, *args],
         cwd=ROOT,
+        env=env,
         text=True,
         capture_output=True,
         check=False,
@@ -170,19 +174,12 @@ def test_missing_cli_subcommand_returns_structured_json_error():
     assert payload["errors"][0]["category"] == "invalid_argument"
 
 
-def test_product_version_analysis_commands_are_registered():
-    analyze = _run("neodev.py", "product", "version", "analyze", "--help")
-    assert analyze.returncode == 0
-    assert "--branch" in analyze.stdout
-    assert "--force" in analyze.stdout
-
-    status = _run("neodev.py", "product", "version", "analyze-status", "--help")
-    assert status.returncode == 0
-    assert "--branch" in status.stdout
-
-    watch = _run("neodev.py", "product", "version", "watch-status", "--help")
-    assert watch.returncode == 0
-    assert "--branch" in watch.stdout
+def test_product_version_analysis_commands_are_hidden_from_standard_help():
+    proc = _run("neodev.py", "product", "version", "--help")
+    assert proc.returncode == 0
+    assert "analyze" not in proc.stdout
+    assert "analyze-status" not in proc.stdout
+    assert "watch-status" not in proc.stdout
 
 
 def test_doc_change_commands_are_registered():

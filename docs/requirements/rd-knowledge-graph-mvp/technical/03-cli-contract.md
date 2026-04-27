@@ -91,8 +91,7 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - `graph semantic-search`
 - `graph entity-context`
 - `graph get-chain`
-- `product version analyze-status`
-- `product version watch-status`
+- `project show`
 - `cli version-check`
 
 有副作用命令：
@@ -101,14 +100,14 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - `doc change register`
 - `doc change mark-implemented`
 - `graph refresh-nodes`
-- `product version analyze`
+- `project create`
 - `git verify-doc-change`
 - `git post-push-refresh`
 - `git dangerous-commit resolve`
 
 ## 3. 命令分组
 
-### 3.1 产品与版本
+### 3.1 产品、版本与项目
 
 - `product create`
 - `product update`
@@ -116,6 +115,8 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - `product version create`
 - `product version bind-branch`
 - `product version show`
+- `project create`
+- `project show`
 
 ### 3.2 文档与变更
 
@@ -132,11 +133,12 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - `graph refresh-nodes`
 - `graph get-chain`
 
-### 3.4 分支分析
+### 3.4 仓库接入与自动图谱构建
 
-- `product version analyze`
-- `product version analyze-status`
-- `product version watch-status`
+- `project create --repo-url`
+- `project show`
+
+兼容说明：旧显式分析命令只保留给历史集成，不再作为插件 / skill 推荐入口，也不应出现在用户主流程中。
 
 ### 3.5 Git 一致性
 
@@ -206,9 +208,10 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 
 - `refresh_scope`
 - `graph_nodes_updated`
-- `ai_descriptions_updated`
-- `embeddings_reused`
-- `embeddings_regenerated`
+- `graph_nodes_updated`
+- `chains_updated`
+- `index_reused`
+- `index_regenerated`
 - `status`
 
 规则：
@@ -246,44 +249,38 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - 支持 N 跳链路查询
 - 返回节点、边、方向和摘要
 
-### 4.5 `product version analyze`
+### 4.5 `project create`
 
 输入：
 
-- `product_key`
-- `product_version_id`
-- `project_id`
-- `branch`
+- `name`
+- `repo_url` 或 `repo_path`
+- 可选 `watch_enabled`
+- 可选 `neo4j_database`
+- 可选 `neo4j_identifier`
 
 输出：
 
-- `analysis_task_id`
-- `status`
-- `analysis_action`
+- `project`
+- `auto_graph_analysis=true`
+- `project.init_result.sync`
 - `message`
 
 规则：
 
-- 分析策略支持 `copy_data / incremental / full`
-- 同项目运行中任务再次触发时返回 `conflict`
-- 可复用 `last_parsed_commit` 和已有图谱结果
+- 用户传入仓库地址后，远程 NeoDev 服务自动登记项目并触发图谱构建。
+- 如果仓库图谱可复用，服务端优先复用已有结果，不暴露旧显式分析入口。
+- 插件 / skill 只引导 `project create --repo-url`，不再引导显式分析命令。
 
-### 4.6 `product version analyze-status`
+### 4.6 `project show`
 
 输出：
 
-- `analysis_task_id`
-- `status`
-- `progress`
-- `analysis_action`
-- `current_snapshot_id`
-- `head_commit`
+- `project`
+- `repository`
+- `watch`
 - `last_parsed_commit`
-- `created_from_action`
-- `started_at`
-- `finished_at`
-- `heartbeat_at`
-- `error_message`
+- `init_result`
 
 ### 4.7 `git verify-doc-change`
 
@@ -320,15 +317,14 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - `commits_synced`
 - `graph_nodes_updated`
 - `chains_updated`
-- `ai_descriptions_updated`
-- `embeddings_reused`
-- `embeddings_regenerated`
+- `index_reused`
+- `index_regenerated`
 
 规则：
 
 - 推送后按新增 commit 范围刷新
 - 默认不执行全库全量刷新
-- 受影响节点需要同步更新 AI 描述与 embedding
+- 受影响节点需要同步更新图谱关系与必要索引
 
 ### 4.9 `cli version-check`
 
@@ -361,7 +357,7 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - `in_implementation`
 - `implemented`
 
-### 5.2 `BranchAnalysisTask`
+### 5.2 `RepositoryGraphBuild`
 
 - `queued`
 - `running`
@@ -405,7 +401,7 @@ MVP 视为契约成立，需要满足：
 
 - 所有核心命令均有明确输入、输出和副作用定义
 - 产品版本范围语义检索可用
-- 分支分析状态与进度可查询
+- 仓库地址接入后会自动触发远程图谱构建
 - `DocChange-ID` 校验与推送后刷新可用
 - 节点刷新和链路获取可用
 - 插件 / skill 可通过 `cli version-check` 与 CLI 保持一致

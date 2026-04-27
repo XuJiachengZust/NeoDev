@@ -44,6 +44,11 @@ def main(argv: list[str] | None = None) -> int:
         exit_code, payload = execute_remote(server_url, local_argv)
     else:
         exit_code, payload = execute_local(local_argv)
+    if payload.get("command") == "help":
+        text = (payload.get("data") or {}).get("text")
+        if isinstance(text, str):
+            print(text, end="" if text.endswith("\n") else "\n")
+            return exit_code
     print(json.dumps(payload, ensure_ascii=False))
     return exit_code
 

@@ -114,8 +114,8 @@
         }
       ]
     },
-    "branch_analysis": {
-      "goal": "触发产品版本分支分析，并用稳定的 CLI 状态命令查看进度。",
+    "repository_auto_graph": {
+      "goal": "登记远程仓库地址，并由统一远程 NeoDev 服务自动触发图谱构建。",
       "steps": [
         {
           "id": "check_remote_config",
@@ -131,19 +131,19 @@
           "command": "neodev cli version-check --json"
         },
         {
-          "id": "start_analysis",
+          "id": "register_repository",
           "type": "cli",
-          "command": "neodev product version analyze --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
+          "command": "neodev project create --name <project_name> --repo-url <repo_url> --json"
         },
         {
-          "id": "read_status",
+          "id": "read_project",
           "type": "cli",
-          "command": "neodev product version analyze-status --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
+          "command": "neodev project show --project-id <project_id> --json"
         },
         {
-          "id": "watch_status_once",
+          "id": "bind_to_product_version_when_needed",
           "type": "cli",
-          "command": "neodev product version watch-status --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
+          "command": "neodev product version bind-branch --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
         }
       ]
     },

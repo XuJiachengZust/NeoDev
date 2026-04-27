@@ -70,7 +70,7 @@ MVP 不是只提供接入规范，而是需要同时交付：
 
 - 执行业务动作
 - 落盘状态和关系事实
-- 刷新图谱、链路、AI 描述
+- 刷新图谱、链路和必要索引
 - 产出结构化结果
 
 ## 3. 推荐交互流程
@@ -95,14 +95,13 @@ MVP 不是只提供接入规范，而是需要同时交付：
 - `graph get-chain`
 5. 基于 CLI 结果生成代码修改建议
 
-### 3.3 分支分析
+### 3.3 仓库接入与自动图谱构建
 
-1. 确认 `product / version / project / branch`
-2. 调用 `product version analyze`
-3. 轮询：
-- `product version analyze-status`
-- `product version watch-status`
-4. 分析完成后按需调用：
+1. 确认仓库地址和项目名称。
+2. 调用 `project create --repo-url` 登记仓库。
+3. 远程 NeoDev 服务自动触发图谱构建；插件 / skill 不再显式展示或调用旧分析入口。
+4. 如需纳入产品版本范围，调用 `product version bind-branch`。
+5. 图谱构建完成后按需调用：
 - `graph semantic-search`
 - `graph get-chain`
 
@@ -121,12 +120,12 @@ MVP 不是只提供接入规范，而是需要同时交付：
 2. 如需进一步核查：
 - `graph refresh-nodes`
 - `graph get-chain`
-3. 向用户解释哪些节点、链路和 AI 描述已更新
+3. 向用户解释哪些节点、链路和索引已更新
 
 ## 4. 参数补全规则
 
 - 产品相关操作默认补全 `product_key`
-- 检索和分析默认补全 `product_version_id`
+- 检索默认补全 `product_version_id`
 - 图谱操作默认补全 `project_id` 和 `branch`
 - 刷新和链路命令优先推荐最小范围参数
 
@@ -156,10 +155,10 @@ MVP 不是只提供接入规范，而是需要同时交付：
 | 看实体上下文 | `graph entity-context` |
 | 看调用链 / 依赖链 / 影响链 | `graph get-chain` |
 | 手动刷新节点 | `graph refresh-nodes` |
-| 触发分支分析 | `product version analyze` |
-| 看分析状态 | `product version analyze-status` |
+| 接入仓库并自动构建图谱 | `project create --repo-url` |
+| 查看仓库项目 | `project show` |
 | 推送前校验 | `git verify-doc-change` |
-| 推送后刷新图谱与 AI 描述 | `git post-push-refresh` |
+| 推送后刷新图谱与 结构化描述 | `git post-push-refresh` |
 
 ## 8. 禁止事项
 
@@ -188,10 +187,10 @@ MVP 中插件 / skill 不再是“可选参考实现”，而是正式交付件�
 
 - 会话启动与版本检查
 - 文档变更登记与影响分析
-- 产品版本分支分析触发与状态查看
+- 产品版本自动图谱构建触发与状态查看
 - 推送前 `DocChange-ID` 校验
 - 危险提交提示与确认
-- 推送后图谱、链路和 AI 描述刷新
+- 推送后图谱、链路和 结构化描述刷新
 
 交付约束：
 

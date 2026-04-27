@@ -26,7 +26,7 @@ related:
 
 - 将 `DocChange-ID` 从文档约束变成代码提交闭环中的稳定协议
 - 将危险提交从“提示信息”升级为可追踪、可关闭、可审计的正式记录
-- 将推送后图谱节点刷新、AI 描述刷新和链路更新标准化
+- 将推送后图谱节点刷新、结构化描述刷新和链路更新标准化
 - 让 Git 钩子、CLI、插件 / skill 共享同一套规则和结果模型
 
 ## 2. 现状基础
@@ -49,7 +49,7 @@ related:
 - `DocChange-ID` trailer 的正式解析和校验
 - `CodeChangeLink` 的正式模型
 - 危险提交待处理清单和关闭流水
-- 推送后“按 commit / 节点 / 文件范围”刷新图谱与 AI 描述的标准服务
+- 推送后“按 commit / 节点 / 文件范围”刷新图谱与 结构化描述的标准服务
 
 ## 3. 改造原则
 
@@ -69,7 +69,7 @@ related:
 4. CLI 解析 trailer、校验 `DocChange`、写入 `CodeChangeLink`
 5. 如果规则不满足但用户确认继续，CLI 创建 `DangerousCommitRecord`
 6. 推送后插件 / skill 调用 `git post-push-refresh`
-7. CLI 按 commit 范围刷新图谱节点、AI 描述和链路结果
+7. CLI 按 commit 范围刷新图谱节点、结构化描述和链路结果
 8. 后续人工调用 `doc change mark-implemented` 或等价命令确认完成
 
 ## 5. 专项任务
@@ -252,14 +252,14 @@ related:
 
 建议依赖：
 
-- `T008 节点 AI 描述刷新与向量化`
+- `T008 节点 结构化描述刷新与向量化`
 - `T010 节点刷新与链路获取 CLI`
 
 建议行为：
 
 - 优先按受影响节点刷新
 - 必要时按文件范围刷新
-- AI 描述和 embedding 只对受影响节点执行
+- 结构化描述和 embedding 只对受影响节点执行
 
 验收口径：
 

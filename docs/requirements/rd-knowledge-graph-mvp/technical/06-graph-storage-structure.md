@@ -297,7 +297,7 @@ flowchart LR
 1. 识别受影响文件
 2. 刷新对应文件子图
 3. 让当前分支快照切换到新事实节点
-4. 对受影响节点执行 AI 描述与 embedding 刷新
+4. 对受影响节点执行 结构化描述与 embedding 刷新
 
 ### 6.4 查询路径图
 
@@ -318,7 +318,7 @@ flowchart LR
 
 - 仓库级代码事实节点
 - 仓库级代码事实关系
-- 节点 AI 描述和 embedding
+- 节点 结构化描述和 embedding
 - 文档节点和文档关系
 
 ### 7.2 轻量元数据库保留
@@ -355,7 +355,7 @@ MVP 优先使用：
 - `copy_data / incremental / full`
 - `last_parsed_commit`
 - `content_hash`
-- AI 描述与 embedding 写回
+- 结构化描述与 embedding 写回
 
 这次改造不是推翻现有能力，而是重定义它们的存储语义：
 

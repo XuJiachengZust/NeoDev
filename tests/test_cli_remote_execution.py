@@ -103,6 +103,40 @@ def test_cli_execute_api_reuses_existing_cli_contract():
     assert body["payload"]["data"]["compatible"] is True
 
 
+def test_cli_execute_api_returns_help_payload_instead_of_raising():
+    from service.main import app
+
+    with TestClient(app) as client:
+        response = client.post("/api/cli/execute", json={"argv": ["--help"]})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exit_code"] == 0
+    assert body["payload"]["ok"] is True
+    assert body["payload"]["command"] == "help"
+    assert "usage: neodev" in body["payload"]["data"]["text"]
+
+
+def test_cli_main_prints_remote_help_text(monkeypatch, capsys):
+    from service.cli import main as cli_main
+
+    def fake_execute_remote(server_url, argv):
+        return 0, {
+            "ok": True,
+            "command": "help",
+            "timestamp": "2026-04-27T00:00:00+00:00",
+            "data": {"text": "usage: neodev ...\n"},
+            "errors": [],
+        }
+
+    monkeypatch.setattr(cli_main, "execute_remote", fake_execute_remote)
+
+    rc = cli_main.main(["--server", "http://10.50.3.149", "--help"])
+
+    assert rc == 0
+    assert capsys.readouterr().out == "usage: neodev ...\n"
+
+
 def test_install_client_command_writes_terminal_wrapper(capsys):
     from service.cli import main as cli_main
 
@@ -126,6 +160,9 @@ def test_install_client_command_writes_terminal_wrapper(capsys):
     assert (install_dir / "neodev_client.py").exists()
     assert (install_dir / "neodev.cmd").exists()
     assert "config set-server" in (install_dir / "neodev_client.py").read_text(encoding="utf-8")
+    assert 'payload.get("command") == "help"' in (
+        install_dir / "neodev_client.py"
+    ).read_text(encoding="utf-8")
 
 
 def test_config_set_server_and_show_are_local_commands(monkeypatch, capsys):

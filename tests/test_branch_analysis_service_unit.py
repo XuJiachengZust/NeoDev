@@ -40,7 +40,7 @@ def _patch_valid_scope(monkeypatch, status_rows=None):
     )
 
 
-def test_analyze_version_branch_wraps_preprocess_and_returns_status(monkeypatch):
+def test_analyze_version_branch_syncs_graph_without_ai_preprocess(monkeypatch):
     now = datetime.now(timezone.utc)
     status_rows = [
         {
@@ -53,7 +53,7 @@ def test_analyze_version_branch_wraps_preprocess_and_returns_status(monkeypatch)
             "updated_at": now,
             "error_message": None,
             "extra": {
-                "analysis_action": "full",
+                "analysis_action": "graph_sync",
                 "progress": {"stage": "completed", "done": 1, "total": 1},
             },
         }
@@ -61,33 +61,154 @@ def test_analyze_version_branch_wraps_preprocess_and_returns_status(monkeypatch)
     _patch_valid_scope(monkeypatch, status_rows=status_rows)
     calls = []
 
-    def fake_run_preprocess(conn, project_id, branch, force=False):
-        calls.append({"project_id": project_id, "branch": branch, "force": force})
-        return {"status": "completed"}
+    assert not hasattr(branch_analysis_service, "ai_preprocessor_service")
+
+    def fake_sync(conn, project_id):
+        calls.append({"project_id": project_id})
+        return {
+            "project_id": project_id,
+            "versions_synced": 1,
+            "commits_synced": 3,
+            "graph_actions": [
+                {"version_id": 5, "branch": "release/unit", "action": "full"}
+            ],
+            "graph_errors": None,
+        }
+
+    monkeypatch.setattr(branch_analysis_service, "_sync_project_graph", fake_sync)
+
+    completed = []
+
+    def fake_set_completed(conn, project_id, branch, extra=None):
+        completed.append({"project_id": project_id, "branch": branch, "extra": extra})
+        status_rows[0]["extra"] = extra
 
     monkeypatch.setattr(
-        branch_analysis_service.ai_preprocessor_service,
-        "run_preprocess",
-        fake_run_preprocess,
+        branch_analysis_service.status_repo,
+        "set_completed",
+        fake_set_completed,
     )
 
+    running = []
+
+    def fake_set_running(conn, project_id, branch):
+        running.append({"project_id": project_id, "branch": branch})
+        return True
+
+    monkeypatch.setattr(
+        branch_analysis_service.status_repo,
+        "set_running",
+        fake_set_running,
+    )
+
+    monkeypatch.setattr(
+        branch_analysis_service.status_repo,
+        "has_running",
+        lambda conn, project_id: False,
+    )
+
+    class DummyConn:
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
     result = branch_analysis_service.analyze_version_branch(
-        object(),
+        DummyConn(),
         product_version_id=23,
         project_id=11,
         branch="release/unit",
         force=True,
     )
 
-    assert calls == [{"project_id": 11, "branch": "release/unit", "force": True}]
+    assert running == [{"project_id": 11, "branch": "release/unit"}]
+    assert calls == [{"project_id": 11}]
+    assert completed == [
+        {
+            "project_id": 11,
+            "branch": "release/unit",
+            "extra": {
+                "analysis_action": "graph_sync",
+                "ai_analysis_removed": True,
+                "force_requested": True,
+                "progress": {"stage": "completed", "done": 1, "total": 1},
+                "sync": {
+                    "project_id": 11,
+                    "versions_synced": 1,
+                    "commits_synced": 3,
+                    "graph_actions": [
+                        {"version_id": 5, "branch": "release/unit", "action": "full"}
+                    ],
+                    "graph_errors": None,
+                },
+            },
+        }
+    ]
     task = result["analysis_task"]
     assert task["analysis_task_id"] == 31
     assert task["product_version_id"] == 23
     assert task["project_id"] == 11
     assert task["branch"] == "release/unit"
     assert task["status"] == "completed"
-    assert task["analysis_action"] == "full"
+    assert task["analysis_action"] == "graph_sync"
     assert task["progress"]["stage"] == "completed"
+    assert result["sync"]["commits_synced"] == 3
+    assert result["ai_analysis_removed"] is True
+
+
+def test_analyze_version_branch_marks_failed_when_graph_sync_fails(monkeypatch):
+    _patch_valid_scope(monkeypatch, status_rows=[])
+
+    monkeypatch.setattr(
+        branch_analysis_service.status_repo,
+        "has_running",
+        lambda conn, project_id: False,
+    )
+    monkeypatch.setattr(
+        branch_analysis_service.status_repo,
+        "set_running",
+        lambda conn, project_id, branch: True,
+    )
+
+    failed = []
+
+    def fake_set_failed(conn, project_id, branch, error_message, extra=None):
+        failed.append(
+            {
+                "project_id": project_id,
+                "branch": branch,
+                "error_message": error_message,
+                "extra": extra,
+            }
+        )
+
+    monkeypatch.setattr(branch_analysis_service.status_repo, "set_failed", fake_set_failed)
+
+    def fake_sync(conn, project_id):
+        raise RuntimeError("sync failed")
+
+    monkeypatch.setattr(branch_analysis_service, "_sync_project_graph", fake_sync)
+
+    class DummyConn:
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+    with pytest.raises(branch_analysis_service.BranchAnalysisError) as exc_info:
+        branch_analysis_service.analyze_version_branch(
+            DummyConn(),
+            product_version_id=23,
+            project_id=11,
+            branch="release/unit",
+        )
+
+    assert exc_info.value.category == "internal_error"
+    assert "sync failed" in exc_info.value.message
+    assert failed[0]["extra"]["analysis_action"] == "graph_sync"
+    assert failed[0]["extra"]["ai_analysis_removed"] is True
 
 
 def test_get_analysis_status_rejects_wrong_branch(monkeypatch):

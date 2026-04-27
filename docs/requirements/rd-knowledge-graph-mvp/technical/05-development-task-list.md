@@ -53,12 +53,12 @@ related:
 
 - T004 文档治理、扫描与受控仓库接入
 - T005 DocChange 登记与状态流转
-- T006 分支分析编排与状态查看
+- T006 仓库接入与自动图谱构建
 - T007 图谱复用策略接入
 
 ### M3 图谱查询与推送闭环
 
-- T008 节点 AI 描述刷新与向量化
+- T008 节点结构化索引与向量化
 - T009 产品版本下语义检索
 - T010 节点刷新与链路获取 CLI
 - T011 Git 校验、危险提交与推送后刷新
@@ -174,7 +174,7 @@ related:
 验收口径：
 - 可以创建产品并绑定多个项目仓库分支
 - 可以为产品版本设置每个项目的目标分支
-- 可为后续语义检索和分支分析提供稳定作用域
+- 可为后续语义检索和图谱构建提供稳定作用域
 
 ### T004 文档治理、扫描与受控仓库接入
 
@@ -241,10 +241,10 @@ related:
 - 初始状态正确进入 `pending_implementation`
 - 人工确认后才能进入 `implemented`
 
-### T006 分支分析编排与状态查看
+### T006 仓库接入与自动图谱构建
 
 目标：
-把现有预处理 / AI 分析能力收敛成产品版本下的“分支分析任务”。
+支持开发者传入仓库地址后，由远程 NeoDev 自动登记项目并触发图谱构建；插件 / skill 不再展示旧显式分析入口。
 
 依赖：
 - T001
@@ -252,35 +252,35 @@ related:
 - T003
 
 优先复用：
-- [src/service/routers/preprocess.py](/D:/PycharmProjects/NeoDev/src/service/routers/preprocess.py)
+- [src/service/services/project_service.py](/D:/PycharmProjects/NeoDev/src/service/services/project_service.py)
+- [src/service/services/sync_service.py](/D:/PycharmProjects/NeoDev/src/service/services/sync_service.py)
+- [src/service/services/watch_service.py](/D:/PycharmProjects/NeoDev/src/service/services/watch_service.py)
 - [src/service/repositories/ai_preprocess_status_repository.py](/D:/PycharmProjects/NeoDev/src/service/repositories/ai_preprocess_status_repository.py)
-- [src/service/services/ai_preprocessor_service.py](/D:/PycharmProjects/NeoDev/src/service/services/ai_preprocessor_service.py)
 
 建议源码落点：
-- `src/service/cli/commands/product_version.py`
-- 新增 `src/service/services/branch_analysis_service.py`
-- 适配现有 preprocess 状态模型到 CLI 协议
+- `src/service/cli/commands/project.py`
+- 复用 `src/service/services/project_service.py` 的仓库初始化和图谱同步能力
+- 旧 `branch_analysis_service` 仅作为兼容层，内部不再调用 AI 预处理
 
 允许改造：
-- 如果 `preprocess` 当前语义偏“项目预处理”，可提升成更通用的 `branch_analysis` 服务，再让旧接口走兼容代理
-- 允许单独维护任务快照表或历史表，避免运行态和审计态互相污染
+- 将显式分析入口从插件 / skill 主流程移除，保留旧命令兼容已有集成
+- 自动图谱构建结果回写到项目初始化结果和可查询状态
 
 交付内容：
-- `product version analyze`
-- `product version analyze-status`
-- `product version watch-status`
-- 统一输出 `status/progress/analysis_action/heartbeat_at`
-- 为任务记录保留 `head_commit`、触发人、触发来源、错误快照等冗余信息
+- `project create --repo-url`
+- `project show`
+- 返回 `auto_graph_analysis=true` 和 `init_result.sync`
+- 为任务记录保留 `head_commit`、触发来源、错误快照等冗余信息
 
 验收口径：
-- 可以显式触发产品版本下某项目分支分析
-- 运行中任务有进度和心跳
-- 同一项目存在运行中任务时可给出冲突提示
+- 传入仓库地址即可触发远程图谱构建
+- 插件 / skill 不展示旧显式分析入口
+- 同一项目存在运行中图谱构建时可给出冲突提示
 
 ### T007 图谱复用策略接入
 
 目标：
-复用当前已有的 `copy_data / incremental / full` 策略，避免多分支重复分析。
+复用当前已有的 `copy_data / incremental / full` 策略，避免多分支重复图谱构建。
 
 依赖：
 - T006
@@ -302,17 +302,17 @@ related:
 - 同 HEAD 分支优先 `copy_data`
 - 存在 `last_parsed_commit` 时走 `incremental`
 - 其他场景走 `full`
-- CLI 状态返回 `analysis_action`
+- CLI 返回图谱构建动作和复用策略
 
 验收口径：
-- 相同代码不重复全量分析
+- 相同代码不重复全量构建
 - 可解释当前任务为什么选中某种策略
 - `last_parsed_commit` 在成功后正确回写
 
-### T008 节点 AI 描述刷新与向量化
+### T008 节点结构化索引与向量化
 
 目标：
-正式暴露“仓库图谱节点 AI 描述与 embedding 刷新”能力。
+正式暴露仓库图谱节点结构化索引与 embedding 刷新能力。
 
 依赖：
 - T006
@@ -329,8 +329,8 @@ related:
 - 新增 `src/service/services/graph_refresh_service.py`
 
 允许改造：
-- 如果 `ai_analysis_runner` 目前难以按节点范围复用，可拆出“节点选择”和“AI 刷新执行”两层
-- 允许增加节点刷新记录、AI 刷新批次记录和 embedding 缓存索引表，换取更稳定的回溯与重试
+- 如果现有图谱刷新逻辑难以按节点范围复用，可拆出“节点选择”和“索引刷新执行”两层
+- 允许增加节点刷新记录、索引刷新批次记录和 embedding 缓存索引表，换取更稳定的回溯与重试
 
 交付内容：
 - `graph refresh-nodes`
@@ -439,7 +439,7 @@ related:
 验收口径：
 - `DocChange-ID` trailer 校验稳定
 - 二次确认后可登记危险提交
-- 推送后可以刷新受影响节点与 AI 描述
+- 推送后可以刷新受影响节点与 结构化描述
 - 危险提交支持查询、关闭、记录 `resolved_by` / `resolved_at`
 
 ### T012 官方插件实现
@@ -526,7 +526,7 @@ related:
 - `T002` 是文档闭环、风险记录、分析任务状态的基础
 - `T003` 是产品版本作用域内分析和检索的基础
 - `T004 + T005` 构成文档闭环
-- `T006 + T007` 构成分支分析和去重主链路
+- `T006 + T007` 构成自动图谱构建和去重主链路
 - `T008 + T009 + T010` 构成图谱查询和语义能力主链路
 - `T011` 把文档闭环和代码落地闭环接起来
 - `T012 + T013` 是最终用户可用性的交付层
@@ -537,7 +537,7 @@ related:
 
 - A 线：CLI 壳层、元数据库、产品/文档模型
   对应 `T001` 到 `T005`
-- B 线：分支分析、图谱复用、AI 描述与语义检索
+- B 线：自动图谱构建、图谱复用、结构化描述与语义检索
   对应 `T006` 到 `T010`
 - C 线：Git 闭环、插件、skill、联调
   对应 `T011` 到 `T014`
@@ -553,16 +553,16 @@ related:
 - T003 产品 / 产品版本 / 分支绑定 CLI
 - T004 文档治理、扫描与受控仓库接入
 - T005 DocChange 登记与状态流转
-- T006 分支分析编排与状态查看
+- T006 仓库接入与自动图谱构建
 - T007 图谱复用策略接入
-- T008 节点 AI 描述刷新与向量化
+- T008 节点结构化索引与向量化
 - T009 产品版本下语义检索
 
 这批做完后，已经可以支撑：
 
 - 绑定产品和产品版本
 - 接入文档仓库和项目分支
-- 触发分支分析并查看状态
+- 触发自动图谱构建并查看状态
 - 做产品版本下的语义检索
 - 登记文档变更并生成 `DocChange ID`
 

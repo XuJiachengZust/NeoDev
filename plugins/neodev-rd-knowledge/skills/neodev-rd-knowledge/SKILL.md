@@ -32,13 +32,14 @@ description: 面向 NeoDev 研发知识工作流的官方 skill，用于通过�
 6. 执行 `neodev graph impact --doc-change-id <doc_change_id> --json`。
 7. 按需执行 `neodev graph semantic-search`、`neodev graph entity-context`、`neodev graph get-chain` 获取上下文。
 
-### 分支分析
+### 仓库接入与自动图谱构建
 
 1. 执行 `neodev config show`，确认本地客户端已配置远程 NeoDev 服务。
 2. 执行 `neodev cli version-check --json`。
-3. 执行 `neodev product version analyze --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json`。
-4. 执行 `neodev product version analyze-status ... --json` 查看进度。
-5. 需要等待时执行 `neodev product version watch-status ... --json`。
+3. 执行 `neodev project create --name <project_name> --repo-url <repo_url> --json`。
+4. 远程 NeoDev 服务在仓库登记后自动触发图谱构建，skill 不再引导用户调用旧显式分析入口。
+5. 如需纳入产品版本范围，执行 `neodev product version bind-branch --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json`。
+6. 按需执行 `neodev graph semantic-search`、`neodev graph entity-context`、`neodev graph get-chain` 获取上下文。
 
 ### 推送前校验
 

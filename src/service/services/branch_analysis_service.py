@@ -6,7 +6,6 @@ from typing import Any
 from fastapi import HTTPException
 
 from service.repositories import ai_preprocess_status_repository as status_repo
-from service.services import ai_preprocessor_service
 from service.services import product_service
 from service.services import product_version_service
 from service.services import project_service
@@ -32,18 +31,23 @@ def analyze_version_branch(
 ) -> dict:
     context = _validate_scope(conn, product_version_id, project_id, branch)
     try:
-        result = ai_preprocessor_service.run_preprocess(
-            conn,
-            project_id,
-            branch=branch,
-            force=force,
-        )
-    except ai_preprocessor_service.ProjectBusyError as exc:
-        raise BranchAnalysisError(
-            category="conflict",
-            message=str(exc.detail),
-            details={"code": getattr(exc, "code", "PROJECT_BUSY")},
-        ) from exc
+        _mark_running(conn, project_id, context["branch"])
+        sync_result = _sync_project_graph(conn, project_id)
+        if sync_result is None:
+            raise BranchAnalysisError(
+                category="not_found",
+                message="project not found",
+                details={"project_id": project_id},
+            )
+        extra = {
+            "analysis_action": "graph_sync",
+            "ai_analysis_removed": True,
+            "force_requested": bool(force),
+            "progress": {"stage": "completed", "done": 1, "total": 1},
+            "sync": sync_result,
+        }
+        status_repo.set_completed(conn, project_id, context["branch"], extra=extra)
+        conn.commit()
     except HTTPException as exc:
         if exc.status_code == 404:
             raise BranchAnalysisError(category="not_found", message=str(exc.detail)) from exc
@@ -52,6 +56,27 @@ def analyze_version_branch(
             message=str(exc.detail),
             details={"status_code": exc.status_code},
         ) from exc
+    except BranchAnalysisError:
+        raise
+    except Exception as exc:
+        conn.rollback()
+        status_repo.set_failed(
+            conn,
+            project_id,
+            context["branch"],
+            error_message=str(exc),
+            extra={
+                "analysis_action": "graph_sync",
+                "ai_analysis_removed": True,
+                "force_requested": bool(force),
+            },
+        )
+        conn.commit()
+        raise BranchAnalysisError(
+            category="internal_error",
+            message=str(exc),
+            details={"project_id": project_id, "branch": context["branch"]},
+        ) from exc
 
     analysis_task = _current_task(conn, context)
     return {
@@ -59,8 +84,31 @@ def analyze_version_branch(
         "version": context["version"],
         "project": context["project"],
         "analysis_task": analysis_task,
-        "preprocess": result,
+        "sync": sync_result,
+        "ai_analysis_removed": True,
     }
+
+
+def _mark_running(conn, project_id: int, branch: str) -> None:
+    if status_repo.has_running(conn, project_id):
+        raise BranchAnalysisError(
+            category="conflict",
+            message="project analysis is already running",
+            details={"code": "PROJECT_BUSY", "project_id": project_id},
+        )
+    if not status_repo.set_running(conn, project_id, branch):
+        raise BranchAnalysisError(
+            category="conflict",
+            message="project analysis is already running",
+            details={"code": "PROJECT_BUSY", "project_id": project_id},
+        )
+    conn.commit()
+
+
+def _sync_project_graph(conn, project_id: int) -> dict | None:
+    from service.services import sync_service
+
+    return sync_service.sync_commits_for_project(conn, project_id)
 
 
 def get_analysis_status(

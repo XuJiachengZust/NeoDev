@@ -24,13 +24,13 @@ related:
 
 本清单合并细化以下三项任务：
 
-- `T008 节点 AI 描述刷新与向量化`
+- `T008 节点 结构化描述刷新与向量化`
 - `T009 产品版本下语义检索`
 - `T010 节点刷新与链路获取 CLI`
 
 重点解决的问题：
 
-- 把现有节点 AI 分析能力从“全量预处理副产物”升级为“可单独触发、可复用、可观测”的图谱服务能力
+- 把现有节点 图谱构建能力从“全量预处理副产物”升级为“可单独触发、可复用、可观测”的图谱服务能力
 - 把语义检索限定在 `ProductVersion` 作用域内，而不是做无边界全局搜索
 - 把链路获取、实体上下文、影响分析统一收口到 CLI，不让插件 / skill 直接碰图库
 - 允许用快照和内容复用换取更稳定、更可维护的查询行为，但不把查询结果缓存和预聚合作为 MVP 主路径
@@ -116,7 +116,7 @@ related:
 
 - `refresh_scope`
 - `graph_nodes_updated`
-- `ai_descriptions_updated`
+- `index_descriptions_updated`
 - `embeddings_reused`
 - `embeddings_regenerated`
 - `status`

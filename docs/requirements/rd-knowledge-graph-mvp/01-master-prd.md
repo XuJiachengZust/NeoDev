@@ -56,9 +56,9 @@ related:
 1. 让研发负责人以“产品 + 产品版本”视角组织代码、文档和知识关系。
 2. 让文档变更成为代码实现闭环的起点。
 3. 让本地智能工具在插件/skill 引导下调用本地 CLI 客户端，由客户端请求统一远程 NeoDev 服务并获取稳定事实和结构化图谱结果。
-4. 让产品下任一项目仓库分支都可通过本地 CLI 显式触发远程分析，并可追踪状态与进度。
+4. 让开发者只需向本地 CLI 传入仓库地址，由统一远程 NeoDev 服务自动登记仓库并触发图谱构建。
 5. 在多分支共用相同代码时，避免重复跑同一份图谱分析和语义向量化。
-6. 让代码推送后的提交可以驱动链路上的代码节点和 AI 描述更新，并向 CLI 暴露节点刷新与链路获取能力。
+6. 让代码推送后的提交可以驱动链路上的代码节点刷新，并向 CLI 暴露节点刷新与链路获取能力。
 
 ## 4. 非目标
 
@@ -104,9 +104,9 @@ related:
 | T-004 | Code Change Proposal Context               | 输出模块/文件/符号级修改建议上下文             |
 | T-006 | Document Relation                          | 文档间关系建模与解析                     |
 | T-007 | Product Version Semantic Retrieval         | 在产品版本范围内做语义检索                  |
-| T-008 | Repository AI Semantic Enrichment          | 对仓库图谱节点做 AI 摘要、embedding 与向量索引 |
-| T-009 | Branch Analysis Orchestration              | 触发项目仓库分支分析、查看状态/进度、避免重复分析      |
-| T-010 | Post-Push Node Refresh And Chain Retrieval | 推送后刷新链路代码节点、AI 描述并输出链路         |
+| T-008 | Repository Graph Search Enrichment         | 对仓库图谱节点做结构化索引、embedding 与语义检索 |
+| T-009 | Repository Auto Graph Orchestration        | 传入仓库地址后自动触发远程图谱构建、避免重复构建      |
+| T-010 | Post-Push Node Refresh And Chain Retrieval | 推送后刷新链路代码节点并输出链路              |
 
 
 ## 8. 分层原则
@@ -129,7 +129,7 @@ CLI 是执行层和事实层，负责：
 - 执行业务动作
 - 做最终校验
 - 持久化状态与结果
-- 更新图谱、节点、链路和 AI 描述
+- 更新图谱、节点和链路
 - 返回结构化输出
 
 ### 8.3 必须放在 CLI 的规则
@@ -140,7 +140,7 @@ CLI 是执行层和事实层，负责：
 - `copy_data / incremental / full` 判定
 - `last_parsed_commit`、`content_hash`、embedding 复用
 - 节点刷新、链路获取、语义检索、影响分析
-- 推送后图谱与 AI 描述刷新
+- 推送后图谱刷新
 
 ### 8.4 适合放在插件 / Skill 的规则
 
@@ -169,13 +169,13 @@ CLI 是执行层和事实层，负责：
 | BR-G-12 | 文档元数据使用 YAML front matter    | 最小字段包含 `doc_id/title/doc_type/product_key/status/relations`                             |
 | BR-G-13 | 版本语义检索按 ProductVersion 作用域执行 | 检索范围由 `product_version_branches` 决定                                                     |
 | BR-G-14 | 图谱更新沿用既有三段策略                 | 代码图更新优先 `copy_data`，其次 `incremental`，最后 `full`，并维护 `last_parsed_commit`                 |
-| BR-G-15 | 仓库图谱节点必须支持 AI 语义增强           | 节点支持 `description/embedding/embedding_model/embedding_updated_at`，并使用 `content_hash` 缓存 |
-| BR-G-16 | 产品下项目仓库分支必须支持显式触发分析          | 可按产品版本或项目分支发起代码分析任务                                                                     |
-| BR-G-17 | 分支分析必须可见状态和进度                | 至少支持 `running/completed/failed` 状态，以及 `progress/started_at/finished_at/heartbeat_at`    |
-| BR-G-18 | 同代码跨分支不得重复分析                 | 当多个分支 `HEAD` 相同或内容哈希命中时，优先复用已有图谱和语义结果                                                   |
+| BR-G-15 | 仓库图谱节点必须支持 图谱语义索引           | 节点支持 `description/embedding/embedding_model/embedding_updated_at`，并使用 `content_hash` 缓存 |
+| BR-G-16 | 产品下项目仓库分支必须支持显式触发图谱构建          | 可按产品版本或项目分支发起代码分析任务                                                                     |
+| BR-G-17 | 自动图谱构建必须可见结果和状态              | 至少支持 `running/completed/failed` 状态，以及 `progress/started_at/finished_at/heartbeat_at`    |
+| BR-G-18 | 同代码跨分支不得重复构建                 | 当多个分支 `HEAD` 相同或内容哈希命中时，优先复用已有图谱和语义结果                                                   |
 | BR-G-19 | 同一项目不可并发跑多个分析任务              | 已有运行中任务时，新任务应返回 busy/冲突                                                                 |
 | BR-G-20 | 代码推送后必须支持刷新受影响链路上的代码节点       | 代码提交同步后，系统支持按提交或分支范围刷新受影响节点及其关系链路                                                       |
-| BR-G-21 | 代码推送后必须支持刷新受影响节点的 AI 描述      | 图谱刷新后，应支持重新生成或复用 `description/embedding`                                                |
+| BR-G-21 | 代码推送后必须支持刷新受影响节点的 结构化描述      | 图谱刷新后，应支持重新生成或复用 `description/embedding`                                                |
 | BR-G-22 | CLI 必须开放节点更新能力               | 支持按 `project/version/branch/node_id/path/commit` 触发节点刷新                                 |
 | BR-G-23 | CLI 必须开放链路获取能力               | 支持按节点、文件、符号或 commit 获取直接关系和 N 跳链路                                                       |
 
@@ -229,11 +229,10 @@ CLI 是执行层和事实层，负责：
 - `graph refresh-nodes`
 - `graph get-chain`
 
-### 11.4 分支分析
+### 11.4 仓库接入与自动图谱构建
 
-- `product version analyze`
-- `product version analyze-status`
-- `product version watch-status`
+- `project create --repo-url`
+- `project show`
 
 ### 11.5 Git 一致性与推送后刷新
 
@@ -254,18 +253,17 @@ CLI 是执行层和事实层，负责：
 7. 推送前校验通过后回写 `in_implementation`。
 8. 人工确认后更新为 `implemented`。
 
-### 12.2 产品下项目仓库分支分析
+### 12.2 仓库接入与自动图谱构建
 
-1. 研发负责人选择 `product + product_version + project + branch`。
-2. 插件/skill 引导执行 `product version analyze`。
-3. CLI 先检查是否已有运行中任务。
-4. CLI 检查该分支是否可直接复用：
-  - 若与其他已分析分支 `HEAD` 相同，优先 `copy_data`
-  - 若 `last_parsed_commit` 可衔接，执行 `incremental`
-  - 否则执行 `full`
-5. 分析过程中持续写入状态、进度和 heartbeat。
-6. 分析完成后更新图谱、`last_parsed_commit`、语义摘要与 embedding。
-7. 用户通过 `product version analyze-status` 或 `product version watch-status` 查看状态。
+1. 开发者或插件/skill 向本地 CLI 传入仓库地址。
+2. 本地 CLI 调用远程 NeoDev 服务执行 `project create --repo-url`。
+3. 远程服务登记项目仓库，并立即自动触发图谱构建。
+4. 远程服务判断：
+  - 当前仓库是否已有相同 HEAD 图谱结果
+  - 是否可复用其他分支图谱
+  - 是否需要增量或全量构建
+5. 图谱构建完成后，项目可按需绑定到产品版本分支范围。
+6. 用户通过 `project show`、图谱检索和链路命令获取结果；插件/skill 不再引导旧显式分析入口。
 
 ### 12.3 代码推送后的节点与链路刷新
 
@@ -273,9 +271,7 @@ CLI 是执行层和事实层，负责：
 2. CLI 同步对应分支 commits 和代码图谱。
 3. CLI 识别受影响的文件、符号或图谱节点。
 4. CLI 按受影响范围刷新链路上的代码节点及关系。
-5. CLI 对受影响节点执行 AI 描述刷新：
-  - 若 `content_hash` 未变化，复用已有 `description/embedding`
-  - 若内容变化，重新生成 AI 描述和 embedding
+5. CLI 对受影响节点执行结构化刷新，并复用已有索引结果；内容变化时重新生成必要索引。
 6. 插件/skill 可继续引导调用：
   - `graph refresh-nodes`
   - `graph get-chain`
@@ -297,7 +293,7 @@ relations:
 ---
 ```
 
-### 13.2 分支分析状态输出
+### 13.2 自动图谱构建状态输出
 
 - `analysis_task_id`
 - `product_id`
@@ -373,7 +369,7 @@ MVP 简化图存储结构的重点不是减少节点类型和关系类型，而�
 - `branch_snapshots` 记录 `repo_id / branch / head_commit / last_parsed_commit / base_snapshot_id / created_from_action`
 - `branch_snapshot_entries` 记录某个分支快照当前可见的文件级节点引用
 
-### 14.3 对多分支分析策略的影响
+### 14.3 对多分支图谱构建策略的影响
 
 `copy_data / incremental / full` 继续保留，但语义收紧为：
 
@@ -403,13 +399,13 @@ MVP 简化图存储结构的重点不是减少节点类型和关系类型，而�
 | AC-G-02 | 受控文档有新提交               | 执行 `doc change register` 或自动登记      | 生成 `DocChange ID`，状态为 `pending_implementation`                       |
 | AC-G-03 | 代码提交带合法 `DocChange-ID` | 执行推送前校验                             | 生成 `CodeChangeLink`，DocChange 转为 `in_implementation`                 |
 | AC-G-04 | 产品版本已绑定项目分支            | 执行 `graph semantic-search`          | 只在该产品版本映射的分支范围内返回结果                                                  |
-| AC-G-05 | 仓库图谱节点已做 AI 语义增强       | 执行语义检索                              | 返回 `description/score/semantic_status` 等字段                           |
-| AC-G-06 | 产品下某项目仓库分支可访问          | 执行 `product version analyze`        | 创建或启动 `BranchAnalysisTask`，状态进入 `running`                            |
-| AC-G-07 | 分支分析任务运行中              | 执行 `product version analyze-status` | 返回状态、进度、heartbeat、开始时间和当前 action                                     |
+| AC-G-05 | 仓库图谱节点已做 图谱语义索引       | 执行语义检索                              | 返回 `description/score/semantic_status` 等字段                           |
+| AC-G-06 | 仓库地址可访问                | 执行 `project create --repo-url`      | 创建项目并由远程 NeoDev 自动触发图谱构建                                      |
+| AC-G-07 | 仓库已登记                  | 执行 `project show` 或图谱查询命令       | 返回项目、仓库、图谱构建结果或可查询上下文                                          |
 | AC-G-08 | 同一项目已有运行中分析任务          | 再次触发新分析                             | 返回 busy/冲突，不启动第二个运行中任务                                               |
-| AC-G-09 | 新分支与已分析分支 `HEAD` 相同    | 触发分析                                | 优先复用已有图谱数据，不重复全量分析                                                   |
-| AC-G-10 | 图谱节点内容哈希未变化            | 触发 AI 语义增强                          | 复用已有 description / embedding，不重复向量化                                  |
-| AC-G-11 | 代码推送后有新增提交             | 执行 `git post-push-refresh`          | 受影响代码节点和链路被更新，必要时 AI 描述被刷新                                           |
+| AC-G-09 | 新分支与已分析分支 `HEAD` 相同    | 触发图谱构建                                | 优先复用已有图谱数据，不重复全量分析                                                   |
+| AC-G-10 | 图谱节点内容哈希未变化            | 自动图谱构建或推送后刷新                      | 复用已有图谱与索引结果，不重复全量构建                                             |
+| AC-G-11 | 代码推送后有新增提交             | 执行 `git post-push-refresh`          | 受影响代码节点和链路被更新                                                     |
 | AC-G-12 | 用户指定节点、文件、符号或 commit   | 执行 `graph get-chain`                | 返回可消费的链路节点和边                                                         |
 | AC-G-13 | 用户指定项目/版本/分支/节点范围      | 执行 `graph refresh-nodes`            | 完成节点刷新并返回更新摘要                                                        |
 
@@ -421,10 +417,10 @@ MVP 简化图存储结构的重点不是减少节点类型和关系类型，而�
 - 产品、版本、分支绑定
 - 文档接入、DocChange 闭环
 - 版本级语义检索
-- 仓库图谱节点 AI 语义增强与向量化
-- 分支分析触发、状态、进度、去重
+- 仓库图谱节点结构化索引与语义检索
+- 仓库地址接入、自动图谱构建和去重
 - 推送前校验与危险提交登记
-- 推送后图谱节点刷新、AI 描述刷新、链路获取
+- 推送后图谱节点刷新、链路获取
 - 插件/skill 引导下的 CLI 工作流
 
 ### P1
