@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from service.repositories import code_change_link_repository
+from service.repositories import dangerous_commit_repository
 from service.repositories import doc_change_repository
 from service.services import commit_message_parser
 
@@ -80,6 +81,32 @@ def verify_doc_change(
         "matched_by": parsed["matched_by"],
         "code_change_link": link,
     }
+
+
+def list_dangerous_commits(conn, *, project_id: int | None = None) -> dict[str, Any]:
+    rows = dangerous_commit_repository.list_open(conn, project_id=project_id)
+    return {"dangerous_commits": rows, "count": len(rows)}
+
+
+def resolve_dangerous_commit(
+    conn,
+    *,
+    record_id: int,
+    resolved_by: str,
+) -> dict[str, Any]:
+    resolver = _required_text(resolved_by, "resolved_by")
+    resolved = dangerous_commit_repository.resolve(
+        conn,
+        record_id=record_id,
+        resolved_by=resolver,
+    )
+    if not resolved:
+        raise GitConsistencyError(
+            category="not_found",
+            message="dangerous commit record not found",
+            details={"record_id": record_id},
+        )
+    return {"dangerous_commit": resolved}
 
 
 def _required_text(value: str | None, field_name: str) -> str:

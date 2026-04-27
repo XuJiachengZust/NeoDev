@@ -23,6 +23,29 @@ def register(subparsers) -> None:
         command_name="git verify-doc-change",
     )
 
+    dangerous_parser = git_subparsers.add_parser("dangerous-commit")
+    dangerous_subparsers = dangerous_parser.add_subparsers(
+        dest="dangerous_command",
+        required=True,
+    )
+
+    list_parser = dangerous_subparsers.add_parser("list")
+    list_parser.add_argument("--project-id", type=int)
+    list_parser.add_argument("--json", action="store_true", dest="json_output")
+    list_parser.set_defaults(
+        handler=handle_dangerous_commit_list,
+        command_name="git dangerous-commit list",
+    )
+
+    resolve_parser = dangerous_subparsers.add_parser("resolve")
+    resolve_parser.add_argument("--record-id", type=int, required=True)
+    resolve_parser.add_argument("--resolved-by", required=True)
+    resolve_parser.add_argument("--json", action="store_true", dest="json_output")
+    resolve_parser.set_defaults(
+        handler=handle_dangerous_commit_resolve,
+        command_name="git dangerous-commit resolve",
+    )
+
 
 def _with_db(callback):
     try:
@@ -54,6 +77,29 @@ def handle_verify_doc_change(args) -> dict:
             branch=args.branch,
             commit_sha=args.commit_sha,
             commit_message=args.commit_message,
+        )
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
+
+
+def handle_dangerous_commit_list(args) -> dict:
+    def run(conn):
+        result = git_consistency_service.list_dangerous_commits(
+            conn,
+            project_id=args.project_id,
+        )
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
+
+
+def handle_dangerous_commit_resolve(args) -> dict:
+    def run(conn):
+        result = git_consistency_service.resolve_dangerous_commit(
+            conn,
+            record_id=args.record_id,
+            resolved_by=args.resolved_by,
         )
         return build_success_payload(args.command_name, result)
 

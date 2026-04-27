@@ -106,3 +106,67 @@ def test_verify_doc_change_rejects_implemented_doc_change(monkeypatch):
         )
 
     assert raised.value.category == "conflict"
+
+
+def test_list_dangerous_commits_returns_open_records(monkeypatch):
+    rows = [
+        {
+            "id": 3,
+            "project_id": 11,
+            "branch": "main",
+            "commit_sha": "c" * 40,
+            "status": "open",
+        }
+    ]
+    monkeypatch.setattr(
+        git_consistency_service.dangerous_commit_repository,
+        "list_open",
+        lambda conn, project_id=None: rows,
+    )
+
+    result = git_consistency_service.list_dangerous_commits(object(), project_id=11)
+
+    assert result == {"dangerous_commits": rows, "count": 1}
+
+
+def test_resolve_dangerous_commit_returns_resolved_record(monkeypatch):
+    resolved = {
+        "id": 3,
+        "project_id": 11,
+        "branch": "main",
+        "commit_sha": "c" * 40,
+        "status": "resolved",
+        "resolved_by": "lead",
+    }
+    monkeypatch.setattr(
+        git_consistency_service.dangerous_commit_repository,
+        "resolve",
+        lambda conn, record_id, resolved_by: resolved
+        if record_id == 3 and resolved_by == "lead"
+        else None,
+    )
+
+    result = git_consistency_service.resolve_dangerous_commit(
+        object(),
+        record_id=3,
+        resolved_by="lead",
+    )
+
+    assert result == {"dangerous_commit": resolved}
+
+
+def test_resolve_dangerous_commit_rejects_unknown_record(monkeypatch):
+    monkeypatch.setattr(
+        git_consistency_service.dangerous_commit_repository,
+        "resolve",
+        lambda conn, record_id, resolved_by: None,
+    )
+
+    with pytest.raises(git_consistency_service.GitConsistencyError) as raised:
+        git_consistency_service.resolve_dangerous_commit(
+            object(),
+            record_id=404,
+            resolved_by="lead",
+        )
+
+    assert raised.value.category == "not_found"

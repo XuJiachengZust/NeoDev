@@ -209,6 +209,17 @@ def test_git_verify_doc_change_command_is_registered():
     assert "--commit-message" in proc.stdout
 
 
+def test_git_dangerous_commit_commands_are_registered():
+    list_proc = _run("neodev.py", "git", "dangerous-commit", "list", "--help")
+    assert list_proc.returncode == 0
+    assert "--project-id" in list_proc.stdout
+
+    resolve_proc = _run("neodev.py", "git", "dangerous-commit", "resolve", "--help")
+    assert resolve_proc.returncode == 0
+    assert "--record-id" in resolve_proc.stdout
+    assert "--resolved-by" in resolve_proc.stdout
+
+
 def test_graph_semantic_search_command_is_registered():
     proc = _run("neodev.py", "graph", "semantic-search", "--help")
     assert proc.returncode == 0
