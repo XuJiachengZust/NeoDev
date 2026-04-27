@@ -229,3 +229,72 @@ def test_git_dangerous_commit_resolve_rejects_unknown_record(pg_conn):
     assert payload["ok"] is False
     assert payload["command"] == "git dangerous-commit resolve"
     assert payload["errors"][0]["category"] == "not_found"
+
+
+def test_git_post_push_refresh_returns_degraded_without_neo4j(pg_conn):
+    token = uuid.uuid4().hex[:8]
+    project_id = _make_project(pg_conn, f"post-push-project-{token}")
+
+    create_product = _run_cli(
+        "product",
+        "create",
+        "--name",
+        f"Post Push Product {token}",
+        "--product-code",
+        f"POSTPUSH-{token}",
+        "--json",
+    )
+    assert create_product.returncode == 0, create_product.stderr
+    product_code = _payload(create_product)["data"]["product"]["code"]
+
+    create_version = _run_cli(
+        "product",
+        "version",
+        "create",
+        "--product-code",
+        product_code,
+        "--version-name",
+        "V1.0",
+        "--json",
+    )
+    assert create_version.returncode == 0, create_version.stderr
+    version_id = _payload(create_version)["data"]["version"]["id"]
+
+    bind_branch = _run_cli(
+        "product",
+        "version",
+        "bind-branch",
+        "--version-id",
+        str(version_id),
+        "--project-id",
+        str(project_id),
+        "--branch",
+        "release/V1.0",
+        "--json",
+    )
+    assert bind_branch.returncode == 0, bind_branch.stderr
+
+    proc = _run_cli(
+        "git",
+        "post-push-refresh",
+        "--project-id",
+        str(project_id),
+        "--branch",
+        "release/V1.0",
+        "--commit-sha",
+        "d" * 40,
+        "--json",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = _payload(proc)
+    assert payload["ok"] is True
+    assert payload["command"] == "git post-push-refresh"
+    data = payload["data"]
+    assert data["product_version_id"] == version_id
+    assert data["commits_synced"] == 0
+    assert data["graph_nodes_updated"] == 0
+    assert data["chains_updated"] == 0
+    assert data["status"] == "degraded"
+    assert data["refresh_scope"]["commit_sha"] == "d" * 40
+    assert data["degraded_reasons"][0]["reason"] == "neo4j_not_configured"

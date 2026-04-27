@@ -220,6 +220,15 @@ def test_git_dangerous_commit_commands_are_registered():
     assert "--resolved-by" in resolve_proc.stdout
 
 
+def test_git_post_push_refresh_command_is_registered():
+    proc = _run("neodev.py", "git", "post-push-refresh", "--help")
+    assert proc.returncode == 0
+    assert "--project-id" in proc.stdout
+    assert "--branch" in proc.stdout
+    assert "--version-id" in proc.stdout
+    assert "--commit-sha" in proc.stdout
+
+
 def test_graph_semantic_search_command_is_registered():
     proc = _run("neodev.py", "graph", "semantic-search", "--help")
     assert proc.returncode == 0

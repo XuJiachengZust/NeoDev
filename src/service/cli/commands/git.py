@@ -23,6 +23,17 @@ def register(subparsers) -> None:
         command_name="git verify-doc-change",
     )
 
+    refresh_parser = git_subparsers.add_parser("post-push-refresh")
+    refresh_parser.add_argument("--project-id", type=int, required=True)
+    refresh_parser.add_argument("--branch", required=True)
+    refresh_parser.add_argument("--version-id", type=int)
+    refresh_parser.add_argument("--commit-sha")
+    refresh_parser.add_argument("--json", action="store_true", dest="json_output")
+    refresh_parser.set_defaults(
+        handler=handle_post_push_refresh,
+        command_name="git post-push-refresh",
+    )
+
     dangerous_parser = git_subparsers.add_parser("dangerous-commit")
     dangerous_subparsers = dangerous_parser.add_subparsers(
         dest="dangerous_command",
@@ -77,6 +88,20 @@ def handle_verify_doc_change(args) -> dict:
             branch=args.branch,
             commit_sha=args.commit_sha,
             commit_message=args.commit_message,
+        )
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
+
+
+def handle_post_push_refresh(args) -> dict:
+    def run(conn):
+        result = git_consistency_service.post_push_refresh(
+            conn,
+            project_id=args.project_id,
+            branch=args.branch,
+            version_id=args.version_id,
+            commit_sha=args.commit_sha,
         )
         return build_success_payload(args.command_name, result)
 
