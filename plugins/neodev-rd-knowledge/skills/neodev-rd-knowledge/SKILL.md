@@ -1,58 +1,58 @@
 ---
 name: neodev-rd-knowledge
-description: Use when working in NeoDev RD knowledge workflows that need DocChange registration, graph impact/context, product-version branch analysis, Git pre-push verification, dangerous commit handling, or post-push refresh through the NeoDev CLI.
+description: 用于 NeoDev 研发知识工作流，包括 DocChange 登记、图谱影响面和上下文查询、产品版本分支分析、Git 推送前校验、危险提交处理、推送后刷新；所有真实动作都必须通过 NeoDev CLI 执行。
 ---
 
-# NeoDev RD Knowledge
+# NeoDev 研发知识
 
-Use this skill to guide NeoDev knowledge-graph and Git consistency workflows. This skill is an orchestration layer only: every real action must go through `python neodev.py ... --json`.
+使用本 skill 引导 NeoDev 研发知识图谱和 Git 一致性流程。它只负责编排和解释；所有真实动作都必须通过 `python neodev.py ... --json` 执行。
 
-## Required Boundary
+## 必守边界
 
-- Start write or risk-sensitive workflows with `cli version-check`.
-- Do not parse human text output; request `--json` and use the structured payload.
-- Do not create extra state machines in prompts or scripts.
+- 写操作或风险敏感流程开始前，先执行 `cli version-check`。
+- 不解析人类可读输出；必须请求 `--json` 并读取结构化 payload。
+- 不在 prompt、脚本或插件中自建额外状态机。
 - 不要直接写 PostgreSQL。
 - 不要直接写 Neo4j。
-- Do not run ad hoc SQL, graph queries, or persistence scripts as a substitute for a NeoDev CLI command.
+- 不要用临时 SQL、图查询或持久化脚本替代 NeoDev CLI。
 
-## Workflow Source
+## 工作流来源
 
-The canonical command order is in `workflows/core-workflows.json` in this plugin. Use that file for exact step names, command templates, and shared plugin/skill workflow alignment.
+规范命令顺序放在本插件的 `workflows/core-workflows.json`。需要精确步骤名、命令模板或插件/skill 共享流程时，读取该文件。
 
-## Main Flows
+## 主流程
 
-### Document Change To Implementation
+### 文档变更到实现
 
-1. Run `cli version-check`.
-2. Register the controlled change with `doc change register`.
-3. Read impact with `graph impact`.
-4. Add context with `graph semantic-search`, `graph entity-context`, and `graph get-chain` when needed.
-5. Use the CLI facts to plan code edits; do not invent affected files without evidence.
+1. 执行 `cli version-check`。
+2. 用 `doc change register` 登记受控变更。
+3. 用 `graph impact` 查询影响面。
+4. 需要更多上下文时，再使用 `graph semantic-search`、`graph entity-context` 和 `graph get-chain`。
+5. 只基于 CLI 返回的事实规划代码修改；没有证据时不要虚构受影响文件。
 
-### Branch Analysis
+### 分支分析
 
-1. Run `cli version-check`.
-2. Start analysis with `product version analyze`.
-3. Read progress with `product version analyze-status`.
-4. Use `product version watch-status` as a single status read; external orchestration controls repeated polling.
+1. 执行 `cli version-check`。
+2. 用 `product version analyze` 触发分析。
+3. 用 `product version analyze-status` 查看进度。
+4. `product version watch-status` 只作为单次状态读取；重复轮询由外层编排控制节奏。
 
-### Pre-Push Verification
+### 推送前校验
 
-1. Check that the commit message contains exactly one `DocChange-ID`.
-2. Run `git verify-doc-change`.
-3. If risk is reported, explain it and require explicit user confirmation before continuing.
-4. Use `git dangerous-commit list` to inspect pending risk items.
+1. 检查 commit message 是否只包含一个 `DocChange-ID`。
+2. 执行 `git verify-doc-change`。
+3. 如果 CLI 返回风险，先解释风险并要求用户明确确认，再继续高风险动作。
+4. 用 `git dangerous-commit list` 查看待处理风险项。
 
-### Post-Push Refresh
+### 推送后刷新
 
-1. After a successful push, run `git post-push-refresh`.
-2. If a smaller or explicit scope is needed, use `graph refresh-nodes`.
-3. Use `graph get-chain` to inspect follow-up dependency or impact chains.
+1. 推送成功后执行 `git post-push-refresh`。
+2. 需要更小或更明确范围时，使用 `graph refresh-nodes`。
+3. 需要追踪后续依赖或影响链时，使用 `graph get-chain`。
 
-## Result Interpretation
+## 结果解释
 
-- Treat `ok=false` as blocking unless the user explicitly chooses a safe alternative.
-- Treat `version_mismatch` as a stop condition for high-risk write flows.
-- Explain `semantic_status=degraded` as a degraded graph or embedding state, not as a command failure.
-- Keep user-facing explanations tied to fields returned by the CLI payload.
+- `ok=false` 默认视为阻断，除非用户明确选择安全替代路径。
+- `version_mismatch` 是高风险写流程的停止条件。
+- `semantic_status=degraded` 表示图谱或 embedding 能力降级，不等同于命令失败。
+- 给用户的解释必须绑定 CLI payload 中的具体字段。

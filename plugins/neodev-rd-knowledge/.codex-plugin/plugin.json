@@ -1,7 +1,7 @@
 {
   "name": "neodev-rd-knowledge",
   "version": "0.1.0",
-  "description": "Official NeoDev research and development knowledge workflow plugin.",
+  "description": "NeoDev 研发知识工作流官方插件，用于引导文档变更、图谱上下文、Git 校验和推送后刷新。",
   "author": {
     "name": "NeoDev",
     "email": "neodev@example.invalid",
@@ -19,19 +19,19 @@
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "NeoDev RD Knowledge",
-    "shortDescription": "Guide NeoDev CLI workflows for docs, graph context, and Git checks.",
-    "longDescription": "Official workflow layer for NeoDev RD knowledge operations. It guides agents through version checks, DocChange registration, graph impact analysis, branch analysis, pre-push verification, and post-push refresh while keeping all state changes inside the NeoDev CLI.",
+    "displayName": "NeoDev 研发知识插件",
+    "shortDescription": "引导 NeoDev CLI 完成文档、图谱上下文和 Git 校验流程。",
+    "longDescription": "NeoDev 研发知识操作的官方工作流层。它引导智能体完成版本检查、DocChange 登记、图谱影响面分析、分支分析、推送前校验和推送后刷新，并确保所有状态变更都留在 NeoDev CLI 内执行。",
     "developerName": "NeoDev",
-    "category": "Developer Tools",
+    "category": "开发者工具",
     "capabilities": [
-      "Workflow",
-      "CLI orchestration"
+      "工作流编排",
+      "CLI 调用引导"
     ],
     "defaultPrompt": [
-      "Use NeoDev to analyze this DocChange.",
-      "Run NeoDev graph context for this version.",
-      "Check my commit with NeoDev before push."
+      "用 NeoDev 分析这个 DocChange。",
+      "查询这个版本的 NeoDev 图谱上下文。",
+      "推送前用 NeoDev 检查我的提交。"
     ],
     "brandColor": "#2563EB"
   }

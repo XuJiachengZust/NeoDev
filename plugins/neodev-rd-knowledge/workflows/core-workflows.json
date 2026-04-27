@@ -1,9 +1,9 @@
 {
   "version": "0.1.0",
-  "contract": "NeoDev CLI is the only execution and state mutation boundary. The plugin and bundled skill only guide command order, parameter completion, risk prompts, and result interpretation.",
+  "contract": "NeoDev CLI 是唯一执行边界和状态变更边界。插件与内置 skill 只负责引导命令顺序、参数补全、风险提示和结果解释。",
   "workflows": {
     "session_version_check": {
-      "goal": "Check CLI compatibility before high-risk or state-changing workflows.",
+      "goal": "在高风险或会写状态的工作流前检查 CLI 兼容性。",
       "steps": [
         {
           "id": "check_cli_contract",
@@ -16,7 +16,7 @@
       ]
     },
     "doc_change_to_implementation": {
-      "goal": "Register a controlled document change and gather implementation context.",
+      "goal": "登记受控文档变更，并收集实现所需上下文。",
       "steps": [
         {
           "id": "check_cli_contract",
@@ -51,7 +51,7 @@
       ]
     },
     "branch_analysis": {
-      "goal": "Start product version branch analysis and read progress using stable CLI status commands.",
+      "goal": "触发产品版本分支分析，并用稳定的 CLI 状态命令查看进度。",
       "steps": [
         {
           "id": "check_cli_contract",
@@ -76,7 +76,7 @@
       ]
     },
     "pre_push_verification": {
-      "goal": "Verify the commit is tied to exactly one DocChange and handle pending risk records before push.",
+      "goal": "推送前校验提交只关联一个 DocChange，并处理待确认风险记录。",
       "steps": [
         {
           "id": "check_cli_contract",
@@ -101,7 +101,7 @@
       ]
     },
     "post_push_refresh": {
-      "goal": "Refresh affected graph nodes after a successful push.",
+      "goal": "推送成功后刷新受影响的图谱节点。",
       "steps": [
         {
           "id": "check_cli_contract",
