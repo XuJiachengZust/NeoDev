@@ -1,8 +1,8 @@
 # NeoDev 项目 Conda 环境
 # 使用方式: conda env create -f environment.yml
-# 激活: conda activate neodev
+# 激活: conda activate NeoDev
 
-name: neodev
+name: NeoDev
 channels:
   - conda-forge
   - defaults
