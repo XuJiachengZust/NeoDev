@@ -40,8 +40,9 @@
     "shared_scripts": [
       "./validate_mvp_docs.py",
       "./generate_mvp_doc.py",
-      "./check_docchange_trailer.py"
+      "./check_docchange_trailer.py",
+      "./check_neodev_environment.py"
     ],
-    "contract": "CLI-only orchestration for Codex, Claude Code, and Cursor. MVP document validation, DocChange trailer checks, and Superpowers workflow reminders are shared here; facts and state changes still run only through NeoDev CLI."
+    "contract": "Remote-service CLI orchestration for Codex, Claude Code, and Cursor. Local clients must install/configure neodev and pass the environment hook before facts and state changes run through the remote NeoDev service."
   }
 }

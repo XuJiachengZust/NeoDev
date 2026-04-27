@@ -1,5 +1,5 @@
 ---
-description: NeoDev DocChange Git trailer and refresh workflow.
+description: NeoDev DocChange Git trailer and remote refresh workflow.
 globs: "**/*"
 alwaysApply: false
 ---
@@ -18,16 +18,18 @@ Validate commit messages with:
 python plugins/neodev-rd-knowledge/check_docchange_trailer.py --message-file .git/COMMIT_EDITMSG
 ```
 
-Before push, verify through NeoDev CLI:
+Before push, verify through the local `neodev` CLI client against the configured remote service:
 
 ```bash
-python neodev.py git verify-doc-change --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --commit-message <commit_message> --json
+neodev config show
+neodev cli version-check --json
+neodev git verify-doc-change --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --commit-message <commit_message> --json
 ```
 
-After a successful push, refresh graph context:
+After a successful push, refresh graph context on the remote NeoDev service:
 
 ```bash
-python neodev.py git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json
+neodev git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json
 ```
 
 If verification reports dangerous commits, explain the structured payload and require explicit user confirmation before resolving or continuing.

@@ -29,9 +29,10 @@ def test_codex_plugin_manifest_references_shared_hooks_and_scripts():
         "./validate_mvp_docs.py",
         "./generate_mvp_doc.py",
         "./check_docchange_trailer.py",
+        "./check_neodev_environment.py",
     }
-    assert "CLI-only" in neodev["contract"]
-    assert "Superpowers" in neodev["contract"]
+    assert "Remote-service CLI" in neodev["contract"]
+    assert "remote NeoDev service" in neodev["contract"]
 
 
 def test_claude_plugin_contains_commands_agent_and_hook_schema():
@@ -51,14 +52,15 @@ def test_claude_plugin_contains_commands_agent_and_hook_schema():
         command = (PLUGIN_ROOT / "commands" / f"{command_name}.md").read_text(
             encoding="utf-8"
         )
-        assert "python neodev.py" in command
+        assert "neodev" in command
         assert "--json" in command
-        assert "NeoDev CLI" in command
+        assert "remote NeoDev service" in command
 
     agent = (PLUGIN_ROOT / "agents" / "neodev-rd-knowledge.md").read_text(
         encoding="utf-8"
     )
-    assert "NeoDev CLI" in agent
+    assert "local `neodev` CLI client" in agent
+    assert "centralized remote NeoDev service" in agent
     assert "PostgreSQL" in agent
     assert "Neo4j" in agent
 
@@ -73,7 +75,7 @@ def test_claude_plugin_contains_commands_agent_and_hook_schema():
     assert "validate_mvp_docs.py" in all_commands
     assert "check_docchange_trailer.py" in all_commands
     assert "git post-push-refresh" in all_commands
-    assert "python neodev.py doc scan" in all_commands
+    assert "neodev doc scan" in all_commands
 
 
 def test_cursor_rules_exist_at_project_root_and_plugin_distribution_copy():

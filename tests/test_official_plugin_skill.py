@@ -57,7 +57,8 @@ def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
     for workflow in workflows["workflows"].values():
         assert _contains_cjk(workflow["goal"])
         commands = [step["command"] for step in workflow["steps"] if step["type"] == "cli"]
-        assert commands[0].startswith("python neodev.py cli version-check")
+        assert commands[0] == "neodev config show"
+        assert commands[1].startswith("neodev cli version-check")
         all_commands.extend(commands)
 
     joined = "\n".join(all_commands)
@@ -77,14 +78,30 @@ def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
     assert not forbidden.search(joined)
 
 
+def test_official_plugin_hooks_check_remote_cli_environment():
+    hooks = _read_json(PLUGIN_ROOT / "hooks" / "hooks.json")
+    hook_commands = []
+    for phase in hooks["hooks"].values():
+        for entry in phase:
+            hook_commands.extend(hook["command"] for hook in entry["hooks"])
+
+    joined = "\n".join(hook_commands)
+    assert "check_neodev_environment.py" in joined
+    assert "neodev git post-push-refresh" in joined
+    assert "python neodev.py" not in joined
+
+
 def test_official_skill_is_bundled_and_points_to_the_shared_workflow_contract():
     skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
 
     assert skill.startswith("---\n")
     assert "name: neodev-rd-knowledge" in skill
-    assert "description: 用于 NeoDev 研发知识工作流" in skill
+    assert "description: 面向 NeoDev 研发知识工作流" in skill
     assert "workflows/core-workflows.json" in skill
     assert "cli version-check" in skill
+    assert "本地 neodev CLI 客户端调用远程 NeoDev 服务" in skill
+    assert "neodev config set-server" in skill
+    assert "install-neodev-client.ps1" in skill
     assert "git verify-doc-change" in skill
     assert "git post-push-refresh" in skill
     assert "不要直接写 PostgreSQL" in skill

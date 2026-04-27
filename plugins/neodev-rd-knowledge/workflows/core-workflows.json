@@ -33,15 +33,23 @@
     "failure_investigation": "superpowers:systematic-debugging",
     "completion_commit_push": "superpowers:verification-before-completion"
   },
-  "contract": "NeoDev CLI 是唯一执行边界和状态变更边界。插件与内置 skill 只负责引导命令顺序、参数补全、风险提示和结果解释。",
+  "contract": "NeoDev CLI 是本地客户端调用统一远程服务的唯一执行边界和状态变更边界。插件与内置 skill 只负责引导命令顺序、参数补全、风险提示和结果解释；事实读取与状态写入都必须通过已配置远程服务的 neodev 命令完成。",
   "workflows": {
     "session_version_check": {
-      "goal": "在高风险或会写状态的工作流前检查 CLI 兼容性。",
+      "goal": "在高风险或会写状态的工作流前检查本地 CLI 远程配置和版本兼容性。",
       "steps": [
+        {
+          "id": "check_remote_config",
+          "type": "cli",
+          "command": "neodev config show",
+          "expects": [
+            "data.server_url"
+          ]
+        },
         {
           "id": "check_cli_contract",
           "type": "cli",
-          "command": "python neodev.py cli version-check --json",
+          "command": "neodev cli version-check --json",
           "expects": [
             "data.compatible=true"
           ]
@@ -52,9 +60,17 @@
       "goal": "登记受控文档变更，并收集实现所需上下文。",
       "steps": [
         {
+          "id": "check_remote_config",
+          "type": "cli",
+          "command": "neodev config show",
+          "expects": [
+            "data.server_url"
+          ]
+        },
+        {
           "id": "check_cli_contract",
           "type": "cli",
-          "command": "python neodev.py cli version-check --json"
+          "command": "neodev cli version-check --json"
         },
         {
           "id": "validate_mvp_docs",
@@ -69,32 +85,32 @@
         {
           "id": "scan_controlled_docs",
           "type": "cli",
-          "command": "python neodev.py doc scan --doc-binding-id <doc_binding_id> --json"
+          "command": "neodev doc scan --doc-binding-id <doc_binding_id> --json"
         },
         {
           "id": "register_doc_change",
           "type": "cli",
-          "command": "python neodev.py doc change register --document-id <document_id> --json"
+          "command": "neodev doc change register --document-id <document_id> --json"
         },
         {
           "id": "estimate_impact",
           "type": "cli",
-          "command": "python neodev.py graph impact --doc-change-id <doc_change_id> --json"
+          "command": "neodev graph impact --doc-change-id <doc_change_id> --json"
         },
         {
           "id": "search_version_context",
           "type": "cli",
-          "command": "python neodev.py graph semantic-search --product-code <product_code> --version-name <version_name> --query <query> --json"
+          "command": "neodev graph semantic-search --product-code <product_code> --version-name <version_name> --query <query> --json"
         },
         {
           "id": "read_entity_context",
           "type": "cli",
-          "command": "python neodev.py graph entity-context --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --entity-id <entity_id> --json"
+          "command": "neodev graph entity-context --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --entity-id <entity_id> --json"
         },
         {
           "id": "read_chain_context",
           "type": "cli",
-          "command": "python neodev.py graph get-chain --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --start-node <node_id> --json"
+          "command": "neodev graph get-chain --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --start-node <node_id> --json"
         }
       ]
     },
@@ -102,24 +118,32 @@
       "goal": "触发产品版本分支分析，并用稳定的 CLI 状态命令查看进度。",
       "steps": [
         {
+          "id": "check_remote_config",
+          "type": "cli",
+          "command": "neodev config show",
+          "expects": [
+            "data.server_url"
+          ]
+        },
+        {
           "id": "check_cli_contract",
           "type": "cli",
-          "command": "python neodev.py cli version-check --json"
+          "command": "neodev cli version-check --json"
         },
         {
           "id": "start_analysis",
           "type": "cli",
-          "command": "python neodev.py product version analyze --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
+          "command": "neodev product version analyze --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
         },
         {
           "id": "read_status",
           "type": "cli",
-          "command": "python neodev.py product version analyze-status --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
+          "command": "neodev product version analyze-status --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
         },
         {
           "id": "watch_status_once",
           "type": "cli",
-          "command": "python neodev.py product version watch-status --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
+          "command": "neodev product version watch-status --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
         }
       ]
     },
@@ -127,24 +151,32 @@
       "goal": "推送前校验提交只关联一个 DocChange，并处理待确认风险记录。",
       "steps": [
         {
+          "id": "check_remote_config",
+          "type": "cli",
+          "command": "neodev config show",
+          "expects": [
+            "data.server_url"
+          ]
+        },
+        {
           "id": "check_cli_contract",
           "type": "cli",
-          "command": "python neodev.py cli version-check --json"
+          "command": "neodev cli version-check --json"
         },
         {
           "id": "verify_doc_change",
           "type": "cli",
-          "command": "python neodev.py git verify-doc-change --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --commit-message <commit_message> --json"
+          "command": "neodev git verify-doc-change --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --commit-message <commit_message> --json"
         },
         {
           "id": "list_open_risks",
           "type": "cli",
-          "command": "python neodev.py git dangerous-commit list --project-id <project_id> --json"
+          "command": "neodev git dangerous-commit list --project-id <project_id> --json"
         },
         {
           "id": "resolve_risk_after_review",
           "type": "cli",
-          "command": "python neodev.py git dangerous-commit resolve --record-id <record_id> --resolved-by <user> --json"
+          "command": "neodev git dangerous-commit resolve --record-id <record_id> --resolved-by <user> --json"
         }
       ]
     },
@@ -152,24 +184,32 @@
       "goal": "推送成功后刷新受影响的图谱节点。",
       "steps": [
         {
+          "id": "check_remote_config",
+          "type": "cli",
+          "command": "neodev config show",
+          "expects": [
+            "data.server_url"
+          ]
+        },
+        {
           "id": "check_cli_contract",
           "type": "cli",
-          "command": "python neodev.py cli version-check --json"
+          "command": "neodev cli version-check --json"
         },
         {
           "id": "refresh_after_push",
           "type": "cli",
-          "command": "python neodev.py git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
+          "command": "neodev git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
         },
         {
           "id": "refresh_specific_nodes_when_needed",
           "type": "cli",
-          "command": "python neodev.py graph refresh-nodes --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
+          "command": "neodev graph refresh-nodes --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
         },
         {
           "id": "inspect_chain_when_needed",
           "type": "cli",
-          "command": "python neodev.py graph get-chain --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
+          "command": "neodev graph get-chain --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
         }
       ]
     }

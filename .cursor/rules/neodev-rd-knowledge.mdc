@@ -1,16 +1,20 @@
 ---
-description: NeoDev RD knowledge workflow boundary for this project.
+description: NeoDev remote-service CLI workflow boundary for this project.
 globs: "**/*"
 alwaysApply: true
 ---
 
 # NeoDev RD Knowledge
 
-Use NeoDev CLI as the only fact and state boundary for product metadata, controlled documents, DocChange records, graph context, branch analysis, Git consistency, dangerous commit records, and post-push refresh.
+The final product shape is a local client calling a centralized remote NeoDev service. Developer machines install only the `neodev` CLI client plus NeoDev skill/plugin guidance; NeoDev service, databases, graph storage, analysis execution, and state management stay in the unified remote environment.
 
-Do not write PostgreSQL directly. Do not write Neo4j directly. Do not replace NeoDev CLI with ad hoc SQL, Cypher, local scripts, or prompt-only state machines.
+Use the local `neodev` CLI client as the only fact and state boundary for product metadata, controlled documents, DocChange records, graph context, branch analysis, Git consistency, dangerous commit records, and post-push refresh.
 
-Use `python neodev.py ... --json` and reason from structured payloads. Run `python neodev.py cli version-check --json` before write or high-risk workflows.
+Before write or high-risk workflows, run `neodev config show` and `neodev cli version-check --json`. If no `server_url` is configured, run `neodev config set-server <remote-url>` before continuing.
+
+Do not write PostgreSQL directly. Do not write Neo4j directly. Do not replace the remote NeoDev service with ad hoc SQL, Cypher, local scripts, or prompt-only state machines.
+
+Use `neodev ... --json` and reason from structured payloads returned by the remote service.
 
 Superpowers expectations:
 

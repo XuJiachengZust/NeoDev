@@ -15,12 +15,21 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo \"After push, run python neodev.py git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json\""
+            "command": "echo \"After push, run neodev git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json\""
           }
         ]
       }
     ],
     "PreToolUse": [
+      {
+        "matcher": "Bash(neodev *|git commit *|git push *)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python plugins/neodev-rd-knowledge/check_neodev_environment.py"
+          }
+        ]
+      },
       {
         "matcher": "Bash(git commit *)",
         "hooks": [
@@ -31,11 +40,11 @@
         ]
       },
       {
-        "matcher": "Bash(python neodev.py doc scan*)",
+        "matcher": "Bash(neodev doc scan*)",
         "hooks": [
           {
             "type": "command",
-            "command": "python plugins/neodev-rd-knowledge/validate_mvp_docs.py prd prototype tech-design # before python neodev.py doc scan"
+            "command": "python plugins/neodev-rd-knowledge/validate_mvp_docs.py prd prototype tech-design # before neodev doc scan"
           }
         ]
       }

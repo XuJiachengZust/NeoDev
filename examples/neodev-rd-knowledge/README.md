@@ -12,7 +12,7 @@
 
 ## 执行方式
 
-按 `manifest.json` 的 `demo_steps` 顺序执行。所有命令都必须使用 `python neodev.py ... --json`，并以前一步 CLI 返回的结构化字段补齐后续参数。
+按 `manifest.json` 的 `demo_steps` 顺序执行。开发者电脑只安装本地 `neodev` CLI 客户端、skill 和插件；本地客户端必须先通过 `neodev config set-server <remote-url>` 配置统一远程 NeoDev 服务，再用 `neodev config show` 和 `neodev cli version-check --json` 校验。除 `config show` 外，所有业务命令都必须使用 `neodev ... --json`，并以前一步 CLI 返回的结构化字段补齐后续参数。
 
 ## 边界
 
@@ -23,14 +23,15 @@
 
 ## 主链路
 
-1. `cli version-check`
-2. 创建产品与版本。
-3. 绑定 `main` 与 `feature/docchange-demo` 两个分支场景。
-4. 扫描 `doc-repo`。
-5. 登记 `DC-NEODEV-DEMO-001`。
-6. 查询影响面。
-7. 提交前校验 `DocChange-ID`。
-8. 推送后刷新图谱节点。
+1. `config show`
+2. `cli version-check`
+3. 创建产品与版本。
+4. 绑定 `main` 与 `feature/docchange-demo` 两个分支场景。
+5. 扫描 `doc-repo`。
+6. 登记 `DC-NEODEV-DEMO-001`。
+7. 查询影响面。
+8. 提交前校验 `DocChange-ID`。
+9. 推送后刷新图谱节点。
 
 ## Three-Client Plugin Use
 
@@ -44,4 +45,4 @@ Before `doc scan` or `doc change register`, validate controlled documents:
 python plugins/neodev-rd-knowledge/validate_mvp_docs.py examples/neodev-rd-knowledge/doc-repo
 ```
 
-Commit messages should contain exactly one `DocChange-ID` trailer and push refreshes should go through `python neodev.py git post-push-refresh ... --json`.
+Commit messages should contain exactly one `DocChange-ID` trailer and push refreshes should go through `neodev git post-push-refresh ... --json`.

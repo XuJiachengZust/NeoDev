@@ -22,14 +22,20 @@ related:
 
 ## 1. 目标
 
-MVP 对外只暴露 `CLI` 能力。
+MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 API 客户端，不是本地服务端；所有真实执行、状态写入、图谱刷新和分析任务都必须请求统一远程 NeoDev 服务完成。
 
-CLI 负责：
+本地 CLI 客户端负责：
+
+- 读取本地配置中的远程服务地址
+- 将命令、参数和本地项目路径上下文发送到远程 NeoDev 服务
+- 返回远程服务的结构化结果
+
+远程 NeoDev 服务负责：
 
 - 执行业务动作
 - 持久化业务事实
 - 更新图谱与状态
-- 返回结构化结果
+- 运行分析任务
 
 插件 / skill 负责：
 
@@ -61,7 +67,8 @@ CLI 负责：
 
 - 不增加 `schema_version`
 - 插件 / skill 不负责兼容多套结果协议
-- 若版本不兼容，应先执行版本检查，再决定是否继续
+- 若本地 CLI 未配置远程服务，应先执行 `neodev config set-server <url>`
+- 若版本不兼容，应先执行 `neodev cli version-check --json`，再决定是否继续
 
 ### 2.2 错误码
 
@@ -137,8 +144,10 @@ CLI 负责：
 - `git post-push-refresh`
 - `git dangerous-commit resolve`
 
-### 3.6 版本检查
+### 3.6 本地客户端配置与版本检查
 
+- `config set-server`
+- `config show`
 - `cli version-check`
 
 ## 4. 核心命令契约

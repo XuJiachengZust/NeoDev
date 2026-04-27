@@ -48,7 +48,8 @@ def test_minimal_e2e_demo_steps_use_plugin_skill_and_cli_chain():
 
     assert manifest["plugin"] == "neodev-rd-knowledge"
     assert manifest["skill"] == "neodev-rd-knowledge"
-    assert commands[0].startswith("python neodev.py cli version-check")
+    assert commands[0] == "neodev config show"
+    assert commands[1].startswith("neodev cli version-check")
 
     joined = "\n".join(commands)
     for expected in [
@@ -65,5 +66,6 @@ def test_minimal_e2e_demo_steps_use_plugin_skill_and_cli_chain():
 
     guide = (EXAMPLE_ROOT / "README.md").read_text(encoding="utf-8")
     assert "plugins/neodev-rd-knowledge/workflows/core-workflows.json" in guide
+    assert "neodev config set-server <remote-url>" in guide
     assert "不要直接写 PostgreSQL" in guide
     assert "不要直接写 Neo4j" in guide
