@@ -1,3 +1,23 @@
+---
+doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-25-NEODEV-REMOTE-DEPLOY-SELF-TEST
+title: "NeoDev 远程部署与自测留痕"
+aliases:
+  - "NeoDev 远程部署与自测留痕"
+tags:
+  - neodev/docs
+  - neodev/tech-design
+  - neodev/plan
+created: 2026-04-25
+updated: 2026-04-27
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+related:
+  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+---
 # NeoDev 远程部署与自测留痕
 
 日期：2026-04-25

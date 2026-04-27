@@ -61,6 +61,7 @@ description: 用于 NeoDev 研发知识工作流，包括 DocChange 登记、图
 
 - Codex, Claude Code, and Cursor entries are adapters over the same shared scripts, template, and workflow contract.
 - Validate MVP documents with `validate_mvp_docs.py` before `doc scan` or `doc change register`.
+- Validate repository docs with `validate_obsidian_docs.py` when changing `docs/**/*.md`.
 - Generate controlled docs with `generate_mvp_doc.py`; the generator writes the file and immediately runs the validator.
 - Validate commit messages with `check_docchange_trailer.py` before Git commit verification.
 
@@ -69,15 +70,23 @@ MVP front matter:
 ```yaml
 doc_id: DOC-001
 title: Document Title
+aliases:
+  - Document Title
+tags:
+  - neodev/docs
+created: 2026-04-27
+updated: 2026-04-27
 doc_type: prd
 product_key: PRODUCT
 status: draft
 relations:
   target:
     - TARGET-DOC-001
+related:
+  - "[[TARGET-DOC-001]]"
 ```
 
-Extra fields are allowed. `doc_type` must be `prd`, `prototype`, or `tech-design`; `status` must be `draft`, `active`, or `deprecated`; `relations.target` must be a non-empty list of non-empty strings.
+Extra fields are allowed. `doc_type` must be `prd`, `prototype`, or `tech-design`; `status` must be `draft`, `active`, or `deprecated`; `relations.target` must be a non-empty list of non-empty strings. Obsidian properties are required for repository docs: `aliases`, `tags`, and `related` are non-empty lists; `created` and `updated` use `YYYY-MM-DD`; `related` should use wiki links.
 
 ## Superpowers Workflow
 

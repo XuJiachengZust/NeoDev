@@ -1,4 +1,24 @@
-# NeoDev T012-T014 Plugin / Skill / E2E 留痕
+---
+doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-T012-T014-PLUGIN-SKILL-E2E
+title: "NeoDev T012-T014 插件 / Skill / 端到端留痕"
+aliases:
+  - "NeoDev T012-T014 插件 / Skill / 端到端留痕"
+tags:
+  - neodev/docs
+  - neodev/tech-design
+  - neodev/plan
+created: 2026-04-27
+updated: 2026-04-27
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+related:
+  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+---
+# NeoDev T012-T014 插件 / Skill / 端到端留痕
 
 日期：2026-04-27
 

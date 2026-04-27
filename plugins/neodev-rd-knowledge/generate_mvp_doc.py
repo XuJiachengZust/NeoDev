@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 
 from validate_mvp_docs import validate_paths
@@ -50,6 +51,8 @@ def _render_template(
 ) -> str:
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     target_lines = "\n".join(f"    - {target}" for target in targets)
+    related_lines = "\n".join(f'  - "[[{target}]]"' for target in targets)
+    today = date.today().isoformat()
     return template.format(
         doc_id=doc_id,
         title=title,
@@ -57,6 +60,9 @@ def _render_template(
         product_key=product_key,
         status=status,
         targets=target_lines,
+        related=related_lines,
+        created=today,
+        updated=today,
     )
 
 

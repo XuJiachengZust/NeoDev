@@ -24,6 +24,19 @@ def _write_doc(path: Path, front_matter: str) -> None:
     path.write_text(f"---\n{front_matter}\n---\n\nBody\n", encoding="utf-8")
 
 
+def _obsidian_properties(title: str = "Valid Document") -> str:
+    return f"""
+aliases:
+  - {title}
+tags:
+  - neodev/docs
+created: 2026-04-27
+updated: 2026-04-27
+related:
+  - "[[TECH-001]]"
+""".strip()
+
+
 def _run_script(script: Path, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(script), *args],
@@ -49,9 +62,10 @@ def test_validate_mvp_docs_accepts_valid_controlled_documents():
 def _assert_validate_mvp_docs_accepts_valid_controlled_documents(tmp_path: Path):
     _write_doc(
         tmp_path / "prd" / "valid.md",
-        """
+        f"""
 doc_id: DOC-001
 title: Valid Document
+{_obsidian_properties()}
 doc_type: prd
 product_key: NEODEV
 status: active
@@ -79,9 +93,10 @@ def test_validate_mvp_docs_rejects_missing_required_fields():
 def _assert_validate_mvp_docs_rejects_missing_required_fields(tmp_path: Path):
     _write_doc(
         tmp_path / "prototype" / "missing.md",
-        """
+        f"""
 doc_id: DOC-002
 title: Missing Product
+{_obsidian_properties("Missing Product")}
 doc_type: prototype
 status: draft
 relations:
@@ -110,9 +125,10 @@ def test_validate_mvp_docs_rejects_invalid_doc_type_and_status():
 def _assert_validate_mvp_docs_rejects_invalid_doc_type_and_status(tmp_path: Path):
     _write_doc(
         tmp_path / "tech-design" / "invalid.md",
-        """
+        f"""
 doc_id: DOC-003
 title: Invalid Types
+{_obsidian_properties("Invalid Types")}
 doc_type: note
 product_key: NEODEV
 status: planned
@@ -149,6 +165,7 @@ def _assert_validate_mvp_docs_rejects_invalid_relations_target(tmp_path: Path):
             f"""
 doc_id: {name}
 title: Invalid Relations
+{_obsidian_properties("Invalid Relations")}
 doc_type: prd
 product_key: NEODEV
 status: active
@@ -163,6 +180,86 @@ status: active
     assert payload["checked_count"] == 3
     assert len(payload["errors"]) == 3
     assert {error["field"] for error in payload["errors"]} == {"relations.target"}
+
+
+def test_validate_mvp_docs_rejects_missing_obsidian_properties():
+    tmp_path = _make_tmp_dir()
+    try:
+        _assert_validate_mvp_docs_rejects_missing_obsidian_properties(tmp_path)
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def _assert_validate_mvp_docs_rejects_missing_obsidian_properties(tmp_path: Path):
+    _write_doc(
+        tmp_path / "prd" / "missing-ob.md",
+        """
+doc_id: DOC-OB-001
+title: Missing Obsidian Properties
+doc_type: prd
+product_key: NEODEV
+status: active
+relations:
+  target:
+    - TECH-001
+""".strip(),
+    )
+
+    result = _run_script(VALIDATOR, str(tmp_path))
+
+    payload = _json_stdout(result)
+    assert result.returncode == 1
+    assert payload["checked_count"] == 1
+    assert {error["field"] for error in payload["errors"]} == {
+        "aliases",
+        "tags",
+        "created",
+        "updated",
+        "related",
+    }
+
+
+def test_validate_mvp_docs_rejects_invalid_obsidian_properties():
+    tmp_path = _make_tmp_dir()
+    try:
+        _assert_validate_mvp_docs_rejects_invalid_obsidian_properties(tmp_path)
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
+def _assert_validate_mvp_docs_rejects_invalid_obsidian_properties(tmp_path: Path):
+    _write_doc(
+        tmp_path / "tech-design" / "invalid-ob.md",
+        """
+doc_id: DOC-OB-002
+title: Invalid Obsidian Properties
+aliases: Invalid Alias
+tags:
+  - "#bad-tag"
+created: 27-04-2026
+updated:
+  value: 2026-04-27
+related: "[[PRD-001]]"
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+    - PRD-001
+""".strip(),
+    )
+
+    result = _run_script(VALIDATOR, str(tmp_path))
+
+    payload = _json_stdout(result)
+    assert result.returncode == 1
+    assert {error["field"] for error in payload["errors"]} == {
+        "aliases",
+        "tags",
+        "created",
+        "updated",
+        "related",
+    }
 
 
 def test_generate_mvp_doc_writes_and_validates_output():
@@ -196,7 +293,13 @@ def _assert_generate_mvp_doc_writes_and_validates_output(tmp_path: Path):
     assert result.returncode == 0
     assert payload["ok"] is True
     assert payload["checked_count"] == 1
-    assert "doc_id: DOC-GEN-001" in output.read_text(encoding="utf-8")
+    generated = output.read_text(encoding="utf-8")
+    assert "doc_id: DOC-GEN-001" in generated
+    assert "aliases:" in generated
+    assert "tags:" in generated
+    assert "created:" in generated
+    assert "updated:" in generated
+    assert "related:" in generated
 
 
 def test_check_docchange_trailer_accepts_single_valid_trailer():

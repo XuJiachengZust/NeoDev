@@ -1,4 +1,24 @@
-# NeoDev F002 Graph Query CLI 留痕：entity-context / get-chain
+---
+doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-GRAPH-QUERY-CLI-F002-CONTEXT-CHAIN
+title: "NeoDev F002 图谱查询 CLI 留痕：entity-context / get-chain"
+aliases:
+  - "NeoDev F002 图谱查询 CLI 留痕：entity-context / get-chain"
+tags:
+  - neodev/docs
+  - neodev/tech-design
+  - neodev/plan
+created: 2026-04-27
+updated: 2026-04-27
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+related:
+  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+---
+# NeoDev F002 图谱查询 CLI 留痕：entity-context / get-chain
 
 ## 背景
 

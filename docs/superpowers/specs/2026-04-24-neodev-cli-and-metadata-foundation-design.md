@@ -1,3 +1,23 @@
+---
+doc_id: NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+title: "NeoDev CLI 与元数据基础设计"
+aliases:
+  - "NeoDev CLI 与元数据基础设计"
+tags:
+  - neodev/docs
+  - neodev/tech-design
+  - neodev/spec
+created: 2026-04-24
+updated: 2026-04-27
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+related:
+  - "[[01-master-prd]]"
+---
 # NeoDev CLI 与元数据基础设计
 
 ## 1. 范围

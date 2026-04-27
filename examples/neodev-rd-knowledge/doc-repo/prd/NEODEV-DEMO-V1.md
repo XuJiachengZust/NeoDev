@@ -1,6 +1,13 @@
 ---
 doc_id: NEODEV-DEMO-PRD-001
 title: NeoDev Demo Product V1
+aliases:
+  - NeoDev Demo Product V1
+tags:
+  - neodev/docs
+  - neodev/prd
+created: 2026-04-27
+updated: 2026-04-27
 doc_type: prd
 product_key: NEODEV-DEMO
 product_code: NEODEV-DEMO
@@ -9,6 +16,8 @@ status: active
 relations:
   target:
     - NEODEV-DEMO-TECH-001
+related:
+  - "[[NEODEV-DEMO-TECH]]"
 component: demo-service
 ---
 

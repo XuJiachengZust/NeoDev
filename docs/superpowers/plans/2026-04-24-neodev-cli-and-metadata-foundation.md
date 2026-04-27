@@ -1,13 +1,33 @@
+---
+doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION
+title: "NeoDev CLI 与元数据基础实现计划"
+aliases:
+  - "NeoDev CLI 与元数据基础实现计划"
+tags:
+  - neodev/docs
+  - neodev/tech-design
+  - neodev/plan
+created: 2026-04-24
+updated: 2026-04-27
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+related:
+  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+---
 # NeoDev CLI 与元数据基础实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **面向智能体执行器：** 必须使用子技能 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans`，按任务逐项执行本计划。步骤使用 checkbox（`- [ ]`）语法跟踪。
 
-**Goal:** 为 NeoDev 建立可自动化调用的根级 CLI 壳层，并补齐后续 DocChange / 危险提交闭环所需的最小元数据表与仓储能力。
+**目标：** 为 NeoDev 建立可自动化调用的根级 CLI 壳层，并补齐后续 DocChange / 危险提交闭环所需的最小元数据表与仓储能力。
 
-**Architecture:** 采用 `argparse` 构建薄 CLI 分发层，`neodev.py` 只转发到 `service.cli.main`。数据库层沿用现有增量 SQL 迁移和 repository 直写 SQL 风格，先增加 `doc_bindings`、`documents`、`doc_changes`、`code_change_links`、`dangerous_commit_records`，暂不新增独立 `BranchAnalysisTask` 表。
+**架构：** 采用 `argparse` 构建薄 CLI 分发层，`neodev.py` 只转发到 `service.cli.main`。数据库层沿用现有增量 SQL 迁移和 repository 直写 SQL 风格，先增加 `doc_bindings`、`documents`、`doc_changes`、`code_change_links`、`dangerous_commit_records`，暂不新增独立 `BranchAnalysisTask` 表。
 
-**Tech Stack:** Python 3.11、argparse、psycopg2、PostgreSQL、pytest、FastAPI 现有依赖
-**Data Policy:** 用户已确认 metadata 旧数据无需迁移，允许直接彻底删除。为达成最终 schema 形状所需的破坏性清理在本切片内是允许的，包括 `DROP COLUMN change_summary`。
+**技术栈：** Python 3.11、argparse、psycopg2、PostgreSQL、pytest、FastAPI 现有依赖
+**数据策略：** 用户已确认 metadata 旧数据无需迁移，允许直接彻底删除。为达成最终 schema 形状所需的破坏性清理在本切片内是允许的，包括 `DROP COLUMN change_summary`。
 
 ---
 
@@ -48,14 +68,14 @@
 
 ## 任务拆分
 
-### Task 1: 建立 CLI 结果协议与错误映射基础
+### 任务 1：建立 CLI 结果协议与错误映射基础
 
-**Files:**
-- Create: `src/service/cli/output.py`
-- Create: `src/service/cli/errors.py`
-- Create: `tests/test_cli_contract.py`
+**文件：**
+- 新增： `src/service/cli/output.py`
+- 新增： `src/service/cli/errors.py`
+- 新增： `tests/test_cli_contract.py`
 
-- [ ] **Step 1: 先写失败测试，固定结果协议和退出码语义**
+- [ ] **步骤 1： 先写失败测试，固定结果协议和退出码语义**
 
 ```python
 from service.cli.errors import CliError, error_to_exit_code
@@ -102,13 +122,13 @@ def test_error_to_exit_code_is_stable():
     assert error_to_exit_code(CliError("internal_error", "boom")) == 10
 ```
 
-- [ ] **Step 2: 运行测试，确认当前实现缺失导致失败**
+- [ ] **步骤 2： 运行测试，确认当前实现缺失导致失败**
 
-Run: `pytest tests/test_cli_contract.py -v`
+执行：`pytest tests/test_cli_contract.py -v`
 
 Expected: FAIL，报错 `ModuleNotFoundError: No module named 'service.cli'` 或导入符号不存在。
 
-- [ ] **Step 3: 用最小实现补齐 `output.py` 与 `errors.py`**
+- [ ] **步骤 3： 用最小实现补齐 `output.py` 与 `errors.py`**
 
 ```python
 # src/service/cli/errors.py
@@ -174,29 +194,29 @@ def build_error_payload(command: str, error: CliError) -> dict:
     }
 ```
 
-- [ ] **Step 4: 重新运行测试，确认协议层通过**
+- [ ] **步骤 4： 重新运行测试，确认协议层通过**
 
-Run: `pytest tests/test_cli_contract.py -v`
+执行：`pytest tests/test_cli_contract.py -v`
 
 Expected: PASS，3 个测试全部通过。
 
-- [ ] **Step 5: 提交这一小步**
+- [ ] **步骤 5： 提交这一小步**
 
 ```bash
 git add src/service/cli/output.py src/service/cli/errors.py tests/test_cli_contract.py
 git commit -m "feat: add cli output contract foundation"
 ```
 
-### Task 2: 接入 CLI 主入口、根级启动脚本与 `cli version-check`
+### 任务 2：接入 CLI 主入口、根级启动脚本与 `cli version-check`
 
-**Files:**
-- Create: `neodev.py`
-- Create: `src/service/cli/main.py`
-- Create: `src/service/cli/commands/__init__.py`
-- Create: `src/service/cli/commands/cli.py`
-- Modify: `tests/test_cli_contract.py`
+**文件：**
+- 新增： `neodev.py`
+- 新增： `src/service/cli/main.py`
+- 新增： `src/service/cli/commands/__init__.py`
+- 新增： `src/service/cli/commands/cli.py`
+- 修改： `tests/test_cli_contract.py`
 
-- [ ] **Step 1: 先写失败测试，固定入口一致性和 `cli version-check` 输出**
+- [ ] **步骤 1： 先写失败测试，固定入口一致性和 `cli version-check` 输出**
 
 ```python
 import json
@@ -240,13 +260,13 @@ def test_module_entrypoint_matches_root_entrypoint_shape():
     assert root_payload["data"]["compatible"] == mod_payload["data"]["compatible"] is True
 ```
 
-- [ ] **Step 2: 运行测试，确认入口尚未实现**
+- [ ] **步骤 2： 运行测试，确认入口尚未实现**
 
-Run: `pytest tests/test_cli_contract.py -v`
+执行：`pytest tests/test_cli_contract.py -v`
 
 Expected: FAIL，报错 `can't open file 'neodev.py'` 或 `No module named service.cli.main`。
 
-- [ ] **Step 3: 编写最小 CLI 入口与 `cli version-check`**
+- [ ] **步骤 3： 编写最小 CLI 入口与 `cli version-check`**
 
 ```python
 # neodev.py
@@ -317,26 +337,26 @@ def main(argv: list[str] | None = None) -> int:
         return error_to_exit_code(exc)
 ```
 
-- [ ] **Step 4: 运行测试，确认两个入口一致通过**
+- [ ] **步骤 4： 运行测试，确认两个入口一致通过**
 
-Run: `pytest tests/test_cli_contract.py -v`
+执行：`pytest tests/test_cli_contract.py -v`
 
 Expected: PASS，入口一致性与 `cli version-check` 输出测试通过。
 
-- [ ] **Step 5: 提交这一小步**
+- [ ] **步骤 5： 提交这一小步**
 
 ```bash
 git add neodev.py src/service/cli/main.py src/service/cli/commands/__init__.py src/service/cli/commands/cli.py tests/test_cli_contract.py
 git commit -m "feat: add neodev cli entrypoint and version check"
 ```
 
-### Task 3: 增加元数据迁移并验证表结构
+### 任务 3：增加元数据迁移并验证表结构
 
-**Files:**
-- Create: `docker/migrations/018_cli_metadata_foundation.sql`
-- Create: `tests/test_metadata_migration.py`
+**文件：**
+- 新增： `docker/migrations/018_cli_metadata_foundation.sql`
+- 新增： `tests/test_metadata_migration.py`
 
-- [ ] **Step 1: 先写失败测试，固定新增表、唯一约束和索引存在**
+- [ ] **步骤 1： 先写失败测试，固定新增表、唯一约束和索引存在**
 
 ```python
 def test_cli_metadata_tables_exist(pg_conn):
@@ -374,13 +394,13 @@ def test_doc_changes_has_unique_doc_change_id(pg_conn):
     assert any("doc_change_id" in name for name in indexes)
 ```
 
-- [ ] **Step 2: 运行测试，确认迁移文件尚不存在导致失败**
+- [ ] **步骤 2： 运行测试，确认迁移文件尚不存在导致失败**
 
-Run: `pytest tests/test_metadata_migration.py -v`
+执行：`pytest tests/test_metadata_migration.py -v`
 
 Expected: FAIL，新增表不存在。
 
-- [ ] **Step 3: 写增量迁移 SQL**
+- [ ] **步骤 3： 写增量迁移 SQL**
 
 ```sql
 CREATE TABLE IF NOT EXISTS doc_bindings (
@@ -417,7 +437,7 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 ```
 
-- [ ] **Step 4: 继续补全迁移并重跑测试**
+- [ ] **步骤 4： 继续补全迁移并重跑测试**
 
 ```sql
 CREATE TABLE IF NOT EXISTS doc_changes (
@@ -468,28 +488,28 @@ CREATE INDEX IF NOT EXISTS idx_dangerous_commit_records_project_status_created
 ON dangerous_commit_records(project_id, status, created_at DESC);
 ```
 
-Run: `pytest tests/test_metadata_migration.py -v`
+执行：`pytest tests/test_metadata_migration.py -v`
 
 Expected: PASS，新增表与索引检查通过。
 
-- [ ] **Step 5: 提交这一小步**
+- [ ] **步骤 5： 提交这一小步**
 
 ```bash
 git add docker/migrations/018_cli_metadata_foundation.sql tests/test_metadata_migration.py
 git commit -m "feat: add cli metadata foundation migration"
 ```
 
-### Task 4: 补齐元数据 repositories 并用持久化测试锁定行为
+### 任务 4：补齐元数据仓储并用持久化测试锁定行为
 
-**Files:**
-- Create: `src/service/repositories/doc_binding_repository.py`
-- Create: `src/service/repositories/document_repository.py`
-- Create: `src/service/repositories/doc_change_repository.py`
-- Create: `src/service/repositories/code_change_link_repository.py`
-- Create: `src/service/repositories/dangerous_commit_repository.py`
-- Create: `tests/test_metadata_repositories.py`
+**文件：**
+- 新增： `src/service/repositories/doc_binding_repository.py`
+- 新增： `src/service/repositories/document_repository.py`
+- 新增： `src/service/repositories/doc_change_repository.py`
+- 新增： `src/service/repositories/code_change_link_repository.py`
+- 新增： `src/service/repositories/dangerous_commit_repository.py`
+- 新增： `tests/test_metadata_repositories.py`
 
-- [ ] **Step 1: 先写失败测试，固定最小 CRUD 和关闭行为**
+- [ ] **步骤 1： 先写失败测试，固定最小 CRUD 和关闭行为**
 
 ```python
 from service.repositories import (
@@ -557,13 +577,13 @@ def test_resolve_dangerous_commit_updates_resolver_fields(pg_conn):
     assert resolved["resolved_at"] is not None
 ```
 
-- [ ] **Step 2: 运行测试，确认 repository 还不存在**
+- [ ] **步骤 2： 运行测试，确认 repository 还不存在**
 
-Run: `pytest tests/test_metadata_repositories.py -v`
+执行：`pytest tests/test_metadata_repositories.py -v`
 
 Expected: FAIL，报错 repository 模块缺失。
 
-- [ ] **Step 3: 先实现绑定、文档与 `DocChange` repositories**
+- [ ] **步骤 3： 先实现绑定、文档与 `DocChange` repositories**
 
 ```python
 # src/service/repositories/doc_binding_repository.py
@@ -603,7 +623,7 @@ def create(conn, doc_change_id: str, document_id: int, status: str, source_commi
         return dict(cur.fetchone())
 ```
 
-- [ ] **Step 4: 再实现提交关联与危险提交 repositories，并跑通测试**
+- [ ] **步骤 4： 再实现提交关联与危险提交 repositories，并跑通测试**
 
 ```python
 # src/service/repositories/dangerous_commit_repository.py
@@ -637,26 +657,26 @@ def resolve(conn, record_id: int, resolved_by: str) -> dict | None:
         return dict(row) if row else None
 ```
 
-Run: `pytest tests/test_metadata_repositories.py -v`
+执行：`pytest tests/test_metadata_repositories.py -v`
 
 Expected: PASS，新增 repository 行为测试通过。
 
-- [ ] **Step 5: 提交这一小步**
+- [ ] **步骤 5： 提交这一小步**
 
 ```bash
 git add src/service/repositories/doc_binding_repository.py src/service/repositories/document_repository.py src/service/repositories/doc_change_repository.py src/service/repositories/code_change_link_repository.py src/service/repositories/dangerous_commit_repository.py tests/test_metadata_repositories.py
 git commit -m "feat: add metadata repositories for cli foundation"
 ```
 
-### Task 5: 做 CLI 集成验证并补最终回归测试
+### 任务 5：执行 CLI 集成验证并补最终回归测试
 
-**Files:**
-- Modify: `tests/conftest.py`
-- Modify: `tests/test_cli_contract.py`
-- Modify: `tests/test_metadata_migration.py`
-- Modify: `tests/test_metadata_repositories.py`
+**文件：**
+- 修改： `tests/conftest.py`
+- 修改： `tests/test_cli_contract.py`
+- 修改： `tests/test_metadata_migration.py`
+- 修改： `tests/test_metadata_repositories.py`
 
-- [ ] **Step 1: 补测试夹具，确保测试库缺表时会自动应用最新迁移**
+- [ ] **步骤 1： 补测试夹具，确保测试库缺表时会自动应用最新迁移**
 
 ```python
 def _run_migration_if_needed(conn) -> None:
@@ -686,7 +706,7 @@ def _run_migration_if_needed(conn) -> None:
     conn.commit()
 ```
 
-- [ ] **Step 2: 增加真实 CLI 验收测试**
+- [ ] **步骤 2： 增加真实 CLI 验收测试**
 
 ```python
 def test_version_check_json_is_machine_readable():
@@ -697,15 +717,15 @@ def test_version_check_json_is_machine_readable():
     assert payload["data"]["message"]
 ```
 
-- [ ] **Step 3: 跑完整测试集，确认 `T001 + T002` 回归稳定**
+- [ ] **步骤 3： 跑完整测试集，确认 `T001 + T002` 回归稳定**
 
-Run: `pytest tests/test_cli_contract.py tests/test_metadata_migration.py tests/test_metadata_repositories.py -v`
+执行：`pytest tests/test_cli_contract.py tests/test_metadata_migration.py tests/test_metadata_repositories.py -v`
 
 Expected: PASS，所有本轮新增测试通过。
 
-- [ ] **Step 4: 运行真实命令做最终证据收口**
+- [ ] **步骤 4： 运行真实命令做最终证据收口**
 
-Run: `python neodev.py cli version-check --json`
+执行：`python neodev.py cli version-check --json`
 
 Expected:
 
@@ -728,7 +748,7 @@ Expected:
 }
 ```
 
-- [ ] **Step 5: 提交最终收口**
+- [ ] **步骤 5： 提交最终收口**
 
 ```bash
 git add tests/conftest.py tests/test_cli_contract.py tests/test_metadata_migration.py tests/test_metadata_repositories.py
@@ -737,7 +757,7 @@ git commit -m "test: verify cli foundation and metadata persistence"
 
 ## 自检结果
 
-### 1. Spec 覆盖检查
+### 1. 规格覆盖检查
 
 - CLI 根级入口、模块入口、统一结果协议、错误码映射：由 Task 1 和 Task 2 覆盖
 - `cli version-check`：由 Task 2 和 Task 5 覆盖

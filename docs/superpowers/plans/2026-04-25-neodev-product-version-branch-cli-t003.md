@@ -1,3 +1,23 @@
+---
+doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-25-NEODEV-PRODUCT-VERSION-BRANCH-CLI-T003
+title: "T003 产品 / 产品版本 / 分支绑定 CLI 记录"
+aliases:
+  - "T003 产品 / 产品版本 / 分支绑定 CLI 记录"
+tags:
+  - neodev/docs
+  - neodev/tech-design
+  - neodev/plan
+created: 2026-04-25
+updated: 2026-04-27
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+related:
+  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+---
 # T003 产品 / 产品版本 / 分支绑定 CLI 记录
 
 ## 范围

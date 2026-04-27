@@ -87,13 +87,14 @@ def _persist_document(conn, binding: dict, relative_path: str, front_matter: dic
 
 def _read_front_matter(path: Path) -> dict:
     text = path.read_text(encoding="utf-8")
-    if not text.startswith("---\n"):
+    lines = text.splitlines()
+    if not lines or lines[0] != "---":
         raise ValueError("document must start with YAML front matter")
-    marker = "\n---"
-    end = text.find(marker, 4)
-    if end == -1:
+    try:
+        end = lines.index("---", 1)
+    except ValueError:
         raise ValueError("document front matter must be closed with ---")
-    front_matter_text = text[4:end]
+    front_matter_text = "\n".join(lines[1:end])
     try:
         parsed = yaml.safe_load(front_matter_text)
     except yaml.YAMLError as exc:

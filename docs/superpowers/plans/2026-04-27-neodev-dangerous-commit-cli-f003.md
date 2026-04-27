@@ -1,4 +1,24 @@
-# NeoDev F003 Dangerous Commit CLI 留痕
+---
+doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-DANGEROUS-COMMIT-CLI-F003
+title: "NeoDev F003 危险提交 CLI 留痕"
+aliases:
+  - "NeoDev F003 危险提交 CLI 留痕"
+tags:
+  - neodev/docs
+  - neodev/tech-design
+  - neodev/plan
+created: 2026-04-27
+updated: 2026-04-27
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+related:
+  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+---
+# NeoDev F003 危险提交 CLI 留痕
 
 ## 背景
 
