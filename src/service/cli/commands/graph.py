@@ -5,6 +5,7 @@ import psycopg2
 from service.cli.errors import CliError
 from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
+from service.services import graph_impact_service
 from service.services import graph_query_service
 from service.services import graph_semantic_search_service
 from service.services import product_service
@@ -15,6 +16,15 @@ from service.services import project_service
 def register(subparsers) -> None:
     graph_parser = subparsers.add_parser("graph")
     graph_subparsers = graph_parser.add_subparsers(dest="graph_command", required=True)
+
+    impact_parser = graph_subparsers.add_parser("impact")
+    impact_parser.add_argument("--change-id", type=int)
+    impact_parser.add_argument("--doc-change-id")
+    impact_parser.add_argument("--json", action="store_true", dest="json_output")
+    impact_parser.set_defaults(
+        handler=handle_impact,
+        command_name="graph impact",
+    )
 
     semantic_parser = graph_subparsers.add_parser("semantic-search")
     _add_version_locator(semantic_parser)
@@ -76,6 +86,12 @@ def _with_db(callback):
             return callback(conn)
     except CliError:
         raise
+    except graph_impact_service.GraphImpactError as exc:
+        raise CliError(
+            category=exc.category,
+            message=exc.message,
+            details=exc.details,
+        ) from exc
     except graph_semantic_search_service.GraphSemanticSearchError as exc:
         raise CliError(
             category=exc.category,
@@ -94,6 +110,18 @@ def _with_db(callback):
             message="database operation failed",
             details={"database_error": str(exc)},
         ) from exc
+
+
+def handle_impact(args) -> dict:
+    def run(conn):
+        result = graph_impact_service.doc_change_impact(
+            conn,
+            change_id=args.change_id,
+            doc_change_id=args.doc_change_id,
+        )
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
 
 
 def handle_semantic_search(args) -> dict:

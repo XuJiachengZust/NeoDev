@@ -5,6 +5,10 @@ import sys
 import uuid
 from pathlib import Path
 
+from service.repositories import doc_binding_repository
+from service.repositories import doc_change_repository
+from service.repositories import document_repository
+
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -87,6 +91,95 @@ def test_graph_semantic_search_rejects_unbound_product_version(pg_conn):
     assert payload["command"] == "graph semantic-search"
     assert payload["errors"][0]["category"] == "invalid_scope"
     assert payload["errors"][0]["details"]["product_version_id"] == _payload(create_version)["data"]["version"]["id"]
+
+
+def test_graph_impact_rejects_unknown_doc_change(pg_conn):
+    impact = _run_cli(
+        "graph",
+        "impact",
+        "--doc-change-id",
+        f"DC-MISSING-{uuid.uuid4().hex[:8]}",
+        "--json",
+    )
+
+    assert impact.returncode == 3
+    payload = _payload(impact)
+    assert payload["ok"] is False
+    assert payload["command"] == "graph impact"
+    assert payload["errors"][0]["category"] == "not_found"
+
+
+def test_graph_impact_returns_docchange_scope(pg_conn):
+    token = uuid.uuid4().hex[:8]
+    product_code = f"GRAPHIMPACT-{token}"
+
+    create_product = _run_cli(
+        "product",
+        "create",
+        "--name",
+        f"Graph Impact Product {token}",
+        "--product-code",
+        product_code,
+        "--json",
+    )
+    assert create_product.returncode == 0, create_product.stderr
+    product_id = _payload(create_product)["data"]["product"]["id"]
+
+    binding = doc_binding_repository.create(
+        pg_conn,
+        product_id=product_id,
+        repo_path=f"/tmp/neodev-docs/{token}",
+        repo_url=f"https://example.test/docs/{token}.git",
+        default_branch="main",
+    )
+    document = document_repository.create(
+        pg_conn,
+        doc_binding_id=binding["id"],
+        doc_id=f"REQ-{token}",
+        relative_path=f"requirements/{token}.md",
+        front_matter_json={
+            "repository": "auth-service",
+            "relations": [{"type": "depends_on", "target": "REQ-SESSION"}],
+        },
+        relations_json={
+            "modules": ["auth.api"],
+            "files": ["src/auth/api.py"],
+            "symbols": ["login"],
+        },
+        title=f"Impact Requirement {token}",
+    )
+    change = doc_change_repository.create(
+        pg_conn,
+        document_id=document["id"],
+        doc_change_id=f"DC-{token}",
+        summary="Update login behavior",
+        details_json={
+            "affected_repositories": ["auth-service"],
+            "affected_files": ["src/auth/session.py"],
+        },
+    )
+    pg_conn.commit()
+
+    impact = _run_cli(
+        "graph",
+        "impact",
+        "--change-id",
+        str(change["id"]),
+        "--json",
+    )
+
+    assert impact.returncode == 0, impact.stderr
+    payload = _payload(impact)
+    assert payload["ok"] is True
+    assert payload["command"] == "graph impact"
+    data = payload["data"]
+    assert data["doc_change_id"] == f"DC-{token}"
+    assert data["document_summary"]["doc_id"] == f"REQ-{token}"
+    assert data["affected_repositories"] == ["auth-service"]
+    assert set(data["affected_files"]) == {"src/auth/session.py", "src/auth/api.py"}
+    assert data["affected_symbols"] == ["login"]
+    assert data["confidence"] == "medium"
+    assert data["evidence"]
 
 
 def test_graph_entity_context_rejects_branch_outside_product_version(pg_conn):

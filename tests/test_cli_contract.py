@@ -209,6 +209,13 @@ def test_graph_semantic_search_command_is_registered():
     assert "--top-k" in proc.stdout
 
 
+def test_graph_impact_command_is_registered():
+    proc = _run("neodev.py", "graph", "impact", "--help")
+    assert proc.returncode == 0
+    assert "--change-id" in proc.stdout
+    assert "--doc-change-id" in proc.stdout
+
+
 def test_graph_entity_context_command_is_registered():
     proc = _run("neodev.py", "graph", "entity-context", "--help")
     assert proc.returncode == 0
