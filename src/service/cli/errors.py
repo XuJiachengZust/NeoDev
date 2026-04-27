@@ -25,6 +25,7 @@ class CliError(Exception):
 
 _EXIT_CODES = {
     "invalid_argument": 2,
+    "invalid_scope": 2,
     "not_found": 3,
     "conflict": 4,
     "not_ready": 5,

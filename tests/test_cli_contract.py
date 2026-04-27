@@ -52,6 +52,7 @@ def test_build_error_payload_contains_error_category():
 
 def test_error_to_exit_code_is_stable():
     assert error_to_exit_code(CliError("invalid_argument", "bad")) == 2
+    assert error_to_exit_code(CliError("invalid_scope", "out of scope")) == 2
     assert error_to_exit_code(CliError("not_found", "missing")) == 3
     assert error_to_exit_code(CliError("conflict", "busy")) == 4
     assert error_to_exit_code(CliError("not_ready", "later")) == 5
@@ -167,3 +168,14 @@ def test_missing_cli_subcommand_returns_structured_json_error():
     assert payload["command"] == "unknown"
     assert payload["data"] is None
     assert payload["errors"][0]["category"] == "invalid_argument"
+
+
+def test_product_version_analysis_commands_are_registered():
+    analyze = _run("neodev.py", "product", "version", "analyze", "--help")
+    assert analyze.returncode == 0
+    assert "--branch" in analyze.stdout
+    assert "--force" in analyze.stdout
+
+    status = _run("neodev.py", "product", "version", "analyze-status", "--help")
+    assert status.returncode == 0
+    assert "--branch" in status.stdout

@@ -5,6 +5,7 @@ import psycopg2
 from service.cli.errors import CliError
 from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
+from service.services import branch_analysis_service
 from service.services import product_service
 from service.services import product_version_service
 from service.services import project_service
@@ -70,6 +71,27 @@ def register(subparsers) -> None:
         command_name="product version bind-branch",
     )
 
+    analyze_parser = version_subparsers.add_parser("analyze")
+    _add_version_locator(analyze_parser)
+    _add_project_locator(analyze_parser)
+    analyze_parser.add_argument("--branch", required=True)
+    analyze_parser.add_argument("--force", action="store_true")
+    analyze_parser.add_argument("--json", action="store_true", dest="json_output")
+    analyze_parser.set_defaults(
+        handler=handle_version_analyze,
+        command_name="product version analyze",
+    )
+
+    status_parser = version_subparsers.add_parser("analyze-status")
+    _add_version_locator(status_parser)
+    _add_project_locator(status_parser)
+    status_parser.add_argument("--branch", required=True)
+    status_parser.add_argument("--json", action="store_true", dest="json_output")
+    status_parser.set_defaults(
+        handler=handle_version_analyze_status,
+        command_name="product version analyze-status",
+    )
+
 
 def _add_product_locator(parser) -> None:
     parser.add_argument("--product-id", type=int)
@@ -99,6 +121,12 @@ def _with_db(callback):
                 raise
     except CliError:
         raise
+    except branch_analysis_service.BranchAnalysisError as exc:
+        raise CliError(
+            category=exc.category,
+            message=exc.message,
+            details=exc.details,
+        ) from exc
     except psycopg2.IntegrityError as exc:
         raise CliError(
             category="conflict",
@@ -209,6 +237,37 @@ def handle_version_bind_branch(args) -> dict:
             args.command_name,
             {"product": product, "version": version, "project": project, "binding": binding},
         )
+
+    return _with_db(run)
+
+
+def handle_version_analyze(args) -> dict:
+    def run(conn):
+        version = _resolve_version(conn, args)
+        project = _resolve_project(conn, args)
+        result = branch_analysis_service.analyze_version_branch(
+            conn,
+            product_version_id=version["id"],
+            project_id=project["id"],
+            branch=args.branch,
+            force=args.force,
+        )
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
+
+
+def handle_version_analyze_status(args) -> dict:
+    def run(conn):
+        version = _resolve_version(conn, args)
+        project = _resolve_project(conn, args)
+        result = branch_analysis_service.get_analysis_status(
+            conn,
+            product_version_id=version["id"],
+            project_id=project["id"],
+            branch=args.branch,
+        )
+        return build_success_payload(args.command_name, result)
 
     return _with_db(run)
 
