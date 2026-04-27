@@ -2,11 +2,13 @@
 doc_id: NEODEV-DEMO-PRD-001
 title: NeoDev Demo Product V1
 doc_type: prd
+product_key: NEODEV-DEMO
 product_code: NEODEV-DEMO
 version_name: V1.0
+status: active
 relations:
-  - type: implements
-    target: NEODEV-DEMO-TECH-001
+  target:
+    - NEODEV-DEMO-TECH-001
 component: demo-service
 ---
 

@@ -1,5 +1,32 @@
 {
   "version": "0.1.0",
+  "mvp_doc_contract": {
+    "required_fields": [
+      "doc_id",
+      "title",
+      "doc_type",
+      "product_key",
+      "status",
+      "relations"
+    ],
+    "doc_type": [
+      "prd",
+      "prototype",
+      "tech-design"
+    ],
+    "status": [
+      "draft",
+      "active",
+      "deprecated"
+    ],
+    "relations_target": "relations.target must be a non-empty list of non-empty strings"
+  },
+  "superpowers": {
+    "requirements_or_design": "superpowers:brainstorming",
+    "implementation": "superpowers:test-driven-development",
+    "failure_investigation": "superpowers:systematic-debugging",
+    "completion_commit_push": "superpowers:verification-before-completion"
+  },
   "contract": "NeoDev CLI 是唯一执行边界和状态变更边界。插件与内置 skill 只负责引导命令顺序、参数补全、风险提示和结果解释。",
   "workflows": {
     "session_version_check": {
@@ -22,6 +49,16 @@
           "id": "check_cli_contract",
           "type": "cli",
           "command": "python neodev.py cli version-check --json"
+        },
+        {
+          "id": "validate_mvp_docs",
+          "type": "script",
+          "command": "python plugins/neodev-rd-knowledge/validate_mvp_docs.py prd prototype tech-design"
+        },
+        {
+          "id": "scan_controlled_docs",
+          "type": "cli",
+          "command": "python neodev.py doc scan --doc-binding-id <doc_binding_id> --json"
         },
         {
           "id": "register_doc_change",

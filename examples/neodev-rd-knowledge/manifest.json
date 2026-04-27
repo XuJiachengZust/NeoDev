@@ -6,6 +6,11 @@
   },
   "plugin": "neodev-rd-knowledge",
   "skill": "neodev-rd-knowledge",
+  "clients": [
+    "Codex",
+    "Claude Code",
+    "Cursor"
+  ],
   "doc_repository": {
     "path": "doc-repo",
     "required_directories": [
@@ -53,6 +58,11 @@
       "id": "bind_feature_branch",
       "type": "cli",
       "command": "python neodev.py product version bind-branch --product-code NEODEV-DEMO --version-name V1.0 --project-id 1 --branch feature/docchange-demo --json"
+    },
+    {
+      "id": "validate_mvp_docs",
+      "type": "script",
+      "command": "python plugins/neodev-rd-knowledge/validate_mvp_docs.py examples/neodev-rd-knowledge/doc-repo"
     },
     {
       "id": "scan_docs",

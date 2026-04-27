@@ -31,3 +31,17 @@
 6. 查询影响面。
 7. 提交前校验 `DocChange-ID`。
 8. 推送后刷新图谱节点。
+
+## Three-Client Plugin Use
+
+- Codex uses `plugins/neodev-rd-knowledge/.codex-plugin/plugin.json` and the bundled `skills/neodev-rd-knowledge/SKILL.md`.
+- Claude Code uses `plugins/neodev-rd-knowledge/.claude-plugin/plugin.json`, `commands/`, `agents/`, and `hooks/hooks.json`.
+- Cursor uses `.cursor/rules/*.mdc`; distributable copies live under `plugins/neodev-rd-knowledge/cursor/rules/`.
+
+Before `doc scan` or `doc change register`, validate controlled documents:
+
+```bash
+python plugins/neodev-rd-knowledge/validate_mvp_docs.py examples/neodev-rd-knowledge/doc-repo
+```
+
+Commit messages should contain exactly one `DocChange-ID` trailer and push refreshes should go through `python neodev.py git post-push-refresh ... --json`.

@@ -1,4 +1,4 @@
-"""Product Versions API: CRUD under /api/products/{product_id}/versions."""
+"""Product version API for the NeoDev MVP surface."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -48,8 +48,12 @@ def list_versions(
 def create_version(product_id: int, body: VersionCreate, db=Depends(get_db)):
     _check_product(db, product_id)
     return service.create_version(
-        db, product_id, body.version_name,
-        description=body.description, status=body.status, release_date=body.release_date,
+        db,
+        product_id,
+        body.version_name,
+        description=body.description,
+        status=body.status,
+        release_date=body.release_date,
     )
 
 
@@ -78,28 +82,9 @@ def update_version(product_id: int, version_id: int, body: VersionUpdate, db=Dep
 @router.delete("/{product_id}/versions/{version_id}", status_code=204)
 def delete_version(product_id: int, version_id: int, db=Depends(get_db)):
     _check_product(db, product_id)
-    # 检查是否有关联的需求或 Bug，有则拒绝删除
-    from psycopg2.extras import RealDictCursor
-    with db.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute("SELECT count(*) AS cnt FROM product_requirements WHERE version_id = %s", (version_id,))
-        req_count = cur.fetchone()["cnt"]
-        cur.execute("SELECT count(*) AS cnt FROM product_bugs WHERE version_id = %s", (version_id,))
-        bug_count = cur.fetchone()["cnt"]
-    if req_count > 0 or bug_count > 0:
-        parts = []
-        if req_count > 0:
-            parts.append(f"{req_count} 条需求")
-        if bug_count > 0:
-            parts.append(f"{bug_count} 个Bug")
-        raise HTTPException(
-            status_code=409,
-            detail=f"该版本下仍有{'、'.join(parts)}，请先删除或迁移后再删除版本",
-        )
     if not service.delete_version(db, version_id):
         raise HTTPException(status_code=404, detail="Version not found")
 
-
-# ── 分支映射 ──
 
 @router.get("/{product_id}/versions/{version_id}/branches", response_model=list)
 def list_version_branches(product_id: int, version_id: int, db=Depends(get_db)):

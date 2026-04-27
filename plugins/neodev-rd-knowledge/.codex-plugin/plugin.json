@@ -34,5 +34,14 @@
       "推送前用 NeoDev 检查我的提交。"
     ],
     "brandColor": "#2563EB"
+  },
+  "neodev": {
+    "hooks": "./hooks/hooks.json",
+    "shared_scripts": [
+      "./validate_mvp_docs.py",
+      "./generate_mvp_doc.py",
+      "./check_docchange_trailer.py"
+    ],
+    "contract": "CLI-only orchestration for Codex, Claude Code, and Cursor. MVP document validation, DocChange trailer checks, and Superpowers workflow reminders are shared here; facts and state changes still run only through NeoDev CLI."
   }
 }

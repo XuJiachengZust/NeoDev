@@ -2,11 +2,13 @@
 doc_id: NEODEV-DEMO-TECH-001
 title: NeoDev Demo Technical Design
 doc_type: tech-design
+product_key: NEODEV-DEMO
 product_code: NEODEV-DEMO
 version_name: V1.0
+status: active
 relations:
-  - type: supports
-    target: NEODEV-DEMO-PRD-001
+  target:
+    - NEODEV-DEMO-PRD-001
 component: demo-service
 ---
 

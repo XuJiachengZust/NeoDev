@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE_ROOT = ROOT / "examples" / "neodev-rd-knowledge"
@@ -27,6 +29,17 @@ def test_minimal_e2e_example_contains_reproducible_product_doc_and_project_scope
     assert (EXAMPLE_ROOT / "doc-repo" / "prototype" / ".gitkeep").exists()
     assert (EXAMPLE_ROOT / "doc-repo" / "tech-design" / "NEODEV-DEMO-TECH.md").exists()
     assert (EXAMPLE_ROOT / "project-repo" / "src" / "demo_service.py").exists()
+
+    for path in [
+        EXAMPLE_ROOT / "doc-repo" / "prd" / "NEODEV-DEMO-V1.md",
+        EXAMPLE_ROOT / "doc-repo" / "tech-design" / "NEODEV-DEMO-TECH.md",
+    ]:
+        text = path.read_text(encoding="utf-8")
+        end = text.find("\n---", 4)
+        front_matter = yaml.safe_load(text[4:end])
+        assert front_matter["product_key"] == "NEODEV-DEMO"
+        assert front_matter["status"] in {"draft", "active", "deprecated"}
+        assert isinstance(front_matter["relations"]["target"], list)
 
 
 def test_minimal_e2e_demo_steps_use_plugin_skill_and_cli_chain():

@@ -1,0 +1,33 @@
+---
+description: NeoDev DocChange Git trailer and refresh workflow.
+globs: "**/*"
+alwaysApply: false
+---
+
+# NeoDev Git DocChange
+
+Implementation commits must include exactly one trailer:
+
+```text
+DocChange-ID: DC-PRODUCT-001
+```
+
+Validate commit messages with:
+
+```bash
+python plugins/neodev-rd-knowledge/check_docchange_trailer.py --message-file .git/COMMIT_EDITMSG
+```
+
+Before push, verify through NeoDev CLI:
+
+```bash
+python neodev.py git verify-doc-change --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --commit-message <commit_message> --json
+```
+
+After a successful push, refresh graph context:
+
+```bash
+python neodev.py git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json
+```
+
+If verification reports dangerous commits, explain the structured payload and require explicit user confirmation before resolving or continuing.

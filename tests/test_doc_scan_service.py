@@ -140,6 +140,61 @@ relations:
     assert "relations.target" in errors[0]["error_message"]
 
 
+def test_doc_scan_rejects_invalid_doc_type_and_status(metadata_db_case):
+    doc_repo = _make_doc_repo()
+    try:
+        _assert_doc_scan_rejects_invalid_doc_type_and_status(metadata_db_case, doc_repo)
+    finally:
+        shutil.rmtree(doc_repo, ignore_errors=True)
+
+
+def _assert_doc_scan_rejects_invalid_doc_type_and_status(metadata_db_case, tmp_path):
+    token = uuid.uuid4().hex[:8]
+    product_code = f"DOCTYPE-{token}"
+    product_id = _create_product(metadata_db_case, product_code)
+    binding = doc_binding_repository.create(
+        metadata_db_case,
+        product_id=product_id,
+        repo_path=str(tmp_path),
+    )
+    _write_doc(
+        tmp_path / "prd" / "invalid-type.md",
+        f"""
+doc_id: DOC-TYPE-{token}
+title: Invalid Type
+doc_type: note
+product_key: {product_code}
+status: active
+relations:
+  target:
+    - PROJECT-{token}
+""".strip(),
+    )
+    _write_doc(
+        tmp_path / "tech-design" / "invalid-status.md",
+        f"""
+doc_id: DOC-STATUS-{token}
+title: Invalid Status
+doc_type: tech-design
+product_key: {product_code}
+status: planned
+relations:
+  target:
+    - PROJECT-{token}
+""".strip(),
+    )
+
+    result = doc_scan_service.scan_binding(metadata_db_case, binding["id"])
+
+    assert result["registered_count"] == 0
+    assert result["error_count"] == 2
+    errors = scan_error_repository.list_by_binding(metadata_db_case, binding["id"])
+    assert {error["details_json"]["field"] for error in errors} == {
+        "doc_type",
+        "status",
+    }
+
+
 def test_doc_scan_updates_existing_document_on_rescan(metadata_db_case):
     doc_repo = _make_doc_repo()
     try:

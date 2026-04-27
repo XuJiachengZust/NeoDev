@@ -1,0 +1,34 @@
+---
+description: MVP controlled document front matter requirements.
+globs: "{prd,prototype,tech-design}/**/*.md"
+alwaysApply: false
+---
+
+# NeoDev MVP Documents
+
+Controlled documents in `prd/`, `prototype/`, and `tech-design/` must use YAML front matter accepted by NeoDev scan and validation.
+
+Required front matter:
+
+```yaml
+doc_id: DOC-001
+title: Document Title
+doc_type: prd
+product_key: PRODUCT
+status: draft
+relations:
+  target:
+    - TARGET-DOC-001
+```
+
+Allowed `doc_type` values are `prd`, `prototype`, and `tech-design`.
+
+Allowed `status` values are `draft`, `active`, and `deprecated`.
+
+`relations.target` must be a non-empty list of non-empty strings. Extra fields are allowed, but missing required fields block `doc scan` and `doc change register`.
+
+Validate before scan or registration:
+
+```bash
+python plugins/neodev-rd-knowledge/validate_mvp_docs.py prd prototype tech-design
+```

@@ -1,0 +1,20 @@
+---
+description: NeoDev RD knowledge workflow boundary for this project.
+globs: "**/*"
+alwaysApply: true
+---
+
+# NeoDev RD Knowledge
+
+Use NeoDev CLI as the only fact and state boundary for product metadata, controlled documents, DocChange records, graph context, branch analysis, Git consistency, dangerous commit records, and post-push refresh.
+
+Do not write PostgreSQL directly. Do not write Neo4j directly. Do not replace NeoDev CLI with ad hoc SQL, Cypher, local scripts, or prompt-only state machines.
+
+Use `python neodev.py ... --json` and reason from structured payloads. Run `python neodev.py cli version-check --json` before write or high-risk workflows.
+
+Superpowers expectations:
+
+- Use `superpowers:brainstorming` before requirements or design work.
+- Use `superpowers:test-driven-development` before implementation changes.
+- Use `superpowers:systematic-debugging` for failures or unexpected behavior.
+- Use `superpowers:verification-before-completion` before completion, commit, or push.

@@ -1,0 +1,9 @@
+{
+  "name": "neodev-rd-knowledge",
+  "version": "0.1.0",
+  "description": "NeoDev RD knowledge workflow plugin for Claude Code.",
+  "skills": "./skills/",
+  "commands": "./commands/",
+  "agents": "./agents/",
+  "hooks": "./hooks/hooks.json"
+}

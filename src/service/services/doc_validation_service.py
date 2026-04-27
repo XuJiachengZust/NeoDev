@@ -12,6 +12,9 @@ REQUIRED_FRONT_MATTER_FIELDS = {
     "relations",
 }
 
+VALID_DOC_TYPES = {"prd", "prototype", "tech-design"}
+VALID_STATUSES = {"draft", "active", "deprecated"}
+
 
 @dataclass(frozen=True)
 class DocumentValidationError(Exception):
@@ -33,6 +36,20 @@ def validate_front_matter(front_matter: object) -> dict:
         raise DocumentValidationError(
             f"missing required front matter fields: {', '.join(missing)}",
             {"missing_fields": missing},
+        )
+
+    doc_type = front_matter.get("doc_type")
+    if doc_type not in VALID_DOC_TYPES:
+        raise DocumentValidationError(
+            "doc_type must be one of: prd, prototype, tech-design",
+            {"field": "doc_type", "allowed": sorted(VALID_DOC_TYPES)},
+        )
+
+    status = front_matter.get("status")
+    if status not in VALID_STATUSES:
+        raise DocumentValidationError(
+            "status must be one of: draft, active, deprecated",
+            {"field": "status", "allowed": sorted(VALID_STATUSES)},
         )
 
     relations = front_matter.get("relations")
