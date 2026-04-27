@@ -92,6 +92,16 @@ def register(subparsers) -> None:
         command_name="product version analyze-status",
     )
 
+    watch_status_parser = version_subparsers.add_parser("watch-status")
+    _add_version_locator(watch_status_parser)
+    _add_project_locator(watch_status_parser)
+    watch_status_parser.add_argument("--branch", required=True)
+    watch_status_parser.add_argument("--json", action="store_true", dest="json_output")
+    watch_status_parser.set_defaults(
+        handler=handle_version_watch_status,
+        command_name="product version watch-status",
+    )
+
 
 def _add_product_locator(parser) -> None:
     parser.add_argument("--product-id", type=int)
@@ -258,6 +268,21 @@ def handle_version_analyze(args) -> dict:
 
 
 def handle_version_analyze_status(args) -> dict:
+    def run(conn):
+        version = _resolve_version(conn, args)
+        project = _resolve_project(conn, args)
+        result = branch_analysis_service.get_analysis_status(
+            conn,
+            product_version_id=version["id"],
+            project_id=project["id"],
+            branch=args.branch,
+        )
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
+
+
+def handle_version_watch_status(args) -> dict:
     def run(conn):
         version = _resolve_version(conn, args)
         project = _resolve_project(conn, args)

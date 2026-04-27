@@ -180,6 +180,10 @@ def test_product_version_analysis_commands_are_registered():
     assert status.returncode == 0
     assert "--branch" in status.stdout
 
+    watch = _run("neodev.py", "product", "version", "watch-status", "--help")
+    assert watch.returncode == 0
+    assert "--branch" in watch.stdout
+
 
 def test_doc_change_commands_are_registered():
     register = _run("neodev.py", "doc", "change", "register", "--help")

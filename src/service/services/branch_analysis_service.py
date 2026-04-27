@@ -10,6 +10,7 @@ from service.services import ai_preprocessor_service
 from service.services import product_service
 from service.services import product_version_service
 from service.services import project_service
+from service.repositories import version_repository as version_repo
 
 
 @dataclass(slots=True)
@@ -144,14 +145,21 @@ def _current_task(conn, context: dict) -> dict:
     row = rows[0] if rows else {}
     extra = row.get("extra") or {}
     progress = extra.get("progress") or {}
+    legacy_version = version_repo.find_by_project_and_branch(conn, project_id, branch) or {}
+    analysis_action = extra.get("analysis_action") or extra.get("graph_action")
     return {
         "analysis_task_id": row.get("id"),
         "product_version_id": context["version"]["id"],
         "project_id": project_id,
         "branch": branch,
         "status": row.get("status") or "not_started",
-        "analysis_action": extra.get("analysis_action"),
+        "analysis_action": analysis_action,
         "progress": progress,
+        "current_snapshot_id": extra.get("current_snapshot_id"),
+        "head_commit": extra.get("head_commit"),
+        "last_parsed_commit": extra.get("last_parsed_commit")
+        or legacy_version.get("last_parsed_commit"),
+        "created_from_action": extra.get("created_from_action") or analysis_action,
         "started_at": row.get("started_at"),
         "finished_at": row.get("finished_at"),
         "heartbeat_at": row.get("updated_at"),

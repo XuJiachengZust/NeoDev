@@ -33,6 +33,11 @@ def _patch_valid_scope(monkeypatch, status_rows=None):
         "get_status",
         lambda conn, project_id, branch: status_rows or [],
     )
+    monkeypatch.setattr(
+        branch_analysis_service.version_repo,
+        "find_by_project_and_branch",
+        lambda conn, project_id, branch: None,
+    )
 
 
 def test_analyze_version_branch_wraps_preprocess_and_returns_status(monkeypatch):
@@ -115,3 +120,49 @@ def test_get_analysis_status_returns_not_started_without_status_row(monkeypatch)
     assert task["analysis_task_id"] is None
     assert task["status"] == "not_started"
     assert task["progress"] == {}
+
+
+def test_get_analysis_status_includes_contract_snapshot_fields(monkeypatch):
+    now = datetime.now(timezone.utc)
+    status_rows = [
+        {
+            "id": 32,
+            "project_id": 11,
+            "branch": "release/unit",
+            "status": "completed",
+            "started_at": now,
+            "finished_at": now,
+            "updated_at": now,
+            "error_message": None,
+            "extra": {
+                "analysis_action": "incremental",
+                "current_snapshot_id": 77,
+                "head_commit": "a" * 40,
+                "created_from_action": "incremental",
+            },
+        }
+    ]
+    _patch_valid_scope(monkeypatch, status_rows=status_rows)
+    monkeypatch.setattr(
+        branch_analysis_service.version_repo,
+        "find_by_project_and_branch",
+        lambda conn, project_id, branch: {
+            "id": 5,
+            "project_id": project_id,
+            "branch": branch,
+            "last_parsed_commit": "b" * 40,
+        },
+    )
+
+    result = branch_analysis_service.get_analysis_status(
+        object(),
+        product_version_id=23,
+        project_id=11,
+        branch="release/unit",
+    )
+
+    task = result["analysis_task"]
+    assert task["current_snapshot_id"] == 77
+    assert task["head_commit"] == "a" * 40
+    assert task["last_parsed_commit"] == "b" * 40
+    assert task["created_from_action"] == "incremental"
