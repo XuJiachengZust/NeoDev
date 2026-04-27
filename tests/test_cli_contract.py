@@ -198,3 +198,12 @@ def test_doc_change_commands_are_registered():
     implemented = _run("neodev.py", "doc", "change", "mark-implemented", "--help")
     assert implemented.returncode == 0
     assert "--doc-change-id" in implemented.stdout
+
+
+def test_graph_semantic_search_command_is_registered():
+    proc = _run("neodev.py", "graph", "semantic-search", "--help")
+    assert proc.returncode == 0
+    assert "--product-code" in proc.stdout
+    assert "--version-name" in proc.stdout
+    assert "--query" in proc.stdout
+    assert "--top-k" in proc.stdout
