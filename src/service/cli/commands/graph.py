@@ -5,9 +5,11 @@ import psycopg2
 from service.cli.errors import CliError
 from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
+from service.services import graph_query_service
 from service.services import graph_semantic_search_service
 from service.services import product_service
 from service.services import product_version_service
+from service.services import project_service
 
 
 def register(subparsers) -> None:
@@ -24,6 +26,33 @@ def register(subparsers) -> None:
         command_name="graph semantic-search",
     )
 
+    entity_parser = graph_subparsers.add_parser("entity-context")
+    _add_version_locator(entity_parser)
+    _add_project_locator(entity_parser)
+    entity_parser.add_argument("--branch", required=True)
+    entity_parser.add_argument("--entity-id", required=True)
+    entity_parser.add_argument("--depth", type=int, default=1)
+    entity_parser.add_argument("--json", action="store_true", dest="json_output")
+    entity_parser.set_defaults(
+        handler=handle_entity_context,
+        command_name="graph entity-context",
+    )
+
+    chain_parser = graph_subparsers.add_parser("get-chain")
+    _add_version_locator(chain_parser)
+    _add_project_locator(chain_parser)
+    chain_parser.add_argument("--branch", required=True)
+    chain_parser.add_argument("--start-node")
+    chain_parser.add_argument("--file-path")
+    chain_parser.add_argument("--symbol")
+    chain_parser.add_argument("--commit-sha")
+    chain_parser.add_argument("--depth", type=int, default=1)
+    chain_parser.add_argument("--json", action="store_true", dest="json_output")
+    chain_parser.set_defaults(
+        handler=handle_get_chain,
+        command_name="graph get-chain",
+    )
+
 
 def _add_product_locator(parser) -> None:
     parser.add_argument("--product-id", type=int)
@@ -36,6 +65,11 @@ def _add_version_locator(parser) -> None:
     parser.add_argument("--version-name")
 
 
+def _add_project_locator(parser) -> None:
+    parser.add_argument("--project-id", type=int)
+    parser.add_argument("--project-name")
+
+
 def _with_db(callback):
     try:
         with closing(psycopg2.connect(get_database_url())) as conn:
@@ -43,6 +77,12 @@ def _with_db(callback):
     except CliError:
         raise
     except graph_semantic_search_service.GraphSemanticSearchError as exc:
+        raise CliError(
+            category=exc.category,
+            message=exc.message,
+            details=exc.details,
+        ) from exc
+    except graph_query_service.GraphQueryError as exc:
         raise CliError(
             category=exc.category,
             message=exc.message,
@@ -64,6 +104,43 @@ def handle_semantic_search(args) -> dict:
             product_version_id=version["id"],
             query=args.query,
             top_k=args.top_k,
+        )
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
+
+
+def handle_entity_context(args) -> dict:
+    def run(conn):
+        version = _resolve_version(conn, args)
+        project = _resolve_project(conn, args)
+        result = graph_query_service.entity_context(
+            conn,
+            product_version_id=version["id"],
+            project_id=project["id"],
+            branch=args.branch,
+            entity_id=args.entity_id,
+            depth=args.depth,
+        )
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
+
+
+def handle_get_chain(args) -> dict:
+    def run(conn):
+        version = _resolve_version(conn, args)
+        project = _resolve_project(conn, args)
+        result = graph_query_service.get_chain(
+            conn,
+            product_version_id=version["id"],
+            project_id=project["id"],
+            branch=args.branch,
+            start_node=args.start_node,
+            file_path=args.file_path,
+            symbol=args.symbol,
+            commit_sha=args.commit_sha,
+            depth=args.depth,
         )
         return build_success_payload(args.command_name, result)
 
@@ -115,3 +192,33 @@ def _resolve_version(conn, args) -> dict:
     if not version:
         raise CliError(category="not_found", message="product version not found")
     return version
+
+
+def _resolve_project(conn, args) -> dict:
+    project_id = getattr(args, "project_id", None)
+    project_name = getattr(args, "project_name", None)
+    if project_id is None and not project_name:
+        raise CliError(
+            category="invalid_argument",
+            message="provide --project-id or --project-name",
+        )
+    if project_id is not None and project_name:
+        raise CliError(
+            category="invalid_argument",
+            message="provide only one project locator",
+        )
+    if project_id is not None:
+        project = project_service.get_project(conn, project_id)
+        if not project:
+            raise CliError(category="not_found", message="project not found")
+        return project
+    matches = project_service.find_projects_by_name(conn, project_name)
+    if not matches:
+        raise CliError(category="not_found", message="project not found")
+    if len(matches) > 1:
+        raise CliError(
+            category="conflict",
+            message="project name is ambiguous",
+            details={"project_name": project_name, "matches": [row["id"] for row in matches]},
+        )
+    return matches[0]

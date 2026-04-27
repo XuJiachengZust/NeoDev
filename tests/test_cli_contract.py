@@ -207,3 +207,28 @@ def test_graph_semantic_search_command_is_registered():
     assert "--version-name" in proc.stdout
     assert "--query" in proc.stdout
     assert "--top-k" in proc.stdout
+
+
+def test_graph_entity_context_command_is_registered():
+    proc = _run("neodev.py", "graph", "entity-context", "--help")
+    assert proc.returncode == 0
+    assert "--product-code" in proc.stdout
+    assert "--version-name" in proc.stdout
+    assert "--project-id" in proc.stdout
+    assert "--branch" in proc.stdout
+    assert "--entity-id" in proc.stdout
+    assert "--depth" in proc.stdout
+
+
+def test_graph_get_chain_command_is_registered():
+    proc = _run("neodev.py", "graph", "get-chain", "--help")
+    assert proc.returncode == 0
+    assert "--product-code" in proc.stdout
+    assert "--version-name" in proc.stdout
+    assert "--project-id" in proc.stdout
+    assert "--branch" in proc.stdout
+    assert "--start-node" in proc.stdout
+    assert "--file-path" in proc.stdout
+    assert "--symbol" in proc.stdout
+    assert "--commit-sha" in proc.stdout
+    assert "--depth" in proc.stdout
