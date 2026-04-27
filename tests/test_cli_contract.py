@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from service.cli.errors import CliError, error_to_exit_code
-from service.cli.output import build_error_payload, build_success_payload
+from service.cli.output import build_error_payload, build_success_payload, render_payload
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -143,6 +143,23 @@ def test_root_entrypoint_returns_version_check_json():
     assert payload["errors"] == []
 
 
+def test_root_entrypoint_defaults_to_plain_text_output():
+    proc = _run("neodev.py", "cli", "version-check")
+    assert proc.returncode == 0
+    assert not proc.stdout.lstrip().startswith("{")
+    assert "command: cli version-check" in proc.stdout
+    assert "compatible: true" in proc.stdout
+
+
+def test_render_payload_prints_plain_error_without_json():
+    payload = build_error_payload(
+        command="unknown",
+        error=CliError(category="invalid_argument", message="bad command"),
+    )
+    text = render_payload(payload)
+    assert text == "ERROR [invalid_argument]: bad command\n"
+
+
 def test_module_entrypoint_matches_root_entrypoint_shape():
     root_proc = _run("neodev.py", "cli", "version-check", "--json")
     mod_proc = _run("-m", "service.cli.main", "cli", "version-check", "--json")
@@ -157,21 +174,15 @@ def test_module_entrypoint_matches_root_entrypoint_shape():
 def test_invalid_top_level_command_returns_structured_json_error():
     proc = _run("neodev.py", "bad")
     assert proc.returncode != 0
-    payload = json.loads(proc.stdout)
-    assert payload["ok"] is False
-    assert payload["command"] == "unknown"
-    assert payload["data"] is None
-    assert payload["errors"][0]["category"] == "invalid_argument"
+    assert not proc.stdout.lstrip().startswith("{")
+    assert "ERROR [invalid_argument]" in proc.stdout
 
 
 def test_missing_cli_subcommand_returns_structured_json_error():
     proc = _run("neodev.py", "cli")
     assert proc.returncode != 0
-    payload = json.loads(proc.stdout)
-    assert payload["ok"] is False
-    assert payload["command"] == "unknown"
-    assert payload["data"] is None
-    assert payload["errors"][0]["category"] == "invalid_argument"
+    assert not proc.stdout.lstrip().startswith("{")
+    assert "ERROR [invalid_argument]" in proc.stdout
 
 
 def test_product_version_analysis_commands_are_hidden_from_standard_help():

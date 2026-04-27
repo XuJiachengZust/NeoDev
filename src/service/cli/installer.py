@@ -61,20 +61,96 @@ def _error(message):
     }}
 
 
+def _json_output(argv):
+    return "--json" in argv
+
+
+def _plain_scalar(value):
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _append_plain(lines, key, value, indent=0):
+    prefix = "  " * indent
+    if isinstance(value, dict):
+        if not value:
+            lines.append(f"{{prefix}}{{key}}: " + "{{}}")
+            return
+        lines.append(f"{{prefix}}{{key}}:")
+        for child_key, child_value in value.items():
+            _append_plain(lines, str(child_key), child_value, indent + 1)
+        return
+    if isinstance(value, list):
+        if not value:
+            lines.append(f"{{prefix}}{{key}}: []")
+            return
+        lines.append(f"{{prefix}}{{key}}:")
+        for item in value:
+            if isinstance(item, (dict, list)):
+                lines.append(f"{{prefix}}  -")
+                _append_plain(lines, "value", item, indent + 2)
+            else:
+                lines.append(f"{{prefix}}  - {{_plain_scalar(item)}}")
+        return
+    lines.append(f"{{prefix}}{{key}}: {{_plain_scalar(value)}}")
+
+
+def _render_payload(payload, json_output=False):
+    if json_output:
+        return json.dumps(payload, ensure_ascii=False) + "\\n"
+    if isinstance(payload, dict) and payload.get("command") == "help":
+        text = (payload.get("data") or {{}}).get("text")
+        if isinstance(text, str):
+            return text if text.endswith("\\n") else text + "\\n"
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        errors = payload.get("errors") if isinstance(payload, dict) else None
+        if not errors:
+            return "ERROR: command failed\\n"
+        lines = []
+        for error in errors:
+            lines.append(f"ERROR [{{error.get('category') or 'error'}}]: {{error.get('message') or 'command failed'}}")
+            details = error.get("details") or {{}}
+            if isinstance(details, dict):
+                for key, value in details.items():
+                    _append_plain(lines, f"details.{{key}}", value)
+        return "\\n".join(lines) + "\\n"
+    lines = [f"command: {{payload.get('command', 'unknown')}}", "ok: true"]
+    data = payload.get("data") or {{}}
+    message = data.get("message") if isinstance(data, dict) else None
+    if isinstance(message, str) and message.strip():
+        lines.insert(0, message)
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if key == "message":
+                continue
+            _append_plain(lines, key, value)
+    elif data:
+        _append_plain(lines, "data", data)
+    return "\\n".join(lines) + "\\n"
+
+
+def _print_payload(payload, json_output=False):
+    sys.stdout.write(_render_payload(payload, json_output=json_output))
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    json_output = _json_output(argv)
     if len(argv) >= 3 and argv[0] == "config" and argv[1] == "set-server":
         _save_server_url(argv[2])
-        print(json.dumps(_success("config set-server", {{
+        _print_payload(_success("config set-server", {{
             "server_url": argv[2],
             "config_path": str(_config_path()),
-        }}), ensure_ascii=False))
+        }}), json_output=json_output)
         return 0
-    if argv == ["config", "show"]:
-        print(json.dumps(_success("config show", {{
+    if argv[:2] == ["config", "show"] and all(item == "--json" for item in argv[2:]):
+        _print_payload(_success("config show", {{
             "server_url": _load_server_url(),
             "config_path": str(_config_path()),
-        }}), ensure_ascii=False))
+        }}), json_output=json_output)
         return 0
 
     server_url = None
@@ -95,7 +171,7 @@ def main(argv=None):
     argv = cleaned
     server_url = server_url or os.environ.get("NEODEV_API_URL") or _load_server_url()
     if not server_url:
-        print(json.dumps(_error("remote server is not configured; run: neodev config set-server <url>"), ensure_ascii=False))
+        _print_payload(_error("remote server is not configured; run: neodev config set-server <url>"), json_output=json_output)
         return 2
 
     endpoint = server_url.rstrip("/") + "/api/cli/execute"
@@ -112,7 +188,7 @@ def main(argv=None):
         print(exc.read().decode("utf-8", errors="replace"))
         return 10
     except OSError as exc:
-        print(json.dumps({{
+        _print_payload({{
             "ok": False,
             "command": "remote cli execute",
             "timestamp": None,
@@ -122,15 +198,10 @@ def main(argv=None):
                 "message": "remote CLI request failed",
                 "details": {{"server_url": server_url, "error": str(exc)}},
             }}],
-        }}, ensure_ascii=False))
+        }}, json_output=json_output)
         return 10
     payload = body.get("payload", body)
-    if isinstance(payload, dict) and payload.get("command") == "help":
-        text = (payload.get("data") or {{}}).get("text")
-        if isinstance(text, str):
-            print(text, end="" if text.endswith("\\n") else "\\n")
-            return int(body.get("exit_code", 0))
-    print(json.dumps(payload, ensure_ascii=False))
+    _print_payload(payload, json_output=json_output)
     return int(body.get("exit_code", 0))
 
 
@@ -145,6 +216,7 @@ def install_client(argv: list[str]) -> tuple[int, dict]:
     parser.add_argument("--bin-dir")
     parser.add_argument("--config-dir")
     parser.add_argument("--no-path-update", action="store_true")
+    parser.add_argument("--json", action="store_true", dest="json_output")
     args = parser.parse_args(argv)
 
     bin_dir = Path(args.bin_dir).expanduser() if args.bin_dir else _default_bin_dir()
