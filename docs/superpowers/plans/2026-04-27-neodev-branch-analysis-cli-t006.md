@@ -52,6 +52,20 @@ pytest tests/test_cli_contract.py tests/test_branch_analysis_service_unit.py -v
 
 说明：本机 PostgreSQL 当前未启动，`tests/test_branch_analysis_service.py` 属于 PG 集成测试，单独运行时会按现有 fixture 跳过。
 
+## 远程冒烟
+
+已将本切片热更新到远程 `neodev-api` 容器，并基于新建的产品版本分支绑定执行 CLI 冒烟：
+
+- 产品：`NEODEV-T006-1777253800`
+- 产品版本 ID：`3`
+- 项目 ID：`3`
+- 分支：`neodev-sp`
+- `product version analyze-status` 初始返回 `not_started`
+- `product version analyze --force` 返回 `completed`
+- 再次 `product version analyze-status` 返回 `completed`
+
+说明：该远程冒烟使用临时项目路径 `/tmp/neodev-t006-project-1777253800`，不是有效 Git 仓库；底层 `preprocess` 日志记录了图谱同步阶段的无效仓库路径，但 CLI 编排、作用域校验、状态写入与状态查询链路已完成验证。
+
 ## 后续范围
 
 本切片暂未实现 T006 的完整任务主表和事件流，后续继续推进：
