@@ -1,0 +1,20 @@
+{
+  "name": "neodev-local",
+  "interface": {
+    "displayName": "NeoDev Local"
+  },
+  "plugins": [
+    {
+      "name": "neodev-rd-knowledge",
+      "source": {
+        "source": "local",
+        "path": "./plugins/neodev-rd-knowledge"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

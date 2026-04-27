@@ -1,0 +1,83 @@
+{
+  "product": {
+    "code": "NEODEV-DEMO",
+    "name": "NeoDev Demo Product",
+    "version": "V1.0"
+  },
+  "plugin": "neodev-rd-knowledge",
+  "skill": "neodev-rd-knowledge",
+  "doc_repository": {
+    "path": "doc-repo",
+    "required_directories": [
+      "prd",
+      "prototype",
+      "tech-design"
+    ]
+  },
+  "project_branches": [
+    {
+      "project_id": 1,
+      "repository": "project-repo",
+      "branch": "main",
+      "purpose": "baseline product branch"
+    },
+    {
+      "project_id": 1,
+      "repository": "project-repo",
+      "branch": "feature/docchange-demo",
+      "purpose": "implementation branch for the sample DocChange"
+    }
+  ],
+  "demo_steps": [
+    {
+      "id": "check_version",
+      "type": "cli",
+      "command": "python neodev.py cli version-check --json"
+    },
+    {
+      "id": "create_product",
+      "type": "cli",
+      "command": "python neodev.py product create --product-code NEODEV-DEMO --name \"NeoDev Demo Product\" --json"
+    },
+    {
+      "id": "create_version",
+      "type": "cli",
+      "command": "python neodev.py product version create --product-code NEODEV-DEMO --version-name V1.0 --json"
+    },
+    {
+      "id": "bind_main_branch",
+      "type": "cli",
+      "command": "python neodev.py product version bind-branch --product-code NEODEV-DEMO --version-name V1.0 --project-id 1 --branch main --json"
+    },
+    {
+      "id": "bind_feature_branch",
+      "type": "cli",
+      "command": "python neodev.py product version bind-branch --product-code NEODEV-DEMO --version-name V1.0 --project-id 1 --branch feature/docchange-demo --json"
+    },
+    {
+      "id": "scan_docs",
+      "type": "cli",
+      "command": "python neodev.py doc scan --product-code NEODEV-DEMO --version-name V1.0 --root examples/neodev-rd-knowledge/doc-repo --json"
+    },
+    {
+      "id": "register_doc_change",
+      "type": "cli",
+      "command": "python neodev.py doc change register --document-id <document_id> --doc-change-id DC-NEODEV-DEMO-001 --json"
+    },
+    {
+      "id": "impact",
+      "type": "cli",
+      "command": "python neodev.py graph impact --doc-change-id DC-NEODEV-DEMO-001 --json"
+    },
+    {
+      "id": "verify_commit",
+      "type": "cli",
+      "command": "python neodev.py git verify-doc-change --project-id 1 --branch feature/docchange-demo --commit-sha <commit_sha> --commit-message \"feat: update demo service\\n\\nDocChange-ID: DC-NEODEV-DEMO-001\" --json"
+    },
+    {
+      "id": "post_push_refresh",
+      "type": "cli",
+      "command": "python neodev.py git post-push-refresh --project-id 1 --branch feature/docchange-demo --commit-sha <commit_sha> --json"
+    }
+  ]
+}

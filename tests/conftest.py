@@ -104,8 +104,14 @@ def db_connection():
 
 @pytest.fixture
 def pg_conn(db_connection):
-    """Alias for db_connection; use for tests that need a connection."""
-    yield db_connection
+    """Fresh PG connection per test; the session connection only bootstraps migrations."""
+    conn = _connect_postgres("PG-backed test")
+    try:
+        yield conn
+    finally:
+        if not conn.closed:
+            conn.rollback()
+        conn.close()
 
 
 @pytest.fixture(scope="session")

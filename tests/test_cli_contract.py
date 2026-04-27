@@ -129,8 +129,8 @@ def test_root_entrypoint_returns_version_check_json():
     assert isinstance(payload["timestamp"], str)
     assert isinstance(payload["data"], dict)
     assert payload["data"]["cli_version"]
-    assert "plugin_version" in payload["data"]
-    assert "skill_version" in payload["data"]
+    assert payload["data"]["plugin_version"] == "0.1.0"
+    assert payload["data"]["skill_version"] == "0.1.0"
     assert payload["data"]["compatible"] is True
     assert payload["data"]["update_available"] is False
     assert payload["data"]["target_version"]

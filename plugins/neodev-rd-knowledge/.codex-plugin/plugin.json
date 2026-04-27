@@ -1,0 +1,38 @@
+{
+  "name": "neodev-rd-knowledge",
+  "version": "0.1.0",
+  "description": "Official NeoDev research and development knowledge workflow plugin.",
+  "author": {
+    "name": "NeoDev",
+    "email": "neodev@example.invalid",
+    "url": "https://example.invalid/neodev"
+  },
+  "homepage": "https://example.invalid/neodev/rd-knowledge",
+  "repository": "https://example.invalid/neodev",
+  "license": "Proprietary",
+  "keywords": [
+    "neodev",
+    "rd-knowledge",
+    "docchange",
+    "graph",
+    "git"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "NeoDev RD Knowledge",
+    "shortDescription": "Guide NeoDev CLI workflows for docs, graph context, and Git checks.",
+    "longDescription": "Official workflow layer for NeoDev RD knowledge operations. It guides agents through version checks, DocChange registration, graph impact analysis, branch analysis, pre-push verification, and post-push refresh while keeping all state changes inside the NeoDev CLI.",
+    "developerName": "NeoDev",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Workflow",
+      "CLI orchestration"
+    ],
+    "defaultPrompt": [
+      "Use NeoDev to analyze this DocChange.",
+      "Run NeoDev graph context for this version.",
+      "Check my commit with NeoDev before push."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "version": "0.1.0",
+  "contract": "NeoDev CLI is the only execution and state mutation boundary. The plugin and bundled skill only guide command order, parameter completion, risk prompts, and result interpretation.",
+  "workflows": {
+    "session_version_check": {
+      "goal": "Check CLI compatibility before high-risk or state-changing workflows.",
+      "steps": [
+        {
+          "id": "check_cli_contract",
+          "type": "cli",
+          "command": "python neodev.py cli version-check --json",
+          "expects": [
+            "data.compatible=true"
+          ]
+        }
+      ]
+    },
+    "doc_change_to_implementation": {
+      "goal": "Register a controlled document change and gather implementation context.",
+      "steps": [
+        {
+          "id": "check_cli_contract",
+          "type": "cli",
+          "command": "python neodev.py cli version-check --json"
+        },
+        {
+          "id": "register_doc_change",
+          "type": "cli",
+          "command": "python neodev.py doc change register --document-id <document_id> --json"
+        },
+        {
+          "id": "estimate_impact",
+          "type": "cli",
+          "command": "python neodev.py graph impact --doc-change-id <doc_change_id> --json"
+        },
+        {
+          "id": "search_version_context",
+          "type": "cli",
+          "command": "python neodev.py graph semantic-search --product-code <product_code> --version-name <version_name> --query <query> --json"
+        },
+        {
+          "id": "read_entity_context",
+          "type": "cli",
+          "command": "python neodev.py graph entity-context --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --entity-id <entity_id> --json"
+        },
+        {
+          "id": "read_chain_context",
+          "type": "cli",
+          "command": "python neodev.py graph get-chain --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --start-node <node_id> --json"
+        }
+      ]
+    },
+    "branch_analysis": {
+      "goal": "Start product version branch analysis and read progress using stable CLI status commands.",
+      "steps": [
+        {
+          "id": "check_cli_contract",
+          "type": "cli",
+          "command": "python neodev.py cli version-check --json"
+        },
+        {
+          "id": "start_analysis",
+          "type": "cli",
+          "command": "python neodev.py product version analyze --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
+        },
+        {
+          "id": "read_status",
+          "type": "cli",
+          "command": "python neodev.py product version analyze-status --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
+        },
+        {
+          "id": "watch_status_once",
+          "type": "cli",
+          "command": "python neodev.py product version watch-status --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
+        }
+      ]
+    },
+    "pre_push_verification": {
+      "goal": "Verify the commit is tied to exactly one DocChange and handle pending risk records before push.",
+      "steps": [
+        {
+          "id": "check_cli_contract",
+          "type": "cli",
+          "command": "python neodev.py cli version-check --json"
+        },
+        {
+          "id": "verify_doc_change",
+          "type": "cli",
+          "command": "python neodev.py git verify-doc-change --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --commit-message <commit_message> --json"
+        },
+        {
+          "id": "list_open_risks",
+          "type": "cli",
+          "command": "python neodev.py git dangerous-commit list --project-id <project_id> --json"
+        },
+        {
+          "id": "resolve_risk_after_review",
+          "type": "cli",
+          "command": "python neodev.py git dangerous-commit resolve --record-id <record_id> --resolved-by <user> --json"
+        }
+      ]
+    },
+    "post_push_refresh": {
+      "goal": "Refresh affected graph nodes after a successful push.",
+      "steps": [
+        {
+          "id": "check_cli_contract",
+          "type": "cli",
+          "command": "python neodev.py cli version-check --json"
+        },
+        {
+          "id": "refresh_after_push",
+          "type": "cli",
+          "command": "python neodev.py git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
+        },
+        {
+          "id": "refresh_specific_nodes_when_needed",
+          "type": "cli",
+          "command": "python neodev.py graph refresh-nodes --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
+        },
+        {
+          "id": "inspect_chain_when_needed",
+          "type": "cli",
+          "command": "python neodev.py graph get-chain --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
+        }
+      ]
+    }
+  }
+}
