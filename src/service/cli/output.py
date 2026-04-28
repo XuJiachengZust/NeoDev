@@ -86,6 +86,8 @@ def _render_error(payload: dict) -> str:
 
 
 def _append_plain(lines: list[str], key: str, value, indent: int = 0) -> None:
+    if key == "init_result":
+        return
     prefix = "  " * indent
     if isinstance(value, dict):
         if not value:

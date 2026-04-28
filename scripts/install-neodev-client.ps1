@@ -82,6 +82,8 @@ def _plain_scalar(value):
 
 
 def _append_plain(lines, key, value, indent=0):
+    if key == "init_result":
+        return
     prefix = "  " * indent
     if isinstance(value, dict):
         if not value:

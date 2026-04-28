@@ -209,6 +209,8 @@ def test_cli_main_follows_project_init_progress_in_text_mode(monkeypatch, capsys
     assert calls[1][1] == ["project", "init-status", "--project-id", "42", "--json"]
     assert calls[2][1] == ["project", "init-status", "--project-id", "42", "--json"]
     output = capsys.readouterr().out
+    assert "init_result:" not in output
+    assert "status: queued" not in output
     assert "[project 42] repository_clone 0/5 (running)" in output
     assert "[project 42] completed 5/5 (completed)" in output
 
