@@ -1,10 +1,23 @@
-"""Project service: orchestration only (Phase 3)."""
+"""Project service orchestration."""
+
+from __future__ import annotations
 
 import logging
+import threading
 
+from service.repositories import ai_preprocess_status_repository as status_repo
 from service.repositories import project_repository as repo
 
 logger = logging.getLogger(__name__)
+
+INIT_BRANCH = "__project_init__"
+INIT_STEPS = [
+    ("repository_clone", "拉取仓库"),
+    ("branch_discovery", "检测分支"),
+    ("default_version", "创建默认版本"),
+    ("graph_sync", "同步提交并构建图谱"),
+    ("completed", "完成"),
+]
 
 
 def list_projects(conn) -> list[dict]:
@@ -19,56 +32,207 @@ def find_projects_by_name(conn, name: str) -> list[dict]:
     return repo.find_by_name(conn, name)
 
 
+def _key_nodes(current_stage: str, done: int) -> list[dict]:
+    nodes = []
+    for index, (stage, label) in enumerate(INIT_STEPS, start=1):
+        if index <= done:
+            status = "completed"
+        elif stage == current_stage:
+            status = "running"
+        else:
+            status = "pending"
+        nodes.append({"stage": stage, "label": label, "status": status})
+    return nodes
+
+
+def _progress(stage: str, done: int, detail: str | None = None) -> dict:
+    payload = {
+        "stage": stage,
+        "done": done,
+        "total": len(INIT_STEPS),
+        "key_nodes": _key_nodes(stage, done),
+    }
+    if detail:
+        payload["detail"] = detail
+    return payload
+
+
+def _ensure_init_running(conn, project_id: int) -> None:
+    rows = status_repo.get_status(conn, project_id, INIT_BRANCH)
+    if rows and rows[0].get("status") == "running":
+        return
+    status_repo.set_running(conn, project_id, INIT_BRANCH)
+    conn.commit()
+
+
+def _update_init_progress(conn, project_id: int, stage: str, done: int, detail: str | None = None) -> None:
+    _ensure_init_running(conn, project_id)
+    status_repo.update_progress(conn, project_id, INIT_BRANCH, _progress(stage, done, detail))
+    conn.commit()
+
+
+def _complete_init(conn, project_id: int, result: dict) -> None:
+    result["status"] = "completed"
+    progress = _progress("completed", len(INIT_STEPS), "图谱构建完成")
+    status_repo.set_completed(
+        conn,
+        project_id,
+        INIT_BRANCH,
+        extra={"progress": progress, "key_nodes": progress["key_nodes"], "init_result": result},
+    )
+    conn.commit()
+
+
+def _fail_init(conn, project_id: int, result: dict, error: str) -> None:
+    result["status"] = "failed"
+    result["error"] = error
+    progress = _progress("failed", 0, error)
+    status_repo.set_failed(
+        conn,
+        project_id,
+        INIT_BRANCH,
+        error_message=error,
+        extra={"progress": progress, "key_nodes": progress["key_nodes"], "init_result": result},
+    )
+    conn.commit()
+
+
+def _queued_init_result(project_id: int) -> dict:
+    progress = _progress("queued", 0, "项目已登记，后台图谱构建已排队")
+    return {
+        "status": "queued",
+        "mode": "background",
+        "task_branch": INIT_BRANCH,
+        "default_branch": None,
+        "version_id": None,
+        "sync": None,
+        "error": None,
+        "progress": progress,
+        "key_nodes": progress["key_nodes"],
+        "status_command": f"neodev project init-status --project-id {project_id}",
+    }
+
+
+def get_init_status(conn, project_id: int) -> dict | None:
+    project = get_project(conn, project_id)
+    if not project:
+        return None
+    rows = status_repo.get_status(conn, project_id, INIT_BRANCH)
+    if not rows:
+        progress = _progress("not_started", 0, "尚未触发图谱构建")
+        return {
+            "project": project,
+            "init_status": {
+                "status": "not_started",
+                "progress": progress,
+                "key_nodes": progress["key_nodes"],
+                "error_message": None,
+            },
+        }
+    row = rows[0]
+    extra = row.get("extra") or {}
+    progress = extra.get("progress") or _progress(row.get("status") or "unknown", 0)
+    return {
+        "project": project,
+        "init_status": {
+            "status": row.get("status"),
+            "progress": progress,
+            "key_nodes": extra.get("key_nodes") or progress.get("key_nodes") or [],
+            "started_at": row.get("started_at"),
+            "updated_at": row.get("updated_at"),
+            "finished_at": row.get("finished_at"),
+            "error_message": row.get("error_message"),
+            "init_result": extra.get("init_result"),
+        },
+    }
+
+
 def _init_repo_and_sync(conn, project: dict) -> dict:
-    """创建项目后自动：克隆/解析仓库 → 获取默认分支 → 创建版本 → 同步提交+构建图。
-    返回 init_result dict，不会抛出异常。"""
+    """Clone/fetch a project repo, create a default version, and sync graph data."""
     from service import git_ops
     from service.repositories import branch_repository as branch_repo
     from service.services import sync_service, version_service
 
     project_id = project["id"]
-    result = {"default_branch": None, "version_id": None, "sync": None, "error": None}
+    result = {
+        "status": "running",
+        "default_branch": None,
+        "version_id": None,
+        "sync": None,
+        "error": None,
+    }
 
     try:
+        _update_init_progress(conn, project_id, "repository_clone", 0, "正在拉取仓库")
         local_root = sync_service._resolve_local_repo(project, project_id)
         git_ops.fetch_repo(local_root)
-    except Exception as e:
-        logger.warning("project_id=%s: 初始化仓库失败: %s", project_id, e)
-        result["error"] = f"仓库拉取失败: {e}"
+    except Exception as exc:
+        logger.warning("project_id=%s: repository init failed: %s", project_id, exc)
+        _fail_init(conn, project_id, result, f"仓库拉取失败: {exc}")
         return result
 
-    # 持久化分支列表
+    _update_init_progress(conn, project_id, "branch_discovery", 1, "仓库拉取完成，正在检测分支")
     try:
         live_branches = git_ops.get_branches(local_root)
         if live_branches:
             branch_repo.upsert_many(conn, project_id, live_branches)
-    except Exception as e:
-        logger.warning("project_id=%s: 同步分支列表失败: %s", project_id, e)
+            conn.commit()
+    except Exception as exc:
+        logger.warning("project_id=%s: branch list sync failed: %s", project_id, exc)
 
-    # 获取默认分支
     default_branch = git_ops.get_default_branch(local_root)
     if not default_branch:
-        result["error"] = "无法检测默认分支"
+        _fail_init(conn, project_id, result, "无法检测默认分支")
         return result
     result["default_branch"] = default_branch
+    _update_init_progress(conn, project_id, "default_version", 2, f"默认分支: {default_branch}")
 
-    # 创建默认版本
     version, err = version_service.create_version(conn, project_id, default_branch)
     if err or not version:
-        result["error"] = f"创建默认版本失败: {err}"
+        _fail_init(conn, project_id, result, f"创建默认版本失败: {err}")
         return result
     conn.commit()
     result["version_id"] = version["id"]
+    _update_init_progress(conn, project_id, "graph_sync", 3, f"默认版本 ID: {version['id']}")
 
-    # 同步提交并构建图
     try:
-        sync_result = sync_service.sync_commits_for_version(conn, project_id, version["id"])
-        result["sync"] = sync_result
-    except Exception as e:
-        logger.warning("project_id=%s: 同步提交/构建图失败: %s", project_id, e)
-        result["error"] = f"同步提交失败: {e}"
+        result["sync"] = sync_service.sync_commits_for_version(conn, project_id, version["id"])
+    except Exception as exc:
+        logger.warning("project_id=%s: commit sync / graph build failed: %s", project_id, exc)
+        _fail_init(conn, project_id, result, f"同步提交失败: {exc}")
+        return result
 
+    _complete_init(conn, project_id, result)
     return result
+
+
+def _run_background_init(project_id: int) -> None:
+    import psycopg2
+
+    from service.dependencies import get_database_url
+
+    conn = psycopg2.connect(get_database_url())
+    try:
+        project = get_project(conn, project_id)
+        if not project:
+            logger.warning("project_id=%s: background init skipped, project not found", project_id)
+            return
+        _init_repo_and_sync(conn, project)
+    except Exception:
+        conn.rollback()
+        logger.exception("project_id=%s: background init failed", project_id)
+    finally:
+        conn.close()
+
+
+def _start_background_init(project_id: int) -> None:
+    thread = threading.Thread(
+        target=_run_background_init,
+        args=(project_id,),
+        name=f"neodev-project-init-{project_id}",
+        daemon=True,
+    )
+    thread.start()
 
 
 def create_project(
@@ -81,18 +245,34 @@ def create_project(
     repo_username: str | None = None,
     repo_password: str | None = None,
     repo_url: str | None = None,
+    async_init: bool = False,
 ) -> dict:
     project = repo.create(
-        conn, name, repo_path, watch_enabled, neo4j_database, neo4j_identifier,
-        repo_username=repo_username, repo_password=repo_password,
+        conn,
+        name,
+        repo_path,
+        watch_enabled,
+        neo4j_database,
+        neo4j_identifier,
+        repo_username=repo_username,
+        repo_password=repo_password,
         repo_url=repo_url,
     )
     conn.commit()
 
-    # 自动拉取仓库并构建图
+    if async_init:
+        init_result = _queued_init_result(project["id"])
+        project["init_result"] = init_result
+        status_repo.set_running(conn, project["id"], INIT_BRANCH)
+        status_repo.update_progress(conn, project["id"], INIT_BRANCH, init_result["progress"])
+        conn.commit()
+        _start_background_init(project["id"])
+        logger.info("project_id=%s: created, background graph build queued", project["id"])
+        return project
+
     init_result = _init_repo_and_sync(conn, project)
     project["init_result"] = init_result
-    logger.info("project_id=%s: 创建完成, init_result=%s", project["id"], init_result)
+    logger.info("project_id=%s: created, init_result=%s", project["id"], init_result)
     return project
 
 

@@ -33,6 +33,11 @@ def test_project_create_command_is_registered_for_repo_url():
     assert "--repo-url" in proc.stdout
     assert "--repo-path" in proc.stdout
 
+    status = _run_cli("project", "init-status", "--help")
+    assert status.returncode == 0
+    assert "--project-id" in status.stdout
+    assert "--project-name" in status.stdout
+
 
 def test_project_create_passes_repo_url_and_triggers_auto_graph_sync(monkeypatch):
     from service.cli.commands import project as project_command
@@ -50,9 +55,14 @@ def test_project_create_passes_repo_url_and_triggers_auto_graph_sync(monkeypatch
             "repo_path": kwargs["repo_path"],
             "repo_url": kwargs["repo_url"],
             "init_result": {
-                "default_branch": "main",
-                "version_id": 7,
-                "sync": {"graph_action": "full", "commits_synced": 3},
+                "status": "queued",
+                "mode": "background",
+                "status_command": "neodev project init-status --project-id 42",
+                "progress": {"stage": "queued", "done": 0, "total": 5},
+                "key_nodes": [{"stage": "repository_clone", "status": "pending"}],
+                "default_branch": None,
+                "version_id": None,
+                "sync": None,
                 "error": None,
             },
         }
@@ -78,5 +88,51 @@ def test_project_create_passes_repo_url_and_triggers_auto_graph_sync(monkeypatch
     assert payload["command"] == "project create"
     assert captured["repo_path"] == "https://example.invalid/repo.git"
     assert captured["repo_url"] == "https://example.invalid/repo.git"
+    assert captured["async_init"] is True
     assert payload["data"]["auto_graph_analysis"] is True
-    assert payload["data"]["project"]["init_result"]["sync"]["graph_action"] == "full"
+    assert payload["data"]["project"]["init_result"]["status"] == "queued"
+    assert payload["data"]["project"]["init_result"]["status_command"] == (
+        "neodev project init-status --project-id 42"
+    )
+
+
+def test_project_init_status_returns_process_and_key_nodes(monkeypatch):
+    from service.cli.commands import project as project_command
+
+    def fake_with_db(callback):
+        return callback(object())
+
+    monkeypatch.setattr(project_command, "_with_db", fake_with_db)
+    monkeypatch.setattr(
+        project_command.project_service,
+        "find_projects_by_name",
+        lambda conn, name: [{"id": 42, "name": name, "repo_url": "git@example/repo.git"}],
+    )
+    monkeypatch.setattr(
+        project_command.project_service,
+        "get_init_status",
+        lambda conn, project_id: {
+            "project": {"id": project_id, "name": "Manual Project"},
+            "init_status": {
+                "status": "running",
+                "progress": {"stage": "graph_sync", "done": 3, "total": 5},
+                "key_nodes": [
+                    {"stage": "repository_clone", "label": "拉取仓库", "status": "completed"},
+                    {"stage": "graph_sync", "label": "同步提交并构建图谱", "status": "running"},
+                ],
+            },
+        },
+    )
+
+    payload = project_command.handle_project_init_status(
+        argparse.Namespace(
+            command_name="project init-status",
+            project_id=None,
+            project_name="Manual Project",
+        )
+    )
+
+    assert payload["ok"] is True
+    assert payload["command"] == "project init-status"
+    assert payload["data"]["init_status"]["status"] == "running"
+    assert payload["data"]["init_status"]["key_nodes"][1]["stage"] == "graph_sync"

@@ -35,6 +35,13 @@ def register(subparsers) -> None:
     show_parser.add_argument("--json", action="store_true", dest="json_output")
     show_parser.set_defaults(handler=handle_project_show, command_name="project show")
 
+    status_parser = project_subparsers.add_parser("init-status")
+    status_locator = status_parser.add_mutually_exclusive_group(required=True)
+    status_locator.add_argument("--project-id", type=int)
+    status_locator.add_argument("--project-name")
+    status_parser.add_argument("--json", action="store_true", dest="json_output")
+    status_parser.set_defaults(handler=handle_project_init_status, command_name="project init-status")
+
 
 def _with_db(callback):
     try:
@@ -75,6 +82,7 @@ def handle_project_create(args) -> dict:
             repo_username=args.repo_username,
             repo_password=args.repo_password,
             repo_url=args.repo_url,
+            async_init=True,
         )
         return build_success_payload(
             args.command_name,
@@ -91,7 +99,22 @@ def handle_project_create(args) -> dict:
 def handle_project_show(args) -> dict:
     def run(conn):
         project = _resolve_project(conn, args)
-        return build_success_payload(args.command_name, {"project": project})
+        init_status = project_service.get_init_status(conn, project["id"])
+        return build_success_payload(
+            args.command_name,
+            {"project": project, "init_status": (init_status or {}).get("init_status")},
+        )
+
+    return _with_db(run)
+
+
+def handle_project_init_status(args) -> dict:
+    def run(conn):
+        project = _resolve_project(conn, args)
+        result = project_service.get_init_status(conn, project["id"])
+        if result is None:
+            raise CliError(category="not_found", message="project not found")
+        return build_success_payload(args.command_name, result)
 
     return _with_db(run)
 

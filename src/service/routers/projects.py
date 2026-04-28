@@ -48,6 +48,7 @@ def create_project(body: ProjectCreate, db=Depends(get_db)):
         repo_username=body.repo_username,
         repo_password=body.repo_password,
         repo_url=repo_url,
+        async_init=True,
     )
 
 
