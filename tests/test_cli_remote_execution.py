@@ -115,6 +115,140 @@ def test_cli_main_prints_plain_remote_output_without_json(monkeypatch, capsys):
     assert "remote: true" in output
 
 
+def test_cli_main_follows_project_init_progress_in_text_mode(monkeypatch, capsys):
+    from service.cli import main as cli_main
+
+    calls = []
+    responses = [
+        (
+            0,
+            {
+                "ok": True,
+                "command": "project create",
+                "timestamp": "2026-04-28T00:00:00+00:00",
+                "data": {
+                    "project": {
+                        "id": 42,
+                        "name": "repo",
+                        "init_result": {"status": "queued"},
+                    },
+                    "auto_graph_analysis": True,
+                },
+                "errors": [],
+            },
+        ),
+        (
+            0,
+            {
+                "ok": True,
+                "command": "project init-status",
+                "timestamp": "2026-04-28T00:00:01+00:00",
+                "data": {
+                    "init_status": {
+                        "status": "running",
+                        "progress": {
+                            "stage": "repository_clone",
+                            "done": 0,
+                            "total": 5,
+                            "detail": "正在拉取仓库",
+                        },
+                        "key_nodes": [
+                            {"stage": "repository_clone", "label": "拉取仓库", "status": "running"}
+                        ],
+                    }
+                },
+                "errors": [],
+            },
+        ),
+        (
+            0,
+            {
+                "ok": True,
+                "command": "project init-status",
+                "timestamp": "2026-04-28T00:00:02+00:00",
+                "data": {
+                    "init_status": {
+                        "status": "completed",
+                        "progress": {
+                            "stage": "completed",
+                            "done": 5,
+                            "total": 5,
+                            "detail": "图谱构建完成",
+                        },
+                        "key_nodes": [
+                            {"stage": "completed", "label": "完成", "status": "completed"}
+                        ],
+                    }
+                },
+                "errors": [],
+            },
+        ),
+    ]
+
+    def fake_execute_remote(server_url, argv):
+        calls.append((server_url, argv))
+        return responses.pop(0)
+
+    monkeypatch.setattr(cli_main, "execute_remote", fake_execute_remote)
+    monkeypatch.setattr(cli_main.time, "sleep", lambda seconds: None)
+
+    rc = cli_main.main(
+        [
+            "--server",
+            "http://10.50.3.149",
+            "project",
+            "create",
+            "--name",
+            "repo",
+            "--repo-url",
+            "git@example/repo.git",
+        ]
+    )
+
+    assert rc == 0
+    assert calls[1][1] == ["project", "init-status", "--project-id", "42", "--json"]
+    assert calls[2][1] == ["project", "init-status", "--project-id", "42", "--json"]
+    output = capsys.readouterr().out
+    assert "[project 42] repository_clone 0/5 (running)" in output
+    assert "[project 42] completed 5/5 (completed)" in output
+
+
+def test_cli_main_does_not_follow_project_init_in_json_mode(monkeypatch, capsys):
+    from service.cli import main as cli_main
+
+    calls = []
+
+    def fake_execute_remote(server_url, argv):
+        calls.append(argv)
+        return 0, {
+            "ok": True,
+            "command": "project create",
+            "timestamp": "2026-04-28T00:00:00+00:00",
+            "data": {"project": {"id": 42, "init_result": {"status": "queued"}}},
+            "errors": [],
+        }
+
+    monkeypatch.setattr(cli_main, "execute_remote", fake_execute_remote)
+
+    rc = cli_main.main(
+        [
+            "--server",
+            "http://10.50.3.149",
+            "project",
+            "create",
+            "--name",
+            "repo",
+            "--repo-url",
+            "git@example/repo.git",
+            "--json",
+        ]
+    )
+
+    assert rc == 0
+    assert len(calls) == 1
+    assert json.loads(capsys.readouterr().out)["command"] == "project create"
+
+
 def test_cli_execute_api_reuses_existing_cli_contract():
     from service.main import app
 
@@ -196,6 +330,7 @@ def test_install_client_command_writes_terminal_wrapper(capsys):
         install_dir / "neodev_client.py"
     ).read_text(encoding="utf-8")
     assert "_render_payload" in (install_dir / "neodev_client.py").read_text(encoding="utf-8")
+    assert "_follow_project_init" in (install_dir / "neodev_client.py").read_text(encoding="utf-8")
 
 
 def test_install_client_command_defaults_to_plain_text(capsys):

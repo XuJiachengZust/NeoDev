@@ -89,6 +89,7 @@ def test_project_create_passes_repo_url_and_triggers_auto_graph_sync(monkeypatch
     assert captured["repo_path"] == "https://example.invalid/repo.git"
     assert captured["repo_url"] == "https://example.invalid/repo.git"
     assert captured["async_init"] is True
+    assert captured["overwrite_existing"] is True
     assert payload["data"]["auto_graph_analysis"] is True
     assert payload["data"]["project"]["init_result"]["status"] == "queued"
     assert payload["data"]["project"]["init_result"]["status_command"] == (
@@ -136,3 +137,26 @@ def test_project_init_status_returns_process_and_key_nodes(monkeypatch):
     assert payload["command"] == "project init-status"
     assert payload["data"]["init_status"]["status"] == "running"
     assert payload["data"]["init_status"]["key_nodes"][1]["stage"] == "graph_sync"
+
+
+def test_project_name_locator_selects_latest_duplicate(monkeypatch):
+    from service.cli.commands import project as project_command
+
+    matches = [
+        {"id": 195, "name": "duplicate", "repo_url": "git@example/old.git"},
+        {"id": 196, "name": "duplicate", "repo_url": "git@example/new.git"},
+    ]
+    monkeypatch.setattr(
+        project_command.project_service,
+        "find_projects_by_name",
+        lambda conn, name: matches,
+    )
+
+    selected = project_command._resolve_project(
+        object(),
+        argparse.Namespace(project_id=None, project_name="duplicate"),
+    )
+
+    assert selected["id"] == 196
+    assert selected["_duplicate_project_ids"] == [195]
+    assert selected["_selected_by_name"] == "duplicate"

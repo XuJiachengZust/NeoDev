@@ -83,6 +83,7 @@ def handle_project_create(args) -> dict:
             repo_password=args.repo_password,
             repo_url=args.repo_url,
             async_init=True,
+            overwrite_existing=True,
         )
         return build_success_payload(
             args.command_name,
@@ -129,9 +130,8 @@ def _resolve_project(conn, args) -> dict:
     if not matches:
         raise CliError(category="not_found", message="project not found")
     if len(matches) > 1:
-        raise CliError(
-            category="conflict",
-            message="project name is ambiguous",
-            details={"project_name": args.project_name, "matches": [row["id"] for row in matches]},
-        )
+        selected = max(matches, key=lambda row: row["id"])
+        selected["_duplicate_project_ids"] = [row["id"] for row in matches if row["id"] != selected["id"]]
+        selected["_selected_by_name"] = args.project_name
+        return selected
     return matches[0]

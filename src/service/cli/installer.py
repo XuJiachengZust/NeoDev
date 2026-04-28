@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -136,6 +137,71 @@ def _print_payload(payload, json_output=False):
     sys.stdout.write(_render_payload(payload, json_output=json_output))
 
 
+def _execute_remote(server_url, argv):
+    endpoint = server_url.rstrip("/") + "/api/cli/execute"
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps({{"argv": argv}}).encode("utf-8"),
+        headers={{"Content-Type": "application/json"}},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=300) as response:
+        body = json.loads(response.read().decode("utf-8"))
+    return int(body.get("exit_code", 0)), body.get("payload", body)
+
+
+def _should_follow_project_init(payload):
+    if not isinstance(payload, dict) or payload.get("command") != "project create" or not payload.get("ok"):
+        return False
+    project = (payload.get("data") or {{}}).get("project") or {{}}
+    init_result = project.get("init_result") or {{}}
+    return bool(project.get("id")) and init_result.get("status") in {{"queued", "running"}}
+
+
+def _format_project_init_event(payload, project_id):
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return _render_payload(payload), ("error", str(payload.get("errors") if isinstance(payload, dict) else payload))
+    init_status = (payload.get("data") or {{}}).get("init_status") or {{}}
+    progress = init_status.get("progress") or {{}}
+    status = init_status.get("status") or "unknown"
+    stage = progress.get("stage") or status
+    done = progress.get("done")
+    total = progress.get("total")
+    detail = progress.get("detail") or init_status.get("error_message") or ""
+    state = (status, stage, done, total, detail)
+    prefix = f"[project {{project_id}}] {{stage}}"
+    if done is not None and total is not None:
+        prefix += f" {{done}}/{{total}}"
+    if status:
+        prefix += f" ({{status}})"
+    lines = [prefix]
+    if detail:
+        lines.append(f"  {{detail}}")
+    for node in init_status.get("key_nodes") or []:
+        lines.append(f"  {{node.get('label') or node.get('stage')}}: {{node.get('status')}}")
+    return "\\n".join(lines) + "\\n", state
+
+
+def _follow_project_init(server_url, create_payload):
+    project = create_payload["data"]["project"]
+    project_id = project["id"]
+    seen_state = None
+    while True:
+        time.sleep(2)
+        exit_code, payload = _execute_remote(
+            server_url,
+            ["project", "init-status", "--project-id", str(project_id), "--json"],
+        )
+        text, state = _format_project_init_event(payload, project_id)
+        if state != seen_state and text:
+            sys.stdout.write(text)
+            sys.stdout.flush()
+            seen_state = state
+        status = (((payload.get("data") or {{}}).get("init_status") or {{}}).get("status")) if isinstance(payload, dict) else None
+        if exit_code != 0 or status in {{"completed", "failed"}}:
+            return exit_code
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     json_output = _json_output(argv)
@@ -174,16 +240,8 @@ def main(argv=None):
         _print_payload(_error("remote server is not configured; run: neodev config set-server <url>"), json_output=json_output)
         return 2
 
-    endpoint = server_url.rstrip("/") + "/api/cli/execute"
-    request = urllib.request.Request(
-        endpoint,
-        data=json.dumps({{"argv": argv}}).encode("utf-8"),
-        headers={{"Content-Type": "application/json"}},
-        method="POST",
-    )
     try:
-        with urllib.request.urlopen(request, timeout=300) as response:
-            body = json.loads(response.read().decode("utf-8"))
+        exit_code, payload = _execute_remote(server_url, argv)
     except urllib.error.HTTPError as exc:
         print(exc.read().decode("utf-8", errors="replace"))
         return 10
@@ -200,9 +258,10 @@ def main(argv=None):
             }}],
         }}, json_output=json_output)
         return 10
-    payload = body.get("payload", body)
     _print_payload(payload, json_output=json_output)
-    return int(body.get("exit_code", 0))
+    if not json_output and _should_follow_project_init(payload):
+        return _follow_project_init(server_url, payload)
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 
 from service.cli.config import handle_config, load_server_url
 from service.cli.executor import JsonArgumentParser, build_parser, execute_local
@@ -46,7 +47,60 @@ def main(argv: list[str] | None = None) -> int:
     else:
         exit_code, payload = execute_local(local_argv)
     print(render_payload(payload, json_output=json_output), end="")
+    if server_url and not json_output and _should_follow_project_init(payload):
+        return _follow_project_init(server_url, payload)
     return exit_code
+
+
+def _should_follow_project_init(payload: dict) -> bool:
+    if payload.get("command") != "project create" or not payload.get("ok"):
+        return False
+    project = (payload.get("data") or {}).get("project") or {}
+    init_result = project.get("init_result") or {}
+    return bool(project.get("id")) and init_result.get("status") in {"queued", "running"}
+
+
+def _follow_project_init(server_url: str, create_payload: dict) -> int:
+    project = create_payload["data"]["project"]
+    project_id = project["id"]
+    seen_state: tuple | None = None
+    while True:
+        time.sleep(2)
+        exit_code, payload = execute_remote(
+            server_url,
+            ["project", "init-status", "--project-id", str(project_id), "--json"],
+        )
+        text, state = _format_project_init_event(payload, project_id)
+        if state != seen_state and text:
+            print(text, end="")
+            seen_state = state
+        status = (((payload.get("data") or {}).get("init_status") or {}).get("status"))
+        if exit_code != 0 or status in {"completed", "failed"}:
+            return exit_code
+
+
+def _format_project_init_event(payload: dict, project_id: int) -> tuple[str, tuple]:
+    if not payload.get("ok"):
+        return render_payload(payload), ("error", str(payload.get("errors")))
+    init_status = (payload.get("data") or {}).get("init_status") or {}
+    progress = init_status.get("progress") or {}
+    status = init_status.get("status") or "unknown"
+    stage = progress.get("stage") or status
+    done = progress.get("done")
+    total = progress.get("total")
+    detail = progress.get("detail") or init_status.get("error_message") or ""
+    state = (status, stage, done, total, detail)
+    prefix = f"[project {project_id}] {stage}"
+    if done is not None and total is not None:
+        prefix += f" {done}/{total}"
+    if status:
+        prefix += f" ({status})"
+    lines = [prefix]
+    if detail:
+        lines.append(f"  {detail}")
+    for node in init_status.get("key_nodes") or []:
+        lines.append(f"  - {node.get('label') or node.get('stage')}: {node.get('status')}")
+    return "\n".join(lines) + "\n", state
 
 
 if __name__ == "__main__":

@@ -246,18 +246,39 @@ def create_project(
     repo_password: str | None = None,
     repo_url: str | None = None,
     async_init: bool = False,
+    overwrite_existing: bool = False,
 ) -> dict:
-    project = repo.create(
-        conn,
-        name,
-        repo_path,
-        watch_enabled,
-        neo4j_database,
-        neo4j_identifier,
-        repo_username=repo_username,
-        repo_password=repo_password,
-        repo_url=repo_url,
-    )
+    matches = find_projects_by_name(conn, name) if overwrite_existing else []
+    if matches:
+        selected = max(matches, key=lambda row: row["id"])
+        project = repo.update(
+            conn,
+            selected["id"],
+            name=name,
+            repo_path=repo_path,
+            repo_url=repo_url,
+            watch_enabled=watch_enabled,
+            neo4j_database=neo4j_database,
+            neo4j_identifier=neo4j_identifier,
+            repo_username=repo_username,
+            repo_password=repo_password,
+        )
+        project["overwritten"] = True
+        project["duplicate_project_ids"] = [row["id"] for row in matches if row["id"] != selected["id"]]
+    else:
+        project = repo.create(
+            conn,
+            name,
+            repo_path,
+            watch_enabled,
+            neo4j_database,
+            neo4j_identifier,
+            repo_username=repo_username,
+            repo_password=repo_password,
+            repo_url=repo_url,
+        )
+        project["overwritten"] = False
+        project["duplicate_project_ids"] = []
     conn.commit()
 
     if async_init:
