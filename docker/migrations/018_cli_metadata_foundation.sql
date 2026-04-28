@@ -1,6 +1,8 @@
 -- 018: CLI metadata foundation tables
 -- No backfill for legacy rows is required; this migration only defines new schema objects.
 
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS doc_bindings (
     id                  SERIAL PRIMARY KEY,
     product_id          INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -55,19 +57,66 @@ ALTER TABLE documents
     ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'active',
     ADD COLUMN IF NOT EXISTS last_seen_commit VARCHAR(40),
     ADD COLUMN IF NOT EXISTS last_scanned_at TIMESTAMPTZ,
-    ADD COLUMN IF NOT EXISTS title VARCHAR(512);
+    ADD COLUMN IF NOT EXISTS title VARCHAR(512),
+    ADD COLUMN IF NOT EXISTS body_text TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS content_hash TEXT,
+    ADD COLUMN IF NOT EXISTS graph_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    ADD COLUMN IF NOT EXISTS chunk_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 ALTER TABLE documents
     ALTER COLUMN doc_type SET DEFAULT 'markdown',
     ALTER COLUMN front_matter_json SET DEFAULT '{}'::jsonb,
     ALTER COLUMN relations_json SET DEFAULT '{}'::jsonb,
-    ALTER COLUMN status SET DEFAULT 'active';
+    ALTER COLUMN status SET DEFAULT 'active',
+    ALTER COLUMN body_text SET DEFAULT '',
+    ALTER COLUMN graph_status SET DEFAULT 'pending',
+    ALTER COLUMN chunk_status SET DEFAULT 'pending';
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_id
     ON documents(doc_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_binding_path
     ON documents(doc_binding_id, relative_path);
+
+CREATE INDEX IF NOT EXISTS idx_documents_binding_deleted
+    ON documents(doc_binding_id, deleted_at);
+
+
+CREATE TABLE IF NOT EXISTS document_chunks (
+    id                  SERIAL PRIMARY KEY,
+    document_id          INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    chunk_index          INTEGER NOT NULL,
+    heading_path         TEXT NOT NULL DEFAULT '',
+    chunk_text           TEXT NOT NULL,
+    token_count          INTEGER NOT NULL DEFAULT 0,
+    content_hash         TEXT NOT NULL,
+    split_strategy       VARCHAR(32) NOT NULL DEFAULT 'structural',
+    status               VARCHAR(32) NOT NULL DEFAULT 'active',
+    embedding            vector,
+    embedding_model      TEXT,
+    embedding_dim        INTEGER,
+    embedding_updated_at TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE document_chunks
+    ADD COLUMN IF NOT EXISTS heading_path TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS token_count INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS content_hash TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS split_strategy VARCHAR(32) NOT NULL DEFAULT 'structural',
+    ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'active',
+    ADD COLUMN IF NOT EXISTS embedding vector,
+    ADD COLUMN IF NOT EXISTS embedding_model TEXT,
+    ADD COLUMN IF NOT EXISTS embedding_dim INTEGER,
+    ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMPTZ;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_document_chunks_document_index
+    ON document_chunks(document_id, chunk_index);
+
+CREATE INDEX IF NOT EXISTS idx_document_chunks_document_status
+    ON document_chunks(document_id, status);
 
 
 CREATE TABLE IF NOT EXISTS document_scan_errors (

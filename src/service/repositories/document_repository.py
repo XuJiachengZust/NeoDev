@@ -8,7 +8,8 @@ from psycopg2.extras import RealDictCursor
 
 _COLUMNS = (
     "id, doc_binding_id, doc_id, relative_path, doc_type, front_matter_json, "
-    "relations_json, status, last_seen_commit, last_scanned_at, title, created_at, updated_at"
+    "relations_json, status, last_seen_commit, last_scanned_at, title, body_text, "
+    "content_hash, graph_status, chunk_status, deleted_at, created_at, updated_at"
 )
 
 
@@ -24,14 +25,19 @@ def create(
     last_seen_commit: str | None = None,
     last_scanned_at: datetime | None = None,
     title: str | None = None,
+    body_text: str = "",
+    content_hash: str | None = None,
+    graph_status: str = "pending",
+    chunk_status: str = "pending",
 ) -> dict:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""INSERT INTO documents (
                  doc_binding_id, doc_id, relative_path, doc_type, front_matter_json,
-                 relations_json, status, last_seen_commit, last_scanned_at, title
+                 relations_json, status, last_seen_commit, last_scanned_at, title,
+                 body_text, content_hash, graph_status, chunk_status
              )
-             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
              RETURNING {_COLUMNS}""",
             (
                 doc_binding_id,
@@ -44,6 +50,10 @@ def create(
                 last_seen_commit,
                 last_scanned_at,
                 title,
+                body_text,
+                content_hash,
+                graph_status,
+                chunk_status,
             ),
         )
         return dict(cur.fetchone())
@@ -61,14 +71,19 @@ def upsert(
     last_seen_commit: str | None = None,
     last_scanned_at: datetime | None = None,
     title: str | None = None,
+    body_text: str = "",
+    content_hash: str | None = None,
+    graph_status: str = "pending",
+    chunk_status: str = "pending",
 ) -> dict:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""INSERT INTO documents (
                  doc_binding_id, doc_id, relative_path, doc_type, front_matter_json,
-                 relations_json, status, last_seen_commit, last_scanned_at, title
+                 relations_json, status, last_seen_commit, last_scanned_at, title,
+                 body_text, content_hash, graph_status, chunk_status, deleted_at
              )
-             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL)
              ON CONFLICT (doc_binding_id, relative_path)
              DO UPDATE SET
                  doc_id = EXCLUDED.doc_id,
@@ -79,6 +94,11 @@ def upsert(
                  last_seen_commit = EXCLUDED.last_seen_commit,
                  last_scanned_at = EXCLUDED.last_scanned_at,
                  title = EXCLUDED.title,
+                 body_text = EXCLUDED.body_text,
+                 content_hash = EXCLUDED.content_hash,
+                 graph_status = EXCLUDED.graph_status,
+                 chunk_status = EXCLUDED.chunk_status,
+                 deleted_at = NULL,
                  updated_at = now()
              RETURNING {_COLUMNS}""",
             (
@@ -92,6 +112,10 @@ def upsert(
                 last_seen_commit,
                 last_scanned_at,
                 title,
+                body_text,
+                content_hash,
+                graph_status,
+                chunk_status,
             ),
         )
         return dict(cur.fetchone())
@@ -125,5 +149,23 @@ def list_by_binding(conn, doc_binding_id: int) -> list[dict]:
              WHERE doc_binding_id = %s
              ORDER BY id DESC""",
             (doc_binding_id,),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def mark_missing_deleted(conn, doc_binding_id: int, active_paths: list[str]) -> list[dict]:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""UPDATE documents
+             SET deleted_at = now(),
+                 status = 'deprecated',
+                 graph_status = 'deleted',
+                 chunk_status = 'deleted',
+                 updated_at = now()
+             WHERE doc_binding_id = %s
+               AND deleted_at IS NULL
+               AND NOT (relative_path = ANY(%s))
+             RETURNING {_COLUMNS}""",
+            (doc_binding_id, active_paths),
         )
         return [dict(row) for row in cur.fetchall()]

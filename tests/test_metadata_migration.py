@@ -23,6 +23,25 @@ REQUIRED_COLUMNS = {
         "last_seen_commit",
         "last_scanned_at",
         "title",
+        "body_text",
+        "content_hash",
+        "graph_status",
+        "chunk_status",
+        "deleted_at",
+    },
+    "document_chunks": {
+        "document_id",
+        "chunk_index",
+        "heading_path",
+        "chunk_text",
+        "token_count",
+        "content_hash",
+        "split_strategy",
+        "status",
+        "embedding",
+        "embedding_model",
+        "embedding_dim",
+        "embedding_updated_at",
     },
     "document_scan_errors": {
         "doc_binding_id",
@@ -72,6 +91,15 @@ EXPECTED_DEFAULT_TOKENS = {
         "front_matter_json": ["{}", "jsonb"],
         "relations_json": ["{}", "jsonb"],
         "status": ["'active'"],
+        "body_text": ["''"],
+        "graph_status": ["'pending'"],
+        "chunk_status": ["'pending'"],
+    },
+    "document_chunks": {
+        "heading_path": ["''"],
+        "token_count": ["0"],
+        "split_strategy": ["'structural'"],
+        "status": ["'active'"],
     },
     "doc_changes": {
         "details_json": ["{}", "jsonb"],
@@ -105,6 +133,7 @@ def test_cli_metadata_tables_exist(metadata_migration_pg_conn, metadata_migratio
                    to_regclass(%s) IS NOT NULL,
                    to_regclass(%s) IS NOT NULL,
                    to_regclass(%s) IS NOT NULL,
+                   to_regclass(%s) IS NOT NULL,
                    to_regclass(%s) IS NOT NULL
             """,
             (
@@ -114,10 +143,11 @@ def test_cli_metadata_tables_exist(metadata_migration_pg_conn, metadata_migratio
                 f"{metadata_migration_schema_name}.doc_changes",
                 f"{metadata_migration_schema_name}.code_change_links",
                 f"{metadata_migration_schema_name}.dangerous_commit_records",
+                f"{metadata_migration_schema_name}.document_chunks",
             ),
         )
         row = cur.fetchone()
-    assert row == (True, True, True, True, True, True)
+    assert row == (True, True, True, True, True, True, True)
 
 
 def test_doc_changes_has_unique_doc_change_id(metadata_migration_pg_conn, metadata_migration_schema_name):
@@ -178,7 +208,8 @@ def test_required_columns_exist(metadata_migration_pg_conn, metadata_migration_s
                 'document_scan_errors',
                 'doc_changes',
                 'code_change_links',
-                'dangerous_commit_records'
+                'dangerous_commit_records',
+                'document_chunks'
               )
             """,
             (metadata_migration_schema_name,),
@@ -209,7 +240,8 @@ def test_metadata_key_indexes_and_constraints_exist(metadata_migration_pg_conn, 
                 'document_scan_errors',
                 'doc_changes',
                 'code_change_links',
-                'dangerous_commit_records'
+                'dangerous_commit_records',
+                'document_chunks'
               )
             """,
             (metadata_migration_schema_name,),
@@ -254,6 +286,8 @@ def test_metadata_key_indexes_and_constraints_exist(metadata_migration_pg_conn, 
     assert "(doc_binding_id, created_at)" in index_map[
         "idx_document_scan_errors_binding_created"
     ]
+    assert "uq_document_chunks_document_index" in index_map
+    assert "(document_id, chunk_index)" in index_map["uq_document_chunks_document_index"]
     assert "idx_code_change_links_project_branch_sha" in index_map
     assert "(project_id, branch, commit_sha)" in index_map["idx_code_change_links_project_branch_sha"]
     assert "idx_code_change_links_doc_change_id" in index_map

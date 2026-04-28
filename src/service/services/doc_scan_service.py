@@ -12,7 +12,7 @@ from service.services.doc_validation_service import DocumentValidationError
 from service.services.doc_validation_service import validate_front_matter
 
 
-CONTROLLED_DIRECTORIES = {"prd", "prototype", "tech-design"}
+CONTROLLED_DIRECTORIES = {"prd", "prototype", "tech-design", "docs"}
 
 
 def scan_binding(conn, doc_binding_id: int) -> dict:

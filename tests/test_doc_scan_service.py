@@ -362,3 +362,38 @@ relations:
 
     assert result["registered_count"] == 1
     assert result["error_count"] == 0
+
+
+def test_doc_scan_includes_docs_directory(metadata_db_case):
+    doc_repo = _make_doc_repo()
+    try:
+        token = uuid.uuid4().hex[:8]
+        product_code = f"DOCDIR-{token}"
+        product_id = _create_product(metadata_db_case, product_code)
+        binding = doc_binding_repository.create(
+            metadata_db_case,
+            product_id=product_id,
+            repo_path=str(doc_repo),
+        )
+        _write_doc(
+            doc_repo / "docs" / "guide.md",
+            f"""
+doc_id: DOC-DIR-{token}
+title: Docs Guide
+{_obsidian_properties("Docs Guide")}
+doc_type: tech-design
+product_key: {product_code}
+status: active
+relations:
+  target:
+    - PROJECT-{token}
+""".strip(),
+        )
+
+        result = doc_scan_service.scan_binding(metadata_db_case, binding["id"])
+
+        assert result["registered_count"] == 1
+        assert result["error_count"] == 0
+        assert result["documents"][0]["relative_path"] == "docs/guide.md"
+    finally:
+        shutil.rmtree(doc_repo, ignore_errors=True)

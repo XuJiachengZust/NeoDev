@@ -13,7 +13,7 @@ from typing import Any
 import yaml
 
 
-CONTROLLED_DIRECTORIES = {"prd", "prototype", "tech-design"}
+CONTROLLED_DIRECTORIES = {"prd", "prototype", "tech-design", "docs"}
 REQUIRED_FIELDS = {
     "aliases",
     "created",
@@ -42,7 +42,7 @@ def validate_paths(paths: list[Path]) -> dict[str, Any]:
 
 
 def _iter_markdown_files(paths: list[Path]):
-    roots = paths or [Path("prd"), Path("prototype"), Path("tech-design")]
+    roots = paths or [Path("prd"), Path("prototype"), Path("tech-design"), Path("docs")]
     seen: set[Path] = set()
     for root in roots:
         if not root.exists():

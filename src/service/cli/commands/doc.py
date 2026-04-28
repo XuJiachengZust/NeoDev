@@ -7,6 +7,7 @@ from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
 from service.repositories import doc_binding_repository
 from service.services import doc_change_service
+from service.services import doc_import_service
 from service.services import doc_scan_service
 
 
@@ -18,6 +19,12 @@ def register(subparsers) -> None:
     scan_parser.add_argument("--doc-binding-id", type=int, required=True)
     scan_parser.add_argument("--json", action="store_true", dest="json_output")
     scan_parser.set_defaults(handler=handle_doc_scan, command_name="doc scan")
+
+    import_parser = doc_subparsers.add_parser("import")
+    import_parser.add_argument("--doc-binding-id", type=int, required=True)
+    import_parser.add_argument("--force", action="store_true")
+    import_parser.add_argument("--json", action="store_true", dest="json_output")
+    import_parser.set_defaults(handler=handle_doc_import, command_name="doc import")
 
     change_parser = doc_subparsers.add_parser("change")
     change_subparsers = change_parser.add_subparsers(dest="change_command", required=True)
@@ -62,6 +69,21 @@ def handle_doc_scan(args) -> dict:
         if not binding:
             raise CliError(category="not_found", message="doc binding not found")
         result = doc_scan_service.scan_binding(conn, args.doc_binding_id)
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
+
+
+def handle_doc_import(args) -> dict:
+    def run(conn):
+        binding = doc_binding_repository.find_by_id(conn, args.doc_binding_id)
+        if not binding:
+            raise CliError(category="not_found", message="doc binding not found")
+        result = doc_import_service.import_binding(
+            conn,
+            args.doc_binding_id,
+            force=args.force,
+        )
         return build_success_payload(args.command_name, result)
 
     return _with_db(run)

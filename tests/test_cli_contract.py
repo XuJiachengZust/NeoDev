@@ -208,6 +208,13 @@ def test_doc_change_commands_are_registered():
     assert "--doc-change-id" in implemented.stdout
 
 
+def test_doc_import_command_is_registered():
+    proc = _run("neodev.py", "doc", "import", "--help")
+    assert proc.returncode == 0
+    assert "--doc-binding-id" in proc.stdout
+    assert "--force" in proc.stdout
+
+
 def test_git_verify_doc_change_command_is_registered():
     proc = _run("neodev.py", "git", "verify-doc-change", "--help")
     assert proc.returncode == 0
