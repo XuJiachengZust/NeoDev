@@ -151,6 +151,7 @@ def _init_repo_and_sync(conn, project: dict) -> dict:
     """Clone/fetch a project repo, create a default version, and sync graph data."""
     from service import git_ops
     from service.repositories import branch_repository as branch_repo
+    from service.repositories import version_repository as version_repo
     from service.services import sync_service, version_service
 
     project_id = project["id"]
@@ -187,7 +188,15 @@ def _init_repo_and_sync(conn, project: dict) -> dict:
     result["default_branch"] = default_branch
     _update_init_progress(conn, project_id, "default_version", 2, f"默认分支: {default_branch}")
 
-    version, err = version_service.create_version(conn, project_id, default_branch)
+    version = version_repo.find_by_project_and_branch(conn, project_id, default_branch)
+    err = None
+    if not version:
+        version, err = version_service.create_version(conn, project_id, default_branch)
+    if err:
+        conn.rollback()
+        if err == "duplicate_branch":
+            version = version_repo.find_by_project_and_branch(conn, project_id, default_branch)
+            err = None if version else err
     if err or not version:
         _fail_init(conn, project_id, result, f"创建默认版本失败: {err}")
         return result
