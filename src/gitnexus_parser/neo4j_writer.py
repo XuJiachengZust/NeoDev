@@ -1,13 +1,14 @@
 """Neo4j write: ensure constraints, MERGE nodes and relationships in batches."""
 
 from typing import Any
+from typing import get_args
 
-# Labels we create unique constraint on (main structural and code element types)
-CONSTRAINT_LABELS = [
-    "File", "Folder", "Project", "Package", "Module",
-    "Class", "Function", "Method", "Variable", "Interface", "Enum",
-    "Struct", "Namespace", "Trait", "Impl", "Community", "Process",
-]
+from gitnexus_parser.graph.types import NodeLabel
+
+
+# Labels we create unique constraints on. Keep this tied to the declared graph
+# schema so newly supported parser labels cannot silently miss id uniqueness.
+CONSTRAINT_LABELS = list(get_args(NodeLabel))
 
 
 def ensure_constraints(driver, database: str | None = None) -> None:
@@ -47,47 +48,67 @@ def write_graph(
         nodes = list(graph.iterNodes())
         for i in range(0, len(nodes), batch_size):
             batch = nodes[i : i + batch_size]
-            def work(tx):
-                nonlocal nodes_written
-                for n in batch:
-                    label = n["label"]
+            for label, label_batch in _group_by(batch, "label").items():
+                rows = []
+                for n in label_batch:
                     props = _props_for_neo4j(n.get("properties", {}))
                     props["id"] = n["id"]
                     props["project_id"] = project_id
-                    tx.run(
-                        f"MERGE (n:{label} {{id: $id}}) SET n += $props",
-                        id=n["id"],
-                        props=props,
-                    )
-                    nodes_written += 1
+                    rows.append({"id": n["id"], "props": props})
 
-            session.execute_write(work)
+                def work(tx, *, node_label=label, node_rows=rows):
+                    nonlocal nodes_written
+                    tx.run(
+                        f"""
+                        UNWIND $nodes AS row
+                        MERGE (n:{node_label} {{id: row.id}})
+                        SET n += row.props
+                        """,
+                        nodes=node_rows,
+                    )
+                    nodes_written += len(node_rows)
+
+                session.execute_write(work)
 
         relationships = list(graph.iterRelationships())
         for i in range(0, len(relationships), rel_batch_size):
             batch = relationships[i : i + rel_batch_size]
-            def work_rel(tx):
-                nonlocal rels_written
-                for r in batch:
-                    rel_type = r["type"]
-                    rid = r.get("id") or f"{r['sourceId']}-{r['targetId']}"
+            for rel_type, rel_batch in _group_by(batch, "type").items():
+                rows = [
+                    {
+                        "id": r.get("id") or f"{r['sourceId']}-{r['targetId']}",
+                        "sourceId": r["sourceId"],
+                        "targetId": r["targetId"],
+                        "confidence": r.get("confidence", 1.0),
+                        "reason": r.get("reason", ""),
+                    }
+                    for r in rel_batch
+                ]
+
+                def work_rel(tx, *, relationship_type=rel_type, rel_rows=rows):
+                    nonlocal rels_written
                     result = tx.run(
                         f"""
-                        MATCH (a {{id: $sourceId}})
-                        MATCH (b {{id: $targetId}})
-                        MERGE (a)-[r:{rel_type} {{id: $relId}}]->(b)
-                        SET r.confidence = $confidence, r.reason = $reason
-                        RETURN 1 AS written
+                        UNWIND $rels AS rel
+                        MATCH (a {{id: rel.sourceId}})
+                        MATCH (b {{id: rel.targetId}})
+                        MERGE (a)-[r:{relationship_type} {{id: rel.id}}]->(b)
+                        SET r.confidence = rel.confidence,
+                            r.reason = rel.reason
+                        RETURN count(r) AS written
                         """,
-                        sourceId=r["sourceId"],
-                        targetId=r["targetId"],
-                        relId=rid,
-                        confidence=r.get("confidence", 1.0),
-                        reason=r.get("reason", ""),
+                        rels=rel_rows,
                     )
-                    if result.single():
-                        rels_written += 1
+                    row = result.single()
+                    rels_written += int(row["written"] if row else 0)
 
-            session.execute_write(work_rel)
+                session.execute_write(work_rel)
 
     return nodes_written, rels_written
+
+
+def _group_by(items: list[dict[str, Any]], key: str) -> dict[str, list[dict[str, Any]]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        groups.setdefault(str(item[key]), []).append(item)
+    return groups

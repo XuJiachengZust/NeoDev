@@ -1,9 +1,14 @@
 from gitnexus_parser.neo4j_writer import ensure_constraints, write_graph
+from gitnexus_parser.graph.types import NodeLabel
+from typing import get_args
 
 
 class FakeResult:
+    def __init__(self, written=1):
+        self.written = written
+
     def single(self):
-        return {"written": 1}
+        return {"written": self.written}
 
 
 class FakeTx:
@@ -12,6 +17,8 @@ class FakeTx:
 
     def run(self, query, **params):
         self.calls.append({"query": query, "params": params})
+        if "rels" in params:
+            return FakeResult(len(params["rels"]))
         return FakeResult()
 
 
@@ -91,6 +98,19 @@ def test_constraints_use_id_only_not_branch_key():
     assert all("n.branch" not in query for query in queries)
 
 
+def test_constraints_cover_all_declared_node_labels():
+    driver = FakeDriver()
+
+    ensure_constraints(driver)
+
+    queries = [call["query"] for call in driver.sessions[0].calls]
+    constrained_labels = {
+        query.split("FOR (n:", 1)[1].split(")", 1)[0]
+        for query in queries
+    }
+    assert set(get_args(NodeLabel)).issubset(constrained_labels)
+
+
 def test_write_graph_merges_repository_fact_nodes_without_branch_identity():
     driver = FakeDriver()
 
@@ -106,10 +126,12 @@ def test_write_graph_merges_repository_fact_nodes_without_branch_identity():
     rel_query = tx_calls[2]["query"]
     assert nodes == 2
     assert rels == 1
-    assert "MERGE (n:File {id: $id})" in node_query
+    assert "UNWIND $nodes AS row" in node_query
+    assert "MERGE (n:File {id: row.id})" in node_query
     assert "branch: $branch" not in node_query
     assert "{id: $sourceId, branch: $branch}" not in rel_query
-    assert "MATCH (a {id: $sourceId})" in rel_query
+    assert "UNWIND $rels AS rel" in rel_query
+    assert "MATCH (a {id: rel.sourceId})" in rel_query
 
 
 def test_write_graph_preserves_existing_doc_code_relationships():
