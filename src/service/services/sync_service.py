@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from gitnexus_parser.ingestion.repo_resolve import ensure_repo_from_url, resolve_repo_root
+from gitnexus_parser.ingestion.incremental import get_changed_paths
 
 from service import git_ops
 from service.path_allowlist import ensure_path_allowed
@@ -16,6 +17,7 @@ from service.repositories import version_repository as version_repo
 from service.services import version_service
 
 logger = logging.getLogger(__name__)
+DEFAULT_COMMIT_REFRESH_MAX_CHANGED_FILES = 50
 
 
 def _git_checkout(repo_path: str, branch: str) -> str | None:
@@ -63,6 +65,60 @@ def _git_checkout(repo_path: str, branch: str) -> str | None:
         return previous
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return None
+
+
+def _get_commit_parent(repo_path: str, commit_sha: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", f"{commit_sha}^"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    if result.returncode != 0:
+        return None
+    parent = (result.stdout or "").strip()
+    return parent[:40] if parent else None
+
+
+def _restore_checkout(repo_path: str, previous_branch: str | None, current_branch: str) -> None:
+    if not previous_branch or previous_branch == current_branch:
+        return
+    try:
+        subprocess.run(
+            ["git", "checkout", previous_branch],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+
+def _load_graph_config() -> dict:
+    config = {}
+    try:
+        from gitnexus_parser import load_config
+
+        config = load_config()
+        if not config.get("neo4j_uri"):
+            for path in _default_config_paths():
+                try:
+                    config = load_config(path)
+                    if config.get("neo4j_uri"):
+                        logger.info("Loaded Neo4j config from %s", path)
+                        break
+                except Exception as e:
+                    logger.debug("load_config(%s) failed: %s", path, e)
+    except Exception as e:
+        logger.debug("load_config failed: %s", e)
+    return config
 
 
 def _default_config_paths() -> list[Path]:
@@ -158,24 +214,13 @@ def sync_commits_for_version(conn, project_id: int, version_id: int) -> dict | N
         "branch": branch,
         "commits_synced": commits_synced,
         "graph_action": None,
+        "head_commit": None,
+        "current_snapshot_id": None,
+        "snapshot_entry_count": 0,
         "graph_errors": [],
     }
 
-    config = {}
-    try:
-        from gitnexus_parser import load_config
-        config = load_config()
-        if not config.get("neo4j_uri"):
-            for path in _default_config_paths():
-                try:
-                    config = load_config(path)
-                    if config.get("neo4j_uri"):
-                        logger.info("Loaded Neo4j config from %s", path)
-                        break
-                except Exception as e:
-                    logger.debug("load_config(%s) failed: %s", path, e)
-    except Exception as e:
-        logger.debug("load_config failed: %s", e)
+    config = _load_graph_config()
 
     if not config.get("neo4j_uri"):
         logger.info("project_id=%s version_id=%s: no neo4j_uri, skipping graph pipeline", project_id, version_id)
@@ -184,6 +229,7 @@ def sync_commits_for_version(conn, project_id: int, version_id: int) -> dict | N
     head = git_ops.get_head_commit(local_root, branch)
     if not head:
         return result
+    result["head_commit"] = head
 
     last = version.get("last_parsed_commit")
     incremental = bool(last)
@@ -210,6 +256,19 @@ def sync_commits_for_version(conn, project_id: int, version_id: int) -> dict | N
             since_commit=since_commit,
         )
         version_repo.update_last_parsed_commit(conn, version_id, head)
+        from service.services import branch_snapshot_service
+
+        snapshot = branch_snapshot_service.create_snapshot_from_repo(
+            conn,
+            repo_path=local_root,
+            project_id=project_id,
+            branch=branch,
+            head_commit=head,
+            last_parsed_commit=head,
+            created_from_action=result["graph_action"],
+        )
+        result["current_snapshot_id"] = snapshot.get("id")
+        result["snapshot_entry_count"] = int(snapshot.get("entry_count") or 0)
         conn.commit()
         logger.info(
             "project_id=%s version_id=%s: graph %s done, last_parsed_commit=%s",
@@ -230,6 +289,145 @@ def sync_commits_for_version(conn, project_id: int, version_id: int) -> dict | N
                 )
             except Exception:
                 pass
+
+    return result
+
+
+def sync_commit_graph_for_version(
+    conn,
+    project_id: int,
+    version_id: int,
+    commit_sha: str,
+    *,
+    max_changed_files: int = DEFAULT_COMMIT_REFRESH_MAX_CHANGED_FILES,
+) -> dict | None:
+    """
+    Refresh graph facts for one pushed commit. Small commits use incremental parsing from
+    parent..commit; large or unsafe ranges fall back to the existing branch refresh.
+    """
+    project = project_repo.find_by_id(conn, project_id)
+    if not project:
+        return None
+    version = version_repo.find_by_id(conn, version_id)
+    if not version or version.get("project_id") != project_id:
+        return None
+    branch = (version.get("branch") or "").strip()
+    if not branch:
+        return None
+
+    normalized_commit = (commit_sha or "").strip()[:40]
+    if not normalized_commit:
+        return None
+
+    local_root = _resolve_local_repo(project, project_id)
+    git_ops.fetch_repo(local_root)
+    commits = git_ops.list_commits(local_root, branch=branch)
+    commits_synced = commit_repo.upsert_commits(conn, project_id, version_id, commits) if commits else 0
+    conn.commit()
+
+    previous_branch = _git_checkout(local_root, branch)
+    branch_head = git_ops.get_head_commit(local_root, branch)
+    if not branch_head or branch_head[:40] != normalized_commit:
+        _restore_checkout(local_root, previous_branch, branch)
+        result = sync_commits_for_version(conn, project_id, version_id)
+        if result is None:
+            return None
+        result.update(
+            {
+                "fallback": True,
+                "fallback_reason": "commit_is_not_branch_head",
+                "requested_commit": normalized_commit,
+            }
+        )
+        return result
+
+    parent = _get_commit_parent(local_root, normalized_commit)
+    if not parent:
+        _restore_checkout(local_root, previous_branch, branch)
+        result = sync_commits_for_version(conn, project_id, version_id)
+        if result is None:
+            return None
+        result.update(
+            {
+                "fallback": True,
+                "fallback_reason": "commit_parent_not_found",
+                "requested_commit": normalized_commit,
+            }
+        )
+        return result
+
+    changed_paths = get_changed_paths(local_root, parent, normalized_commit)
+    if len(changed_paths) > max_changed_files:
+        _restore_checkout(local_root, previous_branch, branch)
+        result = sync_commits_for_version(conn, project_id, version_id)
+        if result is None:
+            return None
+        result.update(
+            {
+                "fallback": True,
+                "fallback_reason": "changed_files_exceeded_threshold",
+                "requested_commit": normalized_commit,
+                "changed_file_count": len(changed_paths),
+                "max_changed_files": max_changed_files,
+            }
+        )
+        return result
+
+    result = {
+        "project_id": project_id,
+        "version_id": version_id,
+        "branch": branch,
+        "commit_sha": normalized_commit,
+        "commits_synced": commits_synced,
+        "graph_action": "commit_incremental",
+        "fallback": False,
+        "changed_paths": changed_paths,
+        "changed_file_count": len(changed_paths),
+        "max_changed_files": max_changed_files,
+        "head_commit": branch_head,
+        "current_snapshot_id": None,
+        "snapshot_entry_count": 0,
+        "graph_errors": [],
+    }
+
+    config = _load_graph_config()
+    if not config.get("neo4j_uri"):
+        _restore_checkout(local_root, previous_branch, branch)
+        return result
+
+    try:
+        from gitnexus_parser.ingestion.pipeline import run_pipeline
+
+        run_pipeline(
+            local_root,
+            config=config,
+            branch=branch,
+            project_id=project_id,
+            write_neo4j=True,
+            incremental=True,
+            since_commit=parent,
+            target_commit=normalized_commit,
+        )
+        version_repo.update_last_parsed_commit(conn, version_id, normalized_commit)
+        from service.services import branch_snapshot_service
+
+        snapshot = branch_snapshot_service.create_snapshot_from_repo(
+            conn,
+            repo_path=local_root,
+            project_id=project_id,
+            branch=branch,
+            head_commit=normalized_commit,
+            last_parsed_commit=normalized_commit,
+            created_from_action="commit_incremental",
+        )
+        result["current_snapshot_id"] = snapshot.get("id")
+        result["snapshot_entry_count"] = int(snapshot.get("entry_count") or 0)
+        conn.commit()
+    except Exception as e:
+        logger.exception("project_id=%s version_id=%s: commit graph refresh failed: %s", project_id, version_id, e)
+        result["graph_errors"].append(str(e))
+    finally:
+        _restore_checkout(local_root, previous_branch, branch)
 
     return result
 

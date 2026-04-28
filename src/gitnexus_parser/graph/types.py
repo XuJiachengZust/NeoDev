@@ -20,10 +20,13 @@ RelationshipType = Literal[
 
 
 class NodeProperties(TypedDict, total=False):
-    branch: str
     project_id: Optional[int]
+    repo_id: Optional[int]
     name: str
     filePath: str
+    file_content_hash: Optional[str]
+    content_hash: Optional[str]
+    fact_key: Optional[str]
     sourceCode: Optional[str]
     content: Optional[str]
     startLine: int

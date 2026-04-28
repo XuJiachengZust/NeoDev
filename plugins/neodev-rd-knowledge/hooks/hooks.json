@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo \"After push, run neodev git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json\""
+            "command": "echo \"After push, run neodev project refresh-commit-graph --project-id <project_id> --version-id <version_id> --branch <branch> --commit-sha <commit_sha> --json\""
           }
         ]
       }

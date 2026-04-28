@@ -1,14 +1,14 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-T008-T010-GRAPH-REFRESH-SEMANTIC-SEARCH-AND-CHAIN-QUERY-TASK-LIST
-title: "T008-T010 图谱刷新、语义检索与链路查询任务清单"
+title: "T008-T010 图谱查询、文档语义检索与链路查询任务清单"
 aliases:
-  - "T008-T010 图谱刷新、语义检索与链路查询任务清单"
+  - "T008-T010 图谱查询、文档语义检索与链路查询任务清单"
 tags:
   - neodev/docs
   - neodev/tech-design
   - neodev/requirements
 created: 2026-04-27
-updated: 2026-04-27
+updated: 2026-04-28
 doc_type: tech-design
 product_key: NEODEV
 status: active
@@ -18,382 +18,150 @@ relations:
 related:
   - "[[01-master-prd]]"
 ---
-# T008-T010 图谱刷新、语义检索与链路查询任务清单
+
+# T008-T010 图谱查询、文档语义检索与链路查询任务清单
 
 ## 1. 目标
 
 本清单合并细化以下三项任务：
 
-- `T008 节点 结构化描述刷新与向量化`
-- `T009 产品版本下语义检索`
-- `T010 节点刷新与链路获取 CLI`
+- `T008 仓库结构图谱事实索引`
+- `T009 产品版本下文档语义检索`
+- `T010 图谱上下文与链路查询 CLI`
 
 重点解决的问题：
 
-- 把现有节点 图谱构建能力从“全量预处理副产物”升级为“可单独触发、可复用、可观测”的图谱服务能力
-- 把语义检索限定在 `ProductVersion` 作用域内，而不是做无边界全局搜索
-- 把链路获取、实体上下文、影响分析统一收口到 CLI，不让插件 / skill 直接碰图库
-- 允许用快照和内容复用换取更稳定、更可维护的查询行为，但不把查询结果缓存和预聚合作为 MVP 主路径
+- 代码图谱只保存仓库级结构事实，不再生成代码节点 AI 摘要、embedding 或语义状态。
+- `graph semantic-search` 只检索产品版本作用域内的文档分块。
+- `graph impact`、`graph entity-context` 和 `graph get-chain` 输出结构化图谱事实，插件 / skill 不直接访问图数据库。
+- 分支查询通过 `branch_snapshot` 限定当前可见节点，再进入仓库事实图遍历。
 
 ## 2. 现状基础
 
-当前本地实现已经具备这些关键基础：
+当前实现应复用以下能力：
 
-- `src/service/services/ai_analysis_runner.py`
-  已支持节点 `description` 生成、`embedding` 写回、`content_hash` 缓存复用、向量索引创建。
-- `src/service/services/content_hash.py`
-  已支持基于节点内容和子节点结构生成稳定哈希。
-- `src/service/repositories/ai_description_cache_repository.py`
-  已支持按 `content_hash` 缓存描述和向量。
+- `src/service/services/graph_query_service.py`
 - `src/service/services/node_service.py`
-  已支持按项目版本列出图谱节点。
-- `src/service/agent_profiles.py`
-  已具备图谱搜索、Cypher 查询、链路探索的能力组织方式。
+- `src/service/services/doc_semantic_search_service.py`
+- `src/service/repositories/document_chunk_repository.py`
 - `src/service/services/llm_client.py`
-  已具备 embedding 探活和调用基础。
 
-说明：
+已删除或不再作为代码图谱主链路使用的能力：
 
-- AI 增强和向量化的底层执行已经存在
-- 缺的是稳定的产品能力抽象、作用域模型、CLI 封装和缓存策略标准化
+- 代码节点 AI 预处理
+- 代码节点结构化描述生成
+- 代码节点 embedding 写回
+- `graph refresh-nodes`
 
 ## 3. 改造原则
 
-- 图查询能力最终通过 CLI 输出结构化结果，不直接暴露内部 Cypher 给插件 / skill
-- 语义检索必须受 `ProductVersion` 约束
-- 节点刷新优先做定向刷新，不默认全量重跑
-- 允许维护查询快照和必要的复用记录，优先查询稳定性
-- AI 刷新和语义检索共享同一套 embedding / cache / status 事实，不允许各自维护一套隐式逻辑
+- 图查询能力最终通过 CLI 输出结构化结果，不直接暴露内部 Cypher 给插件 / skill。
+- 文档语义检索必须受 `ProductVersion` 约束。
+- 代码节点不参与语义检索；代码图谱查询只返回文件、符号、关系、提交和分支快照事实。
+- 推送后的图谱更新由 `project refresh-commit-graph` 承接；提交过大或无法定位时才使用 `project refresh-graph` 兜底。
+- 分支级刷新必须保留既有文档节点与代码节点关系。
 
 ## 4. 标准能力面
 
-这一组任务最终对外收口为 5 个 CLI：
+这一组任务最终对外收口为以下 CLI：
 
 - `graph impact`
 - `graph entity-context`
 - `graph semantic-search`
-- `graph refresh-nodes`
 - `graph get-chain`
+- `graph node list`
+- `graph edge list`
+- `project refresh-commit-graph`
+- `project refresh-graph`
 
 ## 5. 专项任务
 
-### GQ-01 建立统一图谱服务 facade
+### GQ-01 建立统一图谱查询服务
 
 目标：
-新增统一的图谱服务 facade，承接节点刷新、语义检索、链路查询和影响分析。
+统一影响分析、实体上下文、链路查询和分支快照裁剪逻辑。
 
 建议源码落点：
 
-- 新增 `src/service/services/graph_query_service.py`
-- 新增 `src/service/services/graph_refresh_service.py`
-- 新增 `src/service/services/semantic_search_service.py`
-- 新增 `src/service/services/chain_service.py`
+- `src/service/services/graph_query_service.py`
+- `src/service/services/node_service.py`
 - `src/service/cli/commands/graph.py`
 
-允许改造：
+验收口径：
 
-- `node_service` 可保留为低层查询工具
-- 原本散在 `agent_profiles` 中的图查询逻辑应逐步下沉到 service
+- `graph impact` 能按 `DocChange` 输出影响范围。
+- `graph entity-context` 能按项目、版本、分支和实体返回上下文。
+- `graph get-chain` 能按节点、文件、符号或提交返回链路。
+- 查询结果不包含代码节点语义字段。
+
+### GQ-02 文档语义检索服务
+
+目标：
+把语义检索限定在文档分块，不触达代码节点。
+
+建议源码落点：
+
+- `src/service/services/graph_semantic_search_service.py`
+- `src/service/services/doc_semantic_search_service.py`
+- `src/service/repositories/document_chunk_repository.py`
 
 验收口径：
 
-- CLI 不直接拼接复杂查询逻辑
-- 图相关能力有清晰的服务边界
+- `graph semantic-search` 返回文档分块结果。
+- 返回字段包含 `document_id`、`doc_id`、`chunk_id`、`heading_path`、`snippet`、`score` 和 `semantic_status`。
+- 返回字段不包含代码节点 `entity_id`、`entity_type` 或代码 `file_path`。
+- embedding 不可用时返回明确降级状态，不影响代码图谱查询。
 
-### GQ-02 节点刷新作用域模型
+### GQ-03 提交级图谱刷新入口
 
 目标：
-把节点刷新从“预处理阶段的隐式行为”升级为显式输入模型。
+把推送后的默认刷新收口到提交级入口，避免默认整图刷新。
 
-建议支持的作用域：
+建议源码落点：
 
-- `node_ids`
-- `paths`
-- `commit_sha`
-- `project_id + branch`
-
-建议输出字段：
-
-- `refresh_scope`
-- `graph_nodes_updated`
-- `index_descriptions_updated`
-- `embeddings_reused`
-- `embeddings_regenerated`
-- `status`
+- `src/service/services/sync_service.py`
+- `src/service/services/project_service.py`
+- `src/service/cli/commands/project.py`
 
 验收口径：
 
-- 用户或插件可以明确控制刷新范围
-- 返回结果能说明到底刷新了什么
-
-### GQ-03 AI 刷新执行层标准化
-
-目标：
-把 `ai_analysis_runner` 封装成可被定向调用的执行层。
-
-建议复用：
-
-- `src/service/services/ai_analysis_runner.py`
-- `src/service/services/content_hash.py`
-- `src/service/repositories/ai_description_cache_repository.py`
-
-建议改造：
-
-- 将“节点选择”和“AI 刷新执行”拆层
-- 执行层只负责：
-  - 生成 description
-  - 生成 embedding
-  - 更新缓存
-  - 写回 Neo4j
-
-验收口径：
-
-- 可以只刷新指定节点
-- 不需要每次都从全图起跑
-
-### GQ-04 `content_hash` 缓存策略标准化
-
-目标：
-把当前已有的缓存复用机制变成正式规则。
-
-建议规则：
-
-- `content_hash` 未变化时优先复用描述和 embedding
-- 仅当 hash 变化或强制刷新时重算
-- cache hit / miss / save / fail 都进入统计
-
-建议保留字段：
-
-- `content_hash`
-- `cache_hit`
-- `embedding_model`
-- `embedding_updated_at`
-- `semantic_status`
-
-验收口径：
-
-- 未变化节点不会重复生成 embedding
-- 可追踪每次刷新里命中缓存的比例
-
-### GQ-05 向量索引与检索健康状态
-
-目标：
-标准化 embedding preflight、索引状态和降级行为。
-
-建议复用：
-
-- `src/service/services/llm_client.py`
-- `src/service/services/ai_analysis_runner.py`
-
-建议规则：
-
-- embedding 接口不可用时，允许仅生成 description
-- 检索结果标记 `semantic_status=degraded` 或等价状态
-- 向量索引创建失败要留下过程记录
-
-验收口径：
-
-- embedding 故障不会让整条链路完全不可用
-- 降级状态能被 CLI 明确返回
-
-### GQ-06 产品版本作用域语义检索
-
-目标：
-把语义检索限制在产品版本映射下的项目和分支范围内。
-
-建议输入：
-
-- `product_key`
-- `product_version_id` 或 `version_name`
-- `query`
-- `top_k`
-
-建议输出：
-
-- `product_version_id`
-- `project_name`
-- `branch`
-- `entity_type`
-- `entity_id`
-- `file_path`
-- `description`
-- `score`
-- `semantic_status`
-
-验收口径：
-
-- 搜索不会跨版本串数据
-- 搜索结果结构稳定，适合插件 / skill 消费
-
-### GQ-07 检索作用域快照边界
-
-目标：
-为语义检索增加稳定性层，避免每次都即席计算所有上下文。
-
-允许设计：
-
-- 作用域快照
-- 检索前先解析 `ProductVersion -> branch_snapshot`
-- 每条结果都带上 `branch / project / product_version`
-
-前提：
-
-- 不改变图数据库为主事实源的原则
-- 不依赖结果缓存也能稳定完成版本作用域检索
-
-验收口径：
-
-- 复杂查询响应更稳定
-- 查询故障时更容易排错
-
-### GQ-08 实体上下文查询标准化
-
-目标：
-将实体上下文查询从简单节点列表升级为稳定的上下文服务。
-
-对应 CLI：
-
-- `graph entity-context`
-
-建议输出：
-
-- `entity_id`
-- `entity_type`
-- `file_path`
-- `neighbors`
-- `relations`
-- `semantic_fields`
-
-验收口径：
-
-- 插件 / skill 获取实体上下文不需要再直接调图库
-
-### GQ-09 链路查询服务标准化
-
-目标：
-把链路查询从隐式图探索能力升级为正式服务。
-
-对应 CLI：
-
-- `graph get-chain`
-
-建议输入：
-
-- `start_node`
-- `file_path`
-- `symbol`
-- `commit_sha`
-- `depth`
-
-建议输出：
-
-- `nodes`
-- `edges`
-- `path_summary`
-- `affected_commits`
-
-验收口径：
-
-- 可以从节点、文件或 commit 出发查询链路
-- 结果可直接被智能工具消费
-
-### GQ-10 非目标：链路查询缓存与预聚合
-
-目标：
-为高频链路查询提供稳定层。
-
-允许设计：
-
-- `graph get-chain` 先按 `branch_snapshot` 裁剪范围，再按需遍历仓库级事实图
-- 节点访问快照
-- 不引入链路结果缓存
-- 不引入邻接预聚合
-
-验收口径：
-
-- 高阶链路查询不会每次都完全现算
-- 后续如需优化，单独立项为 P1 性能专题
-
-### GQ-11 影响分析输出统一
-
-目标：
-统一 `graph impact` 的输出，不让不同入口给出不同字段集。
-
-固定输出：
-
-- `affected_repositories`
-- `affected_modules`
-- `affected_files`
-- `affected_symbols`
-- `evidence`
-- `confidence`
-- `risk_points`
-- `suggested_steps`
-
-验收口径：
-
-- 影响分析结果结构稳定
-- 插件 / skill 可以直接渲染或继续生成方案
-
-### GQ-12 CLI 命令与图服务映射收口
-
-目标：
-明确每个 CLI 命令对应的服务职责，避免后面继续散落实现。
+- `project refresh-commit-graph` 只刷新当前提交对应的节点和关系。
+- 当提交内容过多或提交无法定位时，返回分支级兜底刷新结果。
+- `project refresh-graph` 重新拉取项目分支并刷新整图结构事实。
+- 兜底刷新不删除既有文档节点与代码节点关系。
+
+### GQ-04 CLI 与服务职责映射
 
 对应关系：
 
 - `graph impact` -> `graph_query_service`
 - `graph entity-context` -> `graph_query_service`
-- `graph semantic-search` -> `semantic_search_service`
-- `graph refresh-nodes` -> `graph_refresh_service`
-- `graph get-chain` -> `chain_service`
+- `graph get-chain` -> `graph_query_service`
+- `graph semantic-search` -> `doc_semantic_search_service`
+- `graph node/edge/type` -> `graph_management_service`
+- `project refresh-commit-graph` -> `sync_service.sync_commit_graph_for_version`
+- `project refresh-graph` -> `sync_service.sync_commits_for_version`
 
 验收口径：
 
-- 每个命令都有唯一主服务
-- 不形成多入口重复实现
+- 每个命令都有唯一主服务。
+- 不形成多入口重复实现。
+- 节点类型和关系类型只允许来自项目内登记类型。
+- 关系允许跨项目，但关系类型所有者必须是其中一个端点项目。
 
 ## 6. 建议执行顺序
 
-1. GQ-01 建立统一图谱服务 facade
-2. GQ-02 节点刷新作用域模型
-3. GQ-03 AI 刷新执行层标准化
-4. GQ-04 `content_hash` 缓存策略标准化
-5. GQ-05 向量索引与检索健康状态
-6. GQ-06 产品版本作用域语义检索
-7. GQ-07 检索作用域快照边界
-8. GQ-08 实体上下文查询标准化
-9. GQ-09 链路查询服务标准化
-10. GQ-10 非目标：链路查询缓存与预聚合
-11. GQ-11 影响分析输出统一
-12. GQ-12 CLI 命令与图服务映射收口
+1. 收口代码节点 AI 和语义刷新能力。
+2. 建立文档分块语义检索服务。
+3. 建立图谱查询服务边界。
+4. 建立提交级图谱刷新入口。
+5. 建立手工节点、关系和类型管理 CLI。
+6. 补齐 CLI 契约、插件指引和测试。
 
 ## 7. 关键结论
 
-- 底层 AI 刷新和 embedding 能力已具备，核心缺口在服务抽象和作用域约束
-- `ProductVersion` 是语义检索和链路查询的正式边界
-- `content_hash`、缓存和快照不是可选优化，而是稳定性设计的一部分
-- 图服务能力必须下沉到 CLI 可消费的统一结构，不能继续依赖隐式 agent 能力
-
-### GQ-13 仓库主图与分支快照查询边界
-
-目标：
-统一图刷新、语义检索和链路查询对“多分支存储结构”的理解。
-
-正式口径：
-
-- 图数据库查询的主事实源是仓库级事实图
-- 分支只通过 `branch_snapshot` 限定当前可见节点
-- 查询先裁剪分支快照范围，再进入事实图遍历
-
-实现约束：
-
-- `graph semantic-search` 不直接对整仓库所有节点做无边界检索
-- `graph get-chain` 不假设每个分支都有一份独立整图
-- `graph refresh-nodes` 刷新后需要推动当前分支快照切换到新的事实节点
-
-MVP 简化：
-
-- 不把查询结果缓存和预聚合作为主路径
-- 先依赖 `branch_snapshot + content_hash` 解决范围裁剪和数据复用
-- 若旧文档中存在“查询缓存 / 预聚合”描述，与本节冲突时，以本节为准
+- 代码图谱是结构事实图，不是语义向量索引。
+- 文档语义检索保留，但只面向文档分块。
+- `ProductVersion` 是文档语义检索和图谱链路查询的正式边界。
+- `branch_snapshot` 是多分支查询的可见性边界。
+- `project refresh-commit-graph` 是推送后的默认刷新入口。

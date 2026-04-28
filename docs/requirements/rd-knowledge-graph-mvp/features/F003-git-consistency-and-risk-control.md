@@ -46,7 +46,7 @@ F003 负责在 Git 提交和推送环节维持文档与代码的一致性，并�
 
 - 提醒用户在提交前执行校验
 - 对危险提交做风险说明和继续确认
-- 在推送成功后提醒或自动编排 `git post-push-refresh`
+- 在推送成功后提醒或自动编排 `project refresh-commit-graph`
 - 解释推送后刷新结果
 
 ### 3.2 CLI 负责
@@ -73,7 +73,8 @@ F003 负责在 Git 提交和推送环节维持文档与代码的一致性，并�
 | `git verify-doc-change` | 供 pre-push / 本地工具调用进行校验 |
 | `doc change mark-implemented` | 人工确认 `implemented` |
 | `git dangerous-commit resolve` | 关闭危险提交记录 |
-| `git post-push-refresh` | 按 commit 或分支触发推送后图谱和 结构化描述刷新 |
+| `project refresh-commit-graph` | 按本次提交增量刷新对应代码节点和关系；提交过大或范围不可判定时回退到分支图刷新 |
+| `project refresh-graph` | 分支级兜底刷新；必须保留文档节点与代码节点之间已有关系 |
 
 ## 6. 业务规则
 
@@ -100,7 +101,7 @@ F003 负责在 Git 提交和推送环节维持文档与代码的一致性，并�
 6. 如遇危险场景：
    - 插件/skill 解释风险并获取二次确认
    - CLI 创建 `DangerousCommitRecord`
-7. 推送成功后执行 `git post-push-refresh`：
+7. 推送成功后执行 `project refresh-commit-graph`：
    - 同步对应分支 commits
    - 更新受影响代码节点和关系链路
    - 刷新受影响节点的 结构化描述与 embedding
@@ -135,7 +136,7 @@ F003 负责在 Git 提交和推送环节维持文档与代码的一致性，并�
 | AC-F003-01 | 代码提交包含合法 `DocChange-ID` trailer | 执行校验 | 成功解析并校验 `DocChange-ID` |
 | AC-F003-02 | 校验通过且存在合法引用 | 执行推送前校验 | 创建 `CodeChangeLink` 并将 `DocChange` 置为 `in_implementation`，后续人工确认 `implemented` |
 | AC-F003-03 | 危险提交被二次确认放行 | 继续处理 | 创建 `DangerousCommitRecord` 并在解决时记录 `resolved_by`/`resolved_at` |
-| AC-F003-04 | 推送成功且存在新增 commit | 执行 `git post-push-refresh` | 受影响代码节点、关系链路及 结构化描述被刷新 |
+| AC-F003-04 | 推送成功且存在新增 commit | 执行 `project refresh-commit-graph` | 本次提交涉及的代码节点和关系被更新；大提交或无法定位范围时回退刷新分支图，且不丢失文档节点与代码节点关系 |
 
 ## 11. 测试场景
 

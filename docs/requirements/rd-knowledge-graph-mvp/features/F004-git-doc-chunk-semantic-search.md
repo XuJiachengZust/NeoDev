@@ -1,8 +1,8 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-F004-GIT-DOC-CHUNK-SEMANTIC-SEARCH
-title: "F004 Git Document Import, Chunk Embeddings, And Chunk Search"
+title: "F004 Git 文档导入、分块向量化与文档语义检索 PRD"
 aliases:
-  - "Git Document Import, Chunk Embeddings, And Chunk Search"
+  - "F004 Git 文档导入、分块向量化与文档语义检索 PRD"
 tags:
   - neodev/docs
   - neodev/prd
@@ -19,96 +19,96 @@ related:
   - "[[01-master-prd]]"
 ---
 
-# F004 Git Document Import, Chunk Embeddings, And Chunk Search
+# F004 Git 文档导入、分块向量化与文档语义检索 PRD
 
-## 1. Scope Override
+## 1. 范围覆盖
 
-This document supersedes earlier MVP wording where conflicts exist.
+本文档在冲突处覆盖早期 MVP 表述。
 
-- Documents are imported only from the product's Git-managed document repository.
-- Direct document upload is not an MVP ingestion path.
-- Controlled document directories are `prd/`, `prototype/`, `tech-design/`, and `docs/`.
-- Neo4j stores document-level graph facts only.
-- PostgreSQL with pgvector stores document chunks and chunk embeddings.
-- Public semantic search returns document chunks, not code graph nodes.
+- 文档只从产品绑定的 Git 文档仓库导入。
+- 直接上传文档不属于 MVP 导入路径。
+- 受控文档目录为 `prd/`、`prototype/`、`tech-design/` 和 `docs/`。
+- Neo4j 只保存文档级图事实。
+- PostgreSQL 与 pgvector 保存文档分块和分块 embedding。
+- 对外语义检索只返回文档分块，不返回代码图谱节点。
 
-## 2. Document Import
+## 2. 文档导入
 
-The import command synchronizes the configured document repository before scanning.
+导入命令在扫描前同步已配置的文档仓库。
 
-Required CLI:
+必需 CLI：
 
 ```bash
 neodev.py doc import --doc-binding-id <id> --json
 ```
 
-Expected behavior:
+预期行为：
 
-- If `doc_bindings.repo_path` already exists, update it from Git.
-- If `repo_path` is missing and `repo_url` exists, clone the repository into `repo_path`.
-- Check out `doc_bindings.default_branch`.
-- Scan only Markdown files under controlled directories.
-- Validate existing YAML front matter rules.
-- Persist document metadata, body text, and content hash.
-- Mark documents missing from the current Git checkout as deleted or inactive.
+- 如果 `doc_bindings.repo_path` 已存在，则从 Git 更新。
+- 如果 `repo_path` 缺失且存在 `repo_url`，则把仓库克隆到 `repo_path`。
+- 切换到 `doc_bindings.default_branch`。
+- 只扫描受控目录下的 Markdown 文件。
+- 校验既有 YAML front matter 规则。
+- 持久化文档元数据、正文文本和内容哈希。
+- 当前 Git checkout 中缺失的文档标记为删除或非活跃。
 
-## 3. Document Graph
+## 3. 文档图谱
 
-Neo4j remains the document graph fact store.
+Neo4j 仍然是文档图事实存储。
 
-- Each controlled document maps to one `Document` node.
-- Document node identity is based on product, binding, and `doc_id`.
-- Document relationships are derived from front matter, especially `relations.target`.
-- Chunks do not become graph nodes in MVP.
+- 每个受控文档映射为一个 `Document` 节点。
+- 文档节点身份基于产品、绑定和 `doc_id`。
+- 文档关系从 front matter 派生，尤其是 `relations.target`。
+- MVP 中分块不成为图节点。
 
-## 4. Chunking
+## 4. 文档分块
 
-Chunking runs after document metadata and graph facts are updated.
+分块在文档元数据和图事实更新后执行。
 
-The chunking strategy is:
+分块策略：
 
-1. Structural chunking first.
-2. If a structural chunk is too long, split it with semantic-similarity chunking.
-3. Preserve original document order.
-4. Store chunk text, heading path, index, token estimate, content hash, and embedding status.
+1. 优先按 Markdown 结构分块。
+2. 结构分块过长时，再按语义相似度继续切分。
+3. 保留原始文档顺序。
+4. 存储分块文本、标题路径、序号、token 估算、内容哈希和 embedding 状态。
 
-Structural chunking must respect:
+结构分块必须尊重：
 
-- Markdown headings
-- paragraphs
-- lists
-- tables
-- fenced code blocks
+- Markdown 标题
+- 段落
+- 列表
+- 表格
+- fenced code block
 
-Default thresholds:
+默认阈值：
 
-- target chunk size: 800 tokens
-- maximum structural chunk size before semantic split: 1200 tokens
-- overlap: 120 tokens
+- 目标分块大小：800 token
+- 触发二次切分的最大结构分块大小：1200 token
+- 重叠窗口：120 token
 
-## 5. Vectorization
+## 5. 向量化
 
-Each chunk gets one embedding.
+每个文档分块生成一个 embedding。
 
-Embedding text includes:
+参与 embedding 的文本包括：
 
-- document title
+- 文档标题
 - `doc_id`
 - `doc_type`
 - tags
 - aliases
-- related documents
-- relation targets
-- heading path
-- chunk text
+- 相关文档
+- 关系目标
+- 标题路径
+- 分块文本
 
-If a chunk content hash is unchanged, the existing embedding is reused unless force refresh is requested.
+如果分块内容哈希未变化，除非显式强制刷新，否则复用既有 embedding。
 
-## 6. Semantic Search
+## 6. 语义检索
 
-`graph semantic-search` remains the public CLI command name, but its public result is chunk-level document search.
+`graph semantic-search` 保留为公开 CLI 命令名，但公开结果只用于文档分块检索。
 
-Required result fields:
+必需结果字段：
 
 - `product_version_id`
 - `document_id`
@@ -123,14 +123,14 @@ Required result fields:
 - `score`
 - `semantic_status`
 
-The command must not return code graph node fields such as `entity_id`, `entity_type`, or code `file_path`.
+该命令不得返回代码图谱节点字段，例如 `entity_id`、`entity_type` 或代码 `file_path`。
 
-## 7. Acceptance Criteria
+## 7. 验收标准
 
-- `docs/` Markdown files are included in document import.
-- Markdown outside controlled directories is ignored.
-- Git repository import is the only document ingestion path.
-- Neo4j contains document-level nodes and relationships.
-- PG contains document chunks and chunk embeddings.
-- Unchanged chunks do not regenerate embeddings.
-- `graph semantic-search` returns chunk results scoped to the product version.
+- `docs/` 下的 Markdown 文件会被纳入文档导入。
+- 受控目录之外的 Markdown 文件会被忽略。
+- Git 仓库导入是唯一文档导入路径。
+- Neo4j 包含文档级节点和关系。
+- PostgreSQL 包含文档分块和分块 embedding。
+- 内容未变化的分块不会重复生成 embedding。
+- `graph semantic-search` 返回产品版本作用域内的文档分块结果。

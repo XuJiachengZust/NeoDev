@@ -49,7 +49,7 @@ def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
         "doc_change_to_implementation",
         "repository_auto_graph",
         "pre_push_verification",
-        "post_push_refresh",
+        "project_refresh_commit_graph",
     }
     assert required.issubset(workflows["workflows"])
 
@@ -70,7 +70,7 @@ def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
         "git verify-doc-change",
         "git dangerous-commit list",
         "git dangerous-commit resolve",
-        "git post-push-refresh",
+        "project refresh-commit-graph",
     ]:
         assert expected in joined
     assert "product version analyze" not in joined
@@ -90,7 +90,7 @@ def test_official_plugin_hooks_check_remote_cli_environment():
 
     joined = "\n".join(hook_commands)
     assert "check_neodev_environment.py" in joined
-    assert "neodev git post-push-refresh" in joined
+    assert "neodev project refresh-commit-graph" in joined
     assert "python neodev.py" not in joined
 
 
@@ -108,7 +108,7 @@ def test_official_skill_is_bundled_and_points_to_the_shared_workflow_contract():
     assert "project create --name <project_name> --repo-url <repo_url>" in skill
     assert "product version analyze" not in skill
     assert "git verify-doc-change" in skill
-    assert "git post-push-refresh" in skill
+    assert "project refresh-commit-graph" in skill
     assert "不要直接写 PostgreSQL" in skill
     assert "不要直接写 Neo4j" in skill
     assert "## 必守边界" in skill

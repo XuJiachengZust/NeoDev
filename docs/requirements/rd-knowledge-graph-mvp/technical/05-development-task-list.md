@@ -319,55 +319,55 @@ related:
 - T007
 
 优先复用：
-- [src/service/services/ai_analysis_runner.py](/D:/PycharmProjects/NeoDev/src/service/services/ai_analysis_runner.py)
-- [src/service/repositories/ai_description_cache_repository.py](/D:/PycharmProjects/NeoDev/src/service/repositories/ai_description_cache_repository.py)
-- [src/service/services/content_hash.py](/D:/PycharmProjects/NeoDev/src/service/services/content_hash.py)
+- [src/service/services/doc_semantic_search_service.py](/D:/PycharmProjects/NeoDev/src/service/services/doc_semantic_search_service.py)
+- [src/service/repositories/document_chunk_repository.py](/D:/PycharmProjects/NeoDev/src/service/repositories/document_chunk_repository.py)
 - [src/service/services/llm_client.py](/D:/PycharmProjects/NeoDev/src/service/services/llm_client.py)
 
 建议源码落点：
 - `src/service/cli/commands/graph.py`
-- 新增 `src/service/services/graph_refresh_service.py`
+- 扩展 `src/service/services/sync_service.py`
+- 扩展 `src/service/services/project_service.py`
 
 允许改造：
-- 如果现有图谱刷新逻辑难以按节点范围复用，可拆出“节点选择”和“索引刷新执行”两层
-- 允许增加节点刷新记录、索引刷新批次记录和 embedding 缓存索引表，换取更稳定的回溯与重试
+- 代码节点不再执行 AI 摘要、embedding 或语义刷新
+- 推送后默认使用提交级图谱刷新；提交过大或无法定位时才使用分支级兜底刷新
 
 交付内容：
-- `graph refresh-nodes`
-- 节点 `description` 刷新
-- 节点 `embedding` 刷新
-- `content_hash` 驱动的缓存复用
+- `project refresh-commit-graph`
+- `project refresh-graph`
+- 文档分块 embedding 复用
+- 分支快照更新
 
 验收口径：
-- 可按节点、路径、提交范围刷新
-- 未变化节点优先复用缓存
-- 返回更新数量、复用数量、重新生成数量
+- 可按当前提交刷新代码结构节点和关系
+- 分支级兜底刷新不能丢失文档节点与代码节点关系
+- 文档分块未变化时优先复用 embedding
 
 ### T009 产品版本下语义检索
 
 目标：
-基于现有 embedding 能力提供产品版本作用域内的语义检索。
+基于文档分块 embedding 能力提供产品版本作用域内的文档语义检索。
 
 依赖：
 - T003
 - T008
 
 优先复用：
-- [src/service/services/ai_analysis_runner.py](/D:/PycharmProjects/NeoDev/src/service/services/ai_analysis_runner.py)
+- [src/service/services/doc_semantic_search_service.py](/D:/PycharmProjects/NeoDev/src/service/services/doc_semantic_search_service.py)
 - [src/service/agent_profiles.py](/D:/PycharmProjects/NeoDev/src/service/agent_profiles.py)
 
 建议源码落点：
 - `src/service/cli/commands/graph.py`
-- 新增 `src/service/services/semantic_search_service.py`
+- 扩展 `src/service/services/graph_semantic_search_service.py`
 
 允许改造：
-- 如果当前语义检索逻辑散在 agent profile 里，可下沉到独立 service，再由 agent/profile/CLI 共享
+- 如果当前文档语义检索逻辑散在 agent profile 里，可下沉到独立 service，再由 agent/profile/CLI 共享
 - 允许在元数据库中维护检索作用域快照和必要的复用记录，但不把检索结果缓存作为 MVP 主路径
 
 交付内容：
 - `graph semantic-search`
-- 作用域限定到 `product_version_id + project + branch`
-- 结果包含 `description`、`score`、`semantic_status`
+- 作用域限定到 `product_version_id`
+- 结果包含文档分块、标题路径、摘要片段、`score`、`semantic_status`
 
 验收口径：
 - 查询结果不会跨产品版本串数据
@@ -399,7 +399,7 @@ related:
 - `graph impact`
 - `graph entity-context`
 - `graph get-chain`
-- `graph refresh-nodes`
+- `project refresh-commit-graph`
 
 验收口径：
 - 能按 `DocChange` 输出影响范围
@@ -423,23 +423,24 @@ related:
 建议源码落点：
 - `src/service/cli/commands/git.py`
 - 新增 `src/service/services/git_consistency_service.py`
-- 新增 `src/service/services/post_push_refresh_service.py`
+- 扩展 `src/service/services/project_service.py` 和 `src/service/services/sync_service.py`
 
 允许改造：
-- 如 `sync_service` 当前只覆盖“同步提交”，可拆成“提交同步”和“推送后图谱刷新”两个服务，避免继续堆逻辑
-- 允许单独维护危险提交待处理清单、解决流水和推送后刷新批次记录，优先审计清晰
+- `sync_service` 保留提交同步能力，并新增按提交刷新图谱的受控入口
+- 允许单独维护危险提交待处理清单、解决流水和分支快照记录，优先审计清晰
 
 交付内容：
 - `git verify-doc-change`
 - `git dangerous-commit resolve`
-- `git post-push-refresh`
+- `project refresh-commit-graph`
+- `project refresh-graph`
 - `CodeChangeLink`
 - `DangerousCommitRecord`
 
 验收口径：
 - `DocChange-ID` trailer 校验稳定
 - 二次确认后可登记危险提交
-- 推送后可以刷新受影响节点与 结构化描述
+- 推送后默认只刷新本次提交对应的节点和关系；提交过大时才使用分支级刷新兜底
 - 危险提交支持查询、关闭、记录 `resolved_by` / `resolved_at`
 
 ### T012 官方插件实现
@@ -527,7 +528,7 @@ related:
 - `T003` 是产品版本作用域内分析和检索的基础
 - `T004 + T005` 构成文档闭环
 - `T006 + T007` 构成自动图谱构建和去重主链路
-- `T008 + T009 + T010` 构成图谱查询和语义能力主链路
+- `T008 + T009 + T010` 构成图谱查询和文档语义能力主链路
 - `T011` 把文档闭环和代码落地闭环接起来
 - `T012 + T013` 是最终用户可用性的交付层
 
@@ -537,7 +538,7 @@ related:
 
 - A 线：CLI 壳层、元数据库、产品/文档模型
   对应 `T001` 到 `T005`
-- B 线：自动图谱构建、图谱复用、结构化描述与语义检索
+- B 线：自动图谱构建、图谱复用、结构化事实与文档语义检索
   对应 `T006` 到 `T010`
 - C 线：Git 闭环、插件、skill、联调
   对应 `T011` 到 `T014`
@@ -555,15 +556,15 @@ related:
 - T005 DocChange 登记与状态流转
 - T006 仓库接入与自动图谱构建
 - T007 图谱复用策略接入
-- T008 节点结构化索引与向量化
-- T009 产品版本下语义检索
+- T008 仓库结构图谱事实索引
+- T009 产品版本下文档语义检索
 
 这批做完后，已经可以支撑：
 
 - 绑定产品和产品版本
 - 接入文档仓库和项目分支
 - 触发自动图谱构建并查看状态
-- 做产品版本下的语义检索
+- 做产品版本下的文档语义检索
 - 登记文档变更并生成 `DocChange ID`
 
 ## 8. 后续建议

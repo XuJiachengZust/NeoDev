@@ -79,13 +79,37 @@ def _patch_valid_scope(monkeypatch, driver):
     )
     monkeypatch.setattr(
         graph_query_service,
-        "_load_neo4j_config",
+        "load_neo4j_config",
         lambda project: ({"neo4j_uri": "bolt://neo4j", "neo4j_user": "neo4j", "neo4j_password": "pw"}, "neo4j"),
     )
     monkeypatch.setattr(
         graph_query_service,
         "_create_neo4j_driver",
         lambda config: driver,
+    )
+    monkeypatch.setattr(
+        graph_query_service,
+        "branch_snapshot_service",
+        type(
+            "SnapshotService",
+            (),
+            {
+                "get_current_snapshot": staticmethod(
+                    lambda conn, project_id, branch: {
+                        "id": 501,
+                        "head_commit": "c" * 40,
+                        "last_parsed_commit": "c" * 40,
+                        "created_from_action": "incremental",
+                    }
+                ),
+                "list_entries": staticmethod(
+                    lambda conn, snapshot_id: [
+                        {"file_node_id": "file-fact-auth", "file_path": "src/auth.py"}
+                    ]
+                ),
+            },
+        ),
+        raising=False,
     )
 
 
@@ -154,6 +178,9 @@ def test_entity_context_returns_scoped_neighbors(monkeypatch):
     assert call["params"]["entity_id"] == "Function:auth:login"
     assert call["params"]["project_id"] == 11
     assert call["params"]["branch"] == "release/V1.0"
+    assert call["params"]["visible_file_ids"] == ["file-fact-auth"]
+    assert "visible_file_ids" in call["query"]
+    assert "node.branch = $branch" not in call["query"]
     assert driver.closed is True
 
 
@@ -201,6 +228,23 @@ def test_get_chain_returns_nodes_edges_and_commit_scope(monkeypatch):
         ]
     )
     _patch_valid_scope(monkeypatch, driver)
+    monkeypatch.setattr(
+        graph_query_service.branch_snapshot_service,
+        "get_current_snapshot",
+        lambda conn, project_id, branch: {
+            "id": 501,
+            "head_commit": "c" * 40,
+            "last_parsed_commit": "c" * 40,
+            "created_from_action": "incremental",
+        },
+    )
+    monkeypatch.setattr(
+        graph_query_service.branch_snapshot_service,
+        "list_entries",
+        lambda conn, snapshot_id: [
+            {"file_node_id": "file-fact-auth", "file_path": "src/auth.py"}
+        ],
+    )
 
     result = graph_query_service.get_chain(
         object(),
@@ -212,9 +256,9 @@ def test_get_chain_returns_nodes_edges_and_commit_scope(monkeypatch):
     )
 
     assert result["start_node"]["entity_id"] == "Function:auth:login"
-    assert result["snapshot_id"] is None
+    assert result["snapshot_id"] == 501
     assert result["branch"] == "release/V1.0"
-    assert result["head_commit"] == "a" * 40
+    assert result["head_commit"] == "c" * 40
     assert result["depth"] == 2
     assert [node["entity_id"] for node in result["nodes"]] == [
         "Function:auth:login",
@@ -227,7 +271,9 @@ def test_get_chain_returns_nodes_edges_and_commit_scope(monkeypatch):
     ]
     call = driver.sessions[0]["session"].calls[0]
     assert call["params"]["start_node"] == "Function:auth:login"
+    assert call["params"]["visible_file_ids"] == ["file-fact-auth"]
     assert "1..2" in call["query"]
+    assert "node.branch = $branch" not in call["query"]
 
 
 def test_get_chain_requires_exactly_one_start_locator(monkeypatch):

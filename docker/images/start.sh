@@ -146,7 +146,6 @@ do_start() {
             -e OPENAI_BASE="$OPENAI_BASE" \
             -e OPENAI_MODEL_CHAT="$OPENAI_MODEL_CHAT" \
             -e OPENAI_MODEL_EMBEDDING="$OPENAI_MODEL_EMBEDDING" \
-            -e AI_ANALYSIS_MAX_WORKERS=5 \
             -e REPO_CLONE_BASE=/data/repos \
             -e AGENT_SANDBOX_ROOT=/data/sandboxes \
             -v neodev-repo-data:/data/repos \

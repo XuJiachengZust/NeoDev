@@ -280,11 +280,11 @@ related:
 ### DM-07 推送后刷新批次记录
 
 目标：
-为 `git post-push-refresh` 保留可追踪批次记录，避免后续排错时只能看日志。
+为 `project refresh-commit-graph` 和分支级兜底刷新保留可追踪快照记录，避免后续排错时只能看日志。
 
 建议表：
 
-- `post_push_refresh_runs`
+- `branch_snapshots`
 
 建议冗余字段：
 
@@ -295,18 +295,17 @@ related:
 - `affected_nodes_json`
 - `refresh_scope_json`
 - `graph_refresh_status`
-- `ai_refresh_status`
 - `started_at`
 - `finished_at`
 
 建议源码落点：
 
-- `src/service/repositories/post_push_refresh_run_repository.py`
-- `src/service/services/post_push_refresh_service.py`
+- `src/service/repositories/branch_snapshot_repository.py`
+- `src/service/services/branch_snapshot_service.py`
 
 验收口径：
 
-- 每次推送后刷新都有独立批次记录
+- 每次提交级或分支级图谱刷新都有独立快照记录
 - 节点刷新失败时可以精确定位到批次和影响范围
 
 ## 5. 建议执行顺序

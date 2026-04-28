@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from service.repositories import ai_preprocess_status_repository as status_repo
+from service.repositories import branch_analysis_status_repository as status_repo
 from service.services import product_service
 from service.services import product_version_service
 from service.services import project_service
@@ -41,7 +41,6 @@ def analyze_version_branch(
             )
         extra = {
             "analysis_action": "graph_sync",
-            "ai_analysis_removed": True,
             "force_requested": bool(force),
             "progress": {"stage": "completed", "done": 1, "total": 1},
             "sync": sync_result,
@@ -67,7 +66,6 @@ def analyze_version_branch(
             error_message=str(exc),
             extra={
                 "analysis_action": "graph_sync",
-                "ai_analysis_removed": True,
                 "force_requested": bool(force),
             },
         )
@@ -85,7 +83,6 @@ def analyze_version_branch(
         "project": context["project"],
         "analysis_task": analysis_task,
         "sync": sync_result,
-        "ai_analysis_removed": True,
     }
 
 
@@ -109,6 +106,15 @@ def _sync_project_graph(conn, project_id: int) -> dict | None:
     from service.services import sync_service
 
     return sync_service.sync_commits_for_project(conn, project_id)
+
+
+def _branch_snapshot_service():
+    patched = globals().get("branch_snapshot_service")
+    if patched is not None:
+        return patched
+    from service.services import branch_snapshot_service as service
+
+    return service
 
 
 def get_analysis_status(
@@ -194,6 +200,7 @@ def _current_task(conn, context: dict) -> dict:
     extra = row.get("extra") or {}
     progress = extra.get("progress") or {}
     legacy_version = version_repo.find_by_project_and_branch(conn, project_id, branch) or {}
+    current_snapshot = _branch_snapshot_service().get_current_snapshot(conn, project_id, branch) or {}
     analysis_action = extra.get("analysis_action") or extra.get("graph_action")
     return {
         "analysis_task_id": row.get("id"),
@@ -203,11 +210,14 @@ def _current_task(conn, context: dict) -> dict:
         "status": row.get("status") or "not_started",
         "analysis_action": analysis_action,
         "progress": progress,
-        "current_snapshot_id": extra.get("current_snapshot_id"),
-        "head_commit": extra.get("head_commit"),
-        "last_parsed_commit": extra.get("last_parsed_commit")
+        "current_snapshot_id": current_snapshot.get("id") or extra.get("current_snapshot_id"),
+        "head_commit": current_snapshot.get("head_commit") or extra.get("head_commit"),
+        "last_parsed_commit": current_snapshot.get("last_parsed_commit")
+        or extra.get("last_parsed_commit")
         or legacy_version.get("last_parsed_commit"),
-        "created_from_action": extra.get("created_from_action") or analysis_action,
+        "created_from_action": current_snapshot.get("created_from_action")
+        or extra.get("created_from_action")
+        or analysis_action,
         "started_at": row.get("started_at"),
         "finished_at": row.get("finished_at"),
         "heartbeat_at": row.get("updated_at"),

@@ -38,9 +38,19 @@ def _patch_valid_scope(monkeypatch, status_rows=None):
         "find_by_project_and_branch",
         lambda conn, project_id, branch: None,
     )
+    monkeypatch.setattr(
+        branch_analysis_service,
+        "branch_snapshot_service",
+        type(
+            "SnapshotService",
+            (),
+            {"get_current_snapshot": staticmethod(lambda conn, project_id, branch: None)},
+        ),
+        raising=False,
+    )
 
 
-def test_analyze_version_branch_syncs_graph_without_ai_preprocess(monkeypatch):
+def test_analyze_version_branch_syncs_graph_only(monkeypatch):
     now = datetime.now(timezone.utc)
     status_rows = [
         {
@@ -60,8 +70,6 @@ def test_analyze_version_branch_syncs_graph_without_ai_preprocess(monkeypatch):
     ]
     _patch_valid_scope(monkeypatch, status_rows=status_rows)
     calls = []
-
-    assert not hasattr(branch_analysis_service, "ai_preprocessor_service")
 
     def fake_sync(conn, project_id):
         calls.append({"project_id": project_id})
@@ -130,7 +138,6 @@ def test_analyze_version_branch_syncs_graph_without_ai_preprocess(monkeypatch):
             "branch": "release/unit",
             "extra": {
                 "analysis_action": "graph_sync",
-                "ai_analysis_removed": True,
                 "force_requested": True,
                 "progress": {"stage": "completed", "done": 1, "total": 1},
                 "sync": {
@@ -154,7 +161,6 @@ def test_analyze_version_branch_syncs_graph_without_ai_preprocess(monkeypatch):
     assert task["analysis_action"] == "graph_sync"
     assert task["progress"]["stage"] == "completed"
     assert result["sync"]["commits_synced"] == 3
-    assert result["ai_analysis_removed"] is True
 
 
 def test_analyze_version_branch_marks_failed_when_graph_sync_fails(monkeypatch):
@@ -208,7 +214,6 @@ def test_analyze_version_branch_marks_failed_when_graph_sync_fails(monkeypatch):
     assert exc_info.value.category == "internal_error"
     assert "sync failed" in exc_info.value.message
     assert failed[0]["extra"]["analysis_action"] == "graph_sync"
-    assert failed[0]["extra"]["ai_analysis_removed"] is True
 
 
 def test_get_analysis_status_rejects_wrong_branch(monkeypatch):
@@ -256,10 +261,7 @@ def test_get_analysis_status_includes_contract_snapshot_fields(monkeypatch):
             "updated_at": now,
             "error_message": None,
             "extra": {
-                "analysis_action": "incremental",
-                "current_snapshot_id": 77,
-                "head_commit": "a" * 40,
-                "created_from_action": "incremental",
+                "analysis_action": "graph_sync",
             },
         }
     ]
@@ -274,6 +276,16 @@ def test_get_analysis_status_includes_contract_snapshot_fields(monkeypatch):
             "last_parsed_commit": "b" * 40,
         },
     )
+    monkeypatch.setattr(
+        branch_analysis_service.branch_snapshot_service,
+        "get_current_snapshot",
+        lambda conn, project_id, branch: {
+            "id": 77,
+            "head_commit": "a" * 40,
+            "last_parsed_commit": "a" * 40,
+            "created_from_action": "incremental",
+        },
+    )
 
     result = branch_analysis_service.get_analysis_status(
         object(),
@@ -285,5 +297,5 @@ def test_get_analysis_status_includes_contract_snapshot_fields(monkeypatch):
     task = result["analysis_task"]
     assert task["current_snapshot_id"] == 77
     assert task["head_commit"] == "a" * 40
-    assert task["last_parsed_commit"] == "b" * 40
+    assert task["last_parsed_commit"] == "a" * 40
     assert task["created_from_action"] == "incremental"

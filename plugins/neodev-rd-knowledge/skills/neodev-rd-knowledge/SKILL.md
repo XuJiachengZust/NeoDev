@@ -54,8 +54,8 @@ description: 面向 NeoDev 研发知识工作流的官方 skill，用于通过�
 
 1. 执行 `neodev config show`，确认本地客户端已配置远程 NeoDev 服务。
 2. 执行 `neodev cli version-check --json`。
-3. 执行 `neodev git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json`。
-4. 按需执行 `neodev graph refresh-nodes ... --json`。
+3. 执行 `neodev project refresh-commit-graph --project-id <project_id> --version-id <version_id> --branch <branch> --commit-sha <commit_sha> --json`。
+4. 按需执行 `neodev graph node ... --json` 或 `neodev graph edge ... --json` 维护节点与关系。
 5. 按需执行 `neodev graph get-chain ... --json` 检查影响链路。
 
 ## 结果解释

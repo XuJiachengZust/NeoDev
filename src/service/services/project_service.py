@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import logging
 import threading
+from dataclasses import dataclass, field
+from typing import Any
 
-from service.repositories import ai_preprocess_status_repository as status_repo
+from service.repositories import branch_analysis_status_repository as status_repo
 from service.repositories import project_repository as repo
+from service.repositories import version_repository
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,16 @@ INIT_STEPS = [
     ("graph_sync", "同步提交并构建图谱"),
     ("completed", "完成"),
 ]
+
+
+@dataclass(slots=True)
+class ProjectServiceError(Exception):
+    category: str
+    message: str
+    details: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        Exception.__init__(self, self.message)
 
 
 def list_projects(conn) -> list[dict]:
@@ -312,3 +325,149 @@ def update_project(conn, project_id: int, **kwargs) -> dict | None:
 
 def delete_project(conn, project_id: int) -> bool:
     return repo.delete(conn, project_id)
+
+
+def refresh_graph(conn, *, project_id: int, version_id: int, branch: str) -> dict:
+    """Fetch the project repository and rebuild/sync graph state for one project version."""
+    from service.services import sync_service
+
+    normalized_branch = _required_text(branch, "branch")
+    project = get_project(conn, project_id)
+    if not project:
+        raise ProjectServiceError(
+            category="not_found",
+            message="project not found",
+            details={"project_id": project_id},
+        )
+
+    version = version_repository.find_by_id(conn, version_id)
+    if not version:
+        raise ProjectServiceError(
+            category="not_found",
+            message="project version not found",
+            details={"version_id": version_id},
+        )
+    if version.get("project_id") != project_id:
+        raise ProjectServiceError(
+            category="invalid_scope",
+            message="project version does not belong to project",
+            details={"project_id": project_id, "version_id": version_id},
+        )
+    if (version.get("branch") or "").strip() != normalized_branch:
+        raise ProjectServiceError(
+            category="invalid_scope",
+            message="branch does not match project version",
+            details={
+                "project_id": project_id,
+                "version_id": version_id,
+                "branch": normalized_branch,
+                "version_branch": version.get("branch"),
+            },
+        )
+
+    result = sync_service.sync_commits_for_version(conn, project_id, version_id)
+    if result is None:
+        raise ProjectServiceError(
+            category="not_found",
+            message="project version sync target not found",
+            details={"project_id": project_id, "version_id": version_id, "branch": normalized_branch},
+        )
+    result["project_id"] = project_id
+    result["version_id"] = version_id
+    result["branch"] = normalized_branch
+    result["refresh_mode"] = "project_branch"
+    return result
+
+
+def refresh_commit_graph(
+    conn,
+    *,
+    project_id: int,
+    version_id: int,
+    branch: str,
+    commit_sha: str,
+    max_changed_files: int = 50,
+) -> dict:
+    """Refresh graph state for one pushed commit, falling back to branch refresh when needed."""
+    from service.services import sync_service
+
+    normalized_branch = _required_text(branch, "branch")
+    normalized_commit = _required_text(commit_sha, "commit_sha")
+    if len(normalized_commit) > 40:
+        raise ProjectServiceError(
+            category="invalid_argument",
+            message="commit_sha must be at most 40 characters",
+            details={"commit_sha": normalized_commit},
+        )
+    _validate_project_version_branch(
+        conn,
+        project_id=project_id,
+        version_id=version_id,
+        branch=normalized_branch,
+    )
+    result = sync_service.sync_commit_graph_for_version(
+        conn,
+        project_id,
+        version_id,
+        normalized_commit,
+        max_changed_files=max_changed_files,
+    )
+    if result is None:
+        raise ProjectServiceError(
+            category="not_found",
+            message="project commit refresh target not found",
+            details={
+                "project_id": project_id,
+                "version_id": version_id,
+                "branch": normalized_branch,
+                "commit_sha": normalized_commit,
+            },
+        )
+    result["refresh_mode"] = "commit_incremental"
+    return result
+
+
+def _validate_project_version_branch(conn, *, project_id: int, version_id: int, branch: str) -> None:
+    project = get_project(conn, project_id)
+    if not project:
+        raise ProjectServiceError(
+            category="not_found",
+            message="project not found",
+            details={"project_id": project_id},
+        )
+
+    version = version_repository.find_by_id(conn, version_id)
+    if not version:
+        raise ProjectServiceError(
+            category="not_found",
+            message="project version not found",
+            details={"version_id": version_id},
+        )
+    if version.get("project_id") != project_id:
+        raise ProjectServiceError(
+            category="invalid_scope",
+            message="project version does not belong to project",
+            details={"project_id": project_id, "version_id": version_id},
+        )
+    if (version.get("branch") or "").strip() != branch:
+        raise ProjectServiceError(
+            category="invalid_scope",
+            message="branch does not match project version",
+            details={
+                "project_id": project_id,
+                "version_id": version_id,
+                "branch": branch,
+                "version_branch": version.get("branch"),
+            },
+        )
+
+
+def _required_text(value: str | None, field_name: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ProjectServiceError(
+            category="invalid_argument",
+            message=f"{field_name} is required",
+            details={"field": field_name},
+        )
+    return text

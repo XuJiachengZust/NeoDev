@@ -4,9 +4,18 @@ import logging
 
 from service.repositories import project_repository as project_repo
 from service.repositories import version_repository as version_repo
-from service.services.ai_preprocessor_service import _load_neo4j_config
+from service.services.neo4j_config_service import load_neo4j_config
 
 logger = logging.getLogger(__name__)
+
+
+def _branch_snapshot_service():
+    patched = globals().get("branch_snapshot_service")
+    if patched is not None:
+        return patched
+    from service.services import branch_snapshot_service as service
+
+    return service
 
 
 def list_nodes_by_version(
@@ -31,8 +40,19 @@ def list_nodes_by_version(
     branch = (ver.get("branch") or "").strip()
     if not branch:
         return []
+    snapshot_service = _branch_snapshot_service()
+    current_snapshot = snapshot_service.get_current_snapshot(conn, project_id, branch)
+    if not current_snapshot:
+        return []
+    visible_file_ids = [
+        entry["file_node_id"]
+        for entry in snapshot_service.list_entries(conn, current_snapshot["id"])
+        if entry.get("file_node_id")
+    ]
+    if not visible_file_ids:
+        return []
 
-    neo4j_config, database = _load_neo4j_config(project)
+    neo4j_config, database = load_neo4j_config(project)
     if not neo4j_config or not neo4j_config.get("neo4j_uri"):
         return []
 
@@ -47,8 +67,21 @@ def list_nodes_by_version(
     )
     try:
         with driver.session(database=database) as session:
-            conditions = ["n.branch = $branch", "n.project_id = $project_id"]
-            params: dict = {"branch": branch, "project_id": project_id}
+            conditions = [
+                "n.project_id = $project_id",
+                """(
+                    n.id IN $visible_file_ids
+                    OR EXISTS {
+                        MATCH (visible_file)-[:CONTAINS|DEFINES*1..4]->(n)
+                        WHERE visible_file.id IN $visible_file_ids
+                    }
+                )""",
+            ]
+            params: dict = {
+                "branch": branch,
+                "project_id": project_id,
+                "visible_file_ids": visible_file_ids,
+            }
             if name is not None and name.strip() != "":
                 conditions.append("n.name CONTAINS $name")
                 params["name"] = name.strip()

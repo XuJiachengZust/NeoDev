@@ -235,13 +235,32 @@ def test_git_dangerous_commit_commands_are_registered():
     assert "--resolved-by" in resolve_proc.stdout
 
 
-def test_git_post_push_refresh_command_is_registered():
+def test_git_post_push_refresh_command_is_removed():
     proc = _run("neodev.py", "git", "post-push-refresh", "--help")
+    assert proc.returncode != 0
+    assert "invalid choice" in proc.stdout
+
+
+def test_project_refresh_graph_command_is_registered():
+    proc = _run("neodev.py", "project", "refresh-graph", "--help")
     assert proc.returncode == 0
     assert "--project-id" in proc.stdout
+    assert "--project-name" in proc.stdout
+    assert "--branch" in proc.stdout
+    assert "--version-id" in proc.stdout
+    assert "--json" in proc.stdout
+
+
+def test_project_refresh_commit_graph_command_is_registered():
+    proc = _run("neodev.py", "project", "refresh-commit-graph", "--help")
+    assert proc.returncode == 0
+    assert "--project-id" in proc.stdout
+    assert "--project-name" in proc.stdout
     assert "--branch" in proc.stdout
     assert "--version-id" in proc.stdout
     assert "--commit-sha" in proc.stdout
+    assert "--max-changed-files" in proc.stdout
+    assert "--json" in proc.stdout
 
 
 def test_graph_semantic_search_command_is_registered():
@@ -260,16 +279,10 @@ def test_graph_impact_command_is_registered():
     assert "--doc-change-id" in proc.stdout
 
 
-def test_graph_refresh_nodes_command_is_registered():
+def test_graph_refresh_nodes_command_is_removed():
     proc = _run("neodev.py", "graph", "refresh-nodes", "--help")
-    assert proc.returncode == 0
-    assert "--product-code" in proc.stdout
-    assert "--version-name" in proc.stdout
-    assert "--project-id" in proc.stdout
-    assert "--branch" in proc.stdout
-    assert "--node-id" in proc.stdout
-    assert "--path" in proc.stdout
-    assert "--commit-sha" in proc.stdout
+    assert proc.returncode != 0
+    assert "invalid choice" in proc.stdout
 
 
 def test_graph_entity_context_command_is_registered():
@@ -295,3 +308,31 @@ def test_graph_get_chain_command_is_registered():
     assert "--symbol" in proc.stdout
     assert "--commit-sha" in proc.stdout
     assert "--depth" in proc.stdout
+
+
+def test_graph_management_commands_are_registered():
+    node_type = _run("neodev.py", "graph", "type", "node", "add", "--help")
+    assert node_type.returncode == 0
+    assert "--project-id" in node_type.stdout
+    assert "--key" in node_type.stdout
+    assert "--name" in node_type.stdout
+
+    edge_type = _run("neodev.py", "graph", "type", "edge", "add", "--help")
+    assert edge_type.returncode == 0
+    assert "--project-id" in edge_type.stdout
+    assert "--key" in edge_type.stdout
+    assert "--cross-project-allowed" in edge_type.stdout
+
+    node_update = _run("neodev.py", "graph", "node", "update", "--help")
+    assert node_update.returncode == 0
+    assert "--project-id" in node_update.stdout
+    assert "--node-id" in node_update.stdout
+    assert "--type" in node_update.stdout
+    assert "--prop" in node_update.stdout
+
+    edge_add = _run("neodev.py", "graph", "edge", "add", "--help")
+    assert edge_add.returncode == 0
+    assert "--project-id" in edge_add.stdout
+    assert "--from-node-id" in edge_add.stdout
+    assert "--to-node-id" in edge_add.stdout
+    assert "--type" in edge_add.stdout

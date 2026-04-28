@@ -38,7 +38,7 @@ related:
   数据模型和底层结构改造专项任务列表。
 - [T006-branch-analysis-orchestration-task-list.md](./T006-branch-analysis-orchestration-task-list.md)
   仓库接入、自动图谱构建、复用策略和兼容改造专项任务列表。
-- [T011-git-consistency-and-post-push-refresh-task-list.md](./T011-git-consistency-and-post-push-refresh-task-list.md)
+- [T011-git-consistency-and-commit-graph-refresh-task-list.md](./T011-git-consistency-and-commit-graph-refresh-task-list.md)
   Git 校验、危险提交、推送后节点刷新与链路更新专项任务列表。
 - [T008-T010-graph-refresh-semantic-search-and-chain-query-task-list.md](./T008-T010-graph-refresh-semantic-search-and-chain-query-task-list.md)
   图谱节点刷新、图谱语义索引、产品版本语义检索和链路查询专项任务列表。

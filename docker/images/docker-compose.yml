@@ -70,7 +70,6 @@ services:
       OPENAI_BASE: ${OPENAI_BASE:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       OPENAI_MODEL_CHAT: ${OPENAI_MODEL_CHAT:-deepseek-v3.2}
       OPENAI_MODEL_EMBEDDING: ${OPENAI_MODEL_EMBEDDING:-text-embedding-v3}
-      AI_ANALYSIS_MAX_WORKERS: ${AI_ANALYSIS_MAX_WORKERS:-5}
     volumes:
       - repo_data:/data/repos
       - sandbox_data:/data/sandboxes

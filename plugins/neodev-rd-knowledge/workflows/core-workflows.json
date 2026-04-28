@@ -180,7 +180,7 @@
         }
       ]
     },
-    "post_push_refresh": {
+    "project_refresh_commit_graph": {
       "goal": "推送成功后刷新受影响的图谱节点。",
       "steps": [
         {
@@ -197,14 +197,9 @@
           "command": "neodev cli version-check --json"
         },
         {
-          "id": "refresh_after_push",
+          "id": "refresh_commit_graph",
           "type": "cli",
-          "command": "neodev git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
-        },
-        {
-          "id": "refresh_specific_nodes_when_needed",
-          "type": "cli",
-          "command": "neodev graph refresh-nodes --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
+          "command": "neodev project refresh-commit-graph --project-id <project_id> --version-id <version_id> --branch <branch> --commit-sha <commit_sha> --json"
         },
         {
           "id": "inspect_chain_when_needed",

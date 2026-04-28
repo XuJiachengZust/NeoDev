@@ -116,11 +116,11 @@ MVP 不是只提供接入规范，而是需要同时交付：
 
 ### 3.5 推送后刷新
 
-1. 推送成功后引导执行 `git post-push-refresh`
+1. 推送成功后引导执行 `project refresh-commit-graph`
 2. 如需进一步核查：
-- `graph refresh-nodes`
 - `graph get-chain`
-3. 向用户解释哪些节点、链路和索引已更新
+3. 当 CLI 返回 `fallback=true` 时，解释为什么回退到 `project refresh-graph`
+4. 向用户解释哪些代码节点、关系和分支快照已更新
 
 ## 4. 参数补全规则
 
@@ -141,7 +141,7 @@ MVP 不是只提供接入规范，而是需要同时交付：
 - 把 CLI 返回结果转成可理解的结论
 - 解释影响范围、风险点、建议步骤
 - 对 `graph get-chain` 结果重点解释链路意义，而不是原样倾倒数据
-- 对 `graph refresh-nodes` 结果重点解释哪些节点被刷新、哪些 embedding 被复用
+- 对 `project refresh-commit-graph` 结果重点解释本次提交刷新了哪些文件，以及是否回退到分支图刷新
 
 ## 7. 推荐命令映射
 
@@ -154,11 +154,12 @@ MVP 不是只提供接入规范，而是需要同时交付：
 | 做产品版本语义检索 | `graph semantic-search` |
 | 看实体上下文 | `graph entity-context` |
 | 看调用链 / 依赖链 / 影响链 | `graph get-chain` |
-| 手动刷新节点 | `graph refresh-nodes` |
+| 手工维护图节点 | `graph node add/update/delete/show/list` |
+| 手工维护图关系 | `graph edge add/update/delete/show/list` |
 | 接入仓库并自动构建图谱 | `project create --repo-url` |
 | 查看仓库项目 | `project show` |
 | 推送前校验 | `git verify-doc-change` |
-| 推送后刷新图谱与 结构化描述 | `git post-push-refresh` |
+| 推送后刷新本次提交对应图谱 | `project refresh-commit-graph` |
 
 ## 8. 禁止事项
 

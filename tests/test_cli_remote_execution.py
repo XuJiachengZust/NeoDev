@@ -284,6 +284,15 @@ def test_cli_execute_api_returns_help_payload_instead_of_raising():
     assert "usage: neodev" in body["payload"]["data"]["text"]
 
 
+def test_code_ai_preprocess_routes_are_not_registered():
+    from service.main import app
+
+    paths = {getattr(route, "path", "") for route in app.routes}
+
+    assert "/api/projects/{project_id}/preprocess" not in paths
+    assert "/api/projects/{project_id}/preprocess/status" not in paths
+
+
 def test_cli_main_prints_remote_help_text(monkeypatch, capsys):
     from service.cli import main as cli_main
 

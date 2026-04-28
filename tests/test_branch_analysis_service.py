@@ -70,7 +70,6 @@ def test_branch_analysis_service_validates_product_version_scope(pg_conn, monkey
     assert result["analysis_task"]["branch"] == "release/ba"
     assert result["analysis_task"]["progress"]["stage"] == "completed"
     assert result["analysis_task"]["analysis_action"] == "graph_sync"
-    assert result["ai_analysis_removed"] is True
 
 
 def test_branch_analysis_service_rejects_branch_outside_version_scope(pg_conn):

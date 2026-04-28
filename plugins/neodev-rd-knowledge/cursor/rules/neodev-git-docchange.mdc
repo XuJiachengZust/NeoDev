@@ -1,5 +1,5 @@
 ---
-description: NeoDev DocChange Git trailer and remote refresh workflow.
+description: NeoDev DocChange Git trailer and commit graph refresh workflow.
 globs: "**/*"
 alwaysApply: false
 ---
@@ -26,10 +26,10 @@ neodev cli version-check --json
 neodev git verify-doc-change --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --commit-message <commit_message> --json
 ```
 
-After a successful push, refresh graph context on the remote NeoDev service:
+After a successful push, refresh the commit graph on the remote NeoDev service:
 
 ```bash
-neodev git post-push-refresh --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json
+neodev project refresh-commit-graph --project-id <project_id> --version-id <version_id> --branch <branch> --commit-sha <commit_sha> --json
 ```
 
 If verification reports dangerous commits, explain the structured payload and require explicit user confirmation before resolving or continuing.

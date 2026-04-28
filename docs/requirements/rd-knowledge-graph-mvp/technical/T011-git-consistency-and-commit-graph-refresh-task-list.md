@@ -57,7 +57,7 @@ related:
 - 危险提交允许放行，但必须留下正式审计记录
 - 推送后刷新采用“批次记录 + 刷新范围快照”模式，方便排错和重放
 - 允许保存冗余字段，如 `commit_message_snapshot`、`refresh_scope_json`、`affected_nodes_json`
-- 现有 `sync_service` 可以复用，但需要拆出更清晰的 post-push 语义服务
+- 现有 `sync_service` 可以复用，但推送后的默认入口改为 `project refresh-commit-graph`
 
 ## 4. 标准链路
 
@@ -68,8 +68,8 @@ related:
 3. 插件 / skill 在推送前调用 `git verify-doc-change`
 4. CLI 解析 trailer、校验 `DocChange`、写入 `CodeChangeLink`
 5. 如果规则不满足但用户确认继续，CLI 创建 `DangerousCommitRecord`
-6. 推送后插件 / skill 调用 `git post-push-refresh`
-7. CLI 按 commit 范围刷新图谱节点、结构化描述和链路结果
+6. 推送后插件 / skill 调用 `project refresh-commit-graph`
+7. CLI 按当前提交刷新图谱节点和关系；提交过大或无法定位时才调用 `project refresh-graph`
 8. 后续人工调用 `doc change mark-implemented` 或等价命令确认完成
 
 ## 5. 专项任务
@@ -206,17 +206,18 @@ related:
 ### GC-07 推送后刷新服务
 
 目标：
-新增标准的 `post_push_refresh_service`，承接推送后节点刷新和 AI 刷新。
+复用 `project_service` 与 `sync_service`，承接推送后提交级图谱刷新。
 
 建议源码落点：
 
-- 新增 `src/service/services/post_push_refresh_service.py`
-- `src/service/cli/commands/git.py`
+- 扩展 `src/service/services/project_service.py`
+- 扩展 `src/service/services/sync_service.py`
+- `src/service/cli/commands/project.py`
 
 允许改造：
 
 - `sync_service` 保留提交同步能力
-- “推送后刷新”从 `sync_service` 中拆成更明确的服务语义
+- “推送后刷新”通过 `project refresh-commit-graph` 暴露为提交级受控入口
 
 验收口径：
 
@@ -245,26 +246,25 @@ related:
 - 可根据最近一次推送的 commits 生成明确刷新范围
 - 刷新范围可审计和复用
 
-### GC-09 图谱节点刷新与 AI 刷新对接
+### GC-09 图谱节点和关系刷新对接
 
 目标：
-把推送后刷新与 `graph refresh-nodes`、AI 刷新能力正式接起来。
+把推送后刷新与提交级图谱刷新能力正式接起来。
 
 建议依赖：
 
-- `T008 节点 结构化描述刷新与向量化`
 - `T010 节点刷新与链路获取 CLI`
 
 建议行为：
 
 - 优先按受影响节点刷新
 - 必要时按文件范围刷新
-- 结构化描述和 embedding 只对受影响节点执行
+- 只对受影响代码结构节点和关系执行刷新
 
 验收口径：
 
 - 推送后不会无脑全量重跑
-- 节点刷新和 AI 刷新结果可统计
+- 节点和关系刷新结果可统计
 
 ### GC-10 推送后刷新批次记录
 
@@ -284,7 +284,6 @@ related:
 - `refresh_scope_json`
 - `affected_nodes_json`
 - `graph_refresh_status`
-- `ai_refresh_status`
 
 验收口径：
 
@@ -314,8 +313,8 @@ related:
 建议方案：
 
 - 保留 `sync_service.sync_commits_for_version/project`
-- 新增 `post_push_refresh_service`
-- 逐步让插件 / skill 从旧的散乱调用迁移到新 CLI
+- 新增 `project refresh-commit-graph`
+- 插件 / skill 从旧命令迁移到 `project refresh-commit-graph`
 
 验收口径：
 
@@ -332,7 +331,7 @@ related:
 6. GC-06 危险提交关闭流水
 7. GC-07 推送后刷新服务
 8. GC-08 提交范围识别与刷新范围计算
-9. GC-09 图谱节点刷新与 AI 刷新对接
+9. GC-09 图谱节点和关系刷新对接
 10. GC-10 推送后刷新批次记录
 11. GC-11 链路更新与查询一致性
 12. GC-12 旧能力兼容与迁移策略
@@ -340,5 +339,5 @@ related:
 ## 7. 关键结论
 
 - 当前已有“提交同步”和“图谱刷新”基础，但还没有“Git 一致性闭环”的正式模型
-- `DocChange-ID`、`CodeChangeLink`、`DangerousCommitRecord` 和 `post_push_refresh_runs` 是这条链路稳定化的关键
+- `DocChange-ID`、`CodeChangeLink`、`DangerousCommitRecord` 和分支快照记录是这条链路稳定化的关键
 - 推送后刷新不应等价于全量同步，而应转为按 commit 和节点范围执行的定向刷新

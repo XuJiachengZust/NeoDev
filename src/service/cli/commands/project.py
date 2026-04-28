@@ -35,6 +35,29 @@ def register(subparsers) -> None:
     show_parser.add_argument("--json", action="store_true", dest="json_output")
     show_parser.set_defaults(handler=handle_project_show, command_name="project show")
 
+    refresh_parser = project_subparsers.add_parser("refresh-graph")
+    refresh_locator = refresh_parser.add_mutually_exclusive_group(required=True)
+    refresh_locator.add_argument("--project-id", type=int)
+    refresh_locator.add_argument("--project-name")
+    refresh_parser.add_argument("--branch", required=True)
+    refresh_parser.add_argument("--version-id", type=int, required=True)
+    refresh_parser.add_argument("--json", action="store_true", dest="json_output")
+    refresh_parser.set_defaults(handler=handle_project_refresh_graph, command_name="project refresh-graph")
+
+    refresh_commit_parser = project_subparsers.add_parser("refresh-commit-graph")
+    refresh_commit_locator = refresh_commit_parser.add_mutually_exclusive_group(required=True)
+    refresh_commit_locator.add_argument("--project-id", type=int)
+    refresh_commit_locator.add_argument("--project-name")
+    refresh_commit_parser.add_argument("--branch", required=True)
+    refresh_commit_parser.add_argument("--version-id", type=int, required=True)
+    refresh_commit_parser.add_argument("--commit-sha", required=True)
+    refresh_commit_parser.add_argument("--max-changed-files", type=int, default=50)
+    refresh_commit_parser.add_argument("--json", action="store_true", dest="json_output")
+    refresh_commit_parser.set_defaults(
+        handler=handle_project_refresh_commit_graph,
+        command_name="project refresh-commit-graph",
+    )
+
     status_parser = project_subparsers.add_parser("init-status")
     status_locator = status_parser.add_mutually_exclusive_group(required=True)
     status_locator.add_argument("--project-id", type=int)
@@ -55,6 +78,12 @@ def _with_db(callback):
                 raise
     except CliError:
         raise
+    except project_service.ProjectServiceError as exc:
+        raise CliError(
+            category=exc.category,
+            message=exc.message,
+            details=exc.details,
+        ) from exc
     except psycopg2.IntegrityError as exc:
         raise CliError(
             category="conflict",
@@ -105,6 +134,36 @@ def handle_project_show(args) -> dict:
             args.command_name,
             {"project": project, "init_status": (init_status or {}).get("init_status")},
         )
+
+    return _with_db(run)
+
+
+def handle_project_refresh_graph(args) -> dict:
+    def run(conn):
+        project = _resolve_project(conn, args)
+        result = project_service.refresh_graph(
+            conn,
+            project_id=project["id"],
+            version_id=args.version_id,
+            branch=args.branch,
+        )
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
+
+
+def handle_project_refresh_commit_graph(args) -> dict:
+    def run(conn):
+        project = _resolve_project(conn, args)
+        result = project_service.refresh_commit_graph(
+            conn,
+            project_id=project["id"],
+            version_id=args.version_id,
+            branch=args.branch,
+            commit_sha=args.commit_sha,
+            max_changed_files=args.max_changed_files,
+        )
+        return build_success_payload(args.command_name, result)
 
     return _with_db(run)
 

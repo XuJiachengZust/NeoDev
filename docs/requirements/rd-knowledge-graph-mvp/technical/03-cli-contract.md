@@ -99,10 +99,20 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - `doc scan`
 - `doc change register`
 - `doc change mark-implemented`
-- `graph refresh-nodes`
 - `project create`
+- `project refresh-commit-graph`
+- `project refresh-graph`
+- `graph type node add`
+- `graph type node archive`
+- `graph type edge add`
+- `graph type edge archive`
+- `graph node add`
+- `graph node update`
+- `graph node delete`
+- `graph edge add`
+- `graph edge update`
+- `graph edge delete`
 - `git verify-doc-change`
-- `git post-push-refresh`
 - `git dangerous-commit resolve`
 
 ## 3. 命令分组
@@ -130,12 +140,17 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - `graph impact`
 - `graph entity-context`
 - `graph semantic-search`
-- `graph refresh-nodes`
 - `graph get-chain`
+- `graph type node add/list/archive`
+- `graph type edge add/list/archive`
+- `graph node add/update/delete/show/list`
+- `graph edge add/update/delete/show/list`
 
 ### 3.4 仓库接入与自动图谱构建
 
 - `project create --repo-url`
+- `project refresh-commit-graph`
+- `project refresh-graph`
 - `project show`
 
 兼容说明：旧显式分析命令只保留给历史集成，不再作为插件 / skill 推荐入口，也不应出现在用户主流程中。
@@ -143,7 +158,6 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 ### 3.5 Git 一致性
 
 - `git verify-doc-change`
-- `git post-push-refresh`
 - `git dangerous-commit resolve`
 
 ### 3.6 本地客户端配置与版本检查
@@ -173,6 +187,8 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 
 ### 4.2 `graph semantic-search`
 
+该命令只检索产品版本作用域内的文档分块，不检索代码节点，也不要求代码节点具备 AI 摘要或 embedding。
+
 输入：
 
 - `product_key`
@@ -183,44 +199,17 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 输出：
 
 - `product_version_id`
-- `project_name`
-- `branch`
-- `entity_type`
-- `entity_id`
-- `file_path`
-- `description`
+- `document_id`
+- `doc_id`
+- `title`
+- `doc_type`
+- `relative_path`
+- `chunk_id`
+- `snippet`
 - `score`
 - `semantic_status`
 
-### 4.3 `graph refresh-nodes`
-
-输入：
-
-- `product_key`
-- `product_version_id`
-- `project_id`
-- `branch`
-- 可选 `node_ids`
-- 可选 `paths`
-- 可选 `commit_sha`
-
-输出：
-
-- `refresh_scope`
-- `graph_nodes_updated`
-- `graph_nodes_updated`
-- `chains_updated`
-- `index_reused`
-- `index_regenerated`
-- `status`
-
-规则：
-
-- 支持按 `project/version/branch/node/path/commit` 刷新
-- 默认优先局部刷新
-- 不默认执行全库全量刷新
-
-### 4.4 `graph get-chain`
+### 4.3 `graph get-chain`
 
 输入：
 
@@ -272,7 +261,69 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - 如果仓库图谱可复用，服务端优先复用已有结果，不暴露旧显式分析入口。
 - 插件 / skill 只引导 `project create --repo-url`，不再引导显式分析命令。
 
-### 4.6 `project show`
+### 4.6 `project refresh-commit-graph`
+
+输入：
+
+- `project_id`
+- `branch`
+- `commit_sha`
+- `product_version_id` 或 `version_id`
+- 可选 `max_changed_files`
+
+输出：
+
+- `project_id`
+- `branch`
+- `commit_sha`
+- `head_commit`
+- `graph_action=commit_incremental`
+- `fallback`
+- `fallback_reason`
+- `changed_paths`
+- `changed_file_count`
+- `current_snapshot_id`
+- `snapshot_entry_count`
+- `graph_errors`
+
+规则：
+
+- 推送成功后默认调用该命令。
+- 只解析 `commit_sha` 相对父提交变更的受支持代码文件，更新对应代码节点和关系。
+- 如果提交不是分支 HEAD、找不到父提交、变更文件数超过阈值或范围无法可靠定位，服务端可回退到 `project refresh-graph`。
+- 回退到分支图刷新时，必须保留文档节点与代码节点之间已有关系。
+- 不生成代码节点 AI 摘要、embedding 或语义状态。
+
+### 4.7 `project refresh-graph`
+
+输入：
+
+- `project_id`
+- `branch`
+- `product_version_id` 或 `version_id`
+
+输出：
+
+- `project_id`
+- `branch`
+- `product_version_id`
+- `head_commit`
+- `graph_action=full`
+- `current_snapshot_id`
+- `snapshot_entry_count`
+- `graph_errors`
+
+规则：
+
+- 这是分支级兜底刷新入口，不作为推送后的默认刷新命令。
+- 重新拉取项目仓库指定分支。
+- 重新解析当前分支完整结构图。
+- 写入仓库级事实节点和关系。
+- 生成新的分支快照。
+- 必须保留文档节点与代码节点之间已有关系。
+- 不生成代码节点 AI 摘要、embedding 或语义状态。
+
+### 4.8 `project show`
 
 输出：
 
@@ -282,7 +333,112 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - `last_parsed_commit`
 - `init_result`
 
-### 4.7 `git verify-doc-change`
+### 4.8 `graph type node add/list/archive`
+
+输入：
+
+- `project_id`
+- `key`
+- `name`
+- 可选 `description`
+- 可选 `status`
+
+输出：
+
+- `project_id`
+- `key`
+- `name`
+- `status`
+
+规则：
+
+- 节点类型只在所属项目内有效。
+- CLI 不允许创建未登记类型的节点。
+
+### 4.9 `graph type edge add/list/archive`
+
+输入：
+
+- `project_id`
+- `key`
+- `name`
+- 可选 `allowed_from_types`
+- 可选 `allowed_to_types`
+- 可选 `cross_project_allowed`
+- 可选 `status`
+
+输出：
+
+- `project_id`
+- `key`
+- `name`
+- `cross_project_allowed`
+- `status`
+
+规则：
+
+- 关系类型只在关系归属项目内有效。
+- CLI 不允许创建未登记类型的关系。
+
+### 4.10 `graph node add/update/delete/show/list`
+
+输入：
+
+- `project_id`
+- `node_id`
+- `type`
+- `name`
+- 可选 `properties`
+- 可选 `status`
+
+输出：
+
+- `node_id`
+- `project_id`
+- `type`
+- `name`
+- `properties`
+- `status`
+
+规则：
+
+- 所有节点都允许手动修改。
+- 节点类型必须来自节点所属项目的节点类型白名单。
+- `id/project_id/repo_id/file_path/content_hash` 等身份字段不可通过 CLI 改写。
+
+### 4.11 `graph edge add/update/delete/show/list`
+
+输入：
+
+- `project_id`
+- `edge_id`
+- `from_node_id`
+- `to_node_id`
+- `type`
+- 可选 `properties`
+- 可选 `status`
+
+输出：
+
+- `edge_id`
+- `project_id`
+- `from_node_id`
+- `to_node_id`
+- `from_project_id`
+- `to_project_id`
+- `type`
+- `cross_project`
+- `properties`
+- `status`
+
+规则：
+
+- 关系类型必须来自关系归属项目的关系类型白名单。
+- 关系允许跨项目连接节点。
+- 跨项目关系的归属项目必须是起点或终点节点所属项目之一。
+- 当关系类型 `cross_project_allowed=false` 时，起点和终点节点必须属于同一项目。
+
+### 4.12 `git verify-doc-change`
 
 输入：
 
@@ -304,29 +460,7 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - 校验成功后建立 `CodeChangeLink`
 - 合法引用时可推进 `DocChange -> in_implementation`
 
-### 4.8 `git post-push-refresh`
-
-输入：
-
-- `project_id`
-- `branch`
-- 可选 `commit_sha` 或 commit 范围
-
-输出：
-
-- `commits_synced`
-- `graph_nodes_updated`
-- `chains_updated`
-- `index_reused`
-- `index_regenerated`
-
-规则：
-
-- 推送后按新增 commit 范围刷新
-- 默认不执行全库全量刷新
-- 受影响节点需要同步更新图谱关系与必要索引
-
-### 4.9 `cli version-check`
+### 4.13 `cli version-check`
 
 输入：
 
@@ -366,6 +500,8 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 
 ### 5.3 `semantic_status`
 
+该状态只用于文档语义检索结果，不用于代码图谱节点。
+
 - `ready`
 - `degraded`
 - `not_vectorized`
@@ -400,8 +536,9 @@ CLI 负责：
 MVP 视为契约成立，需要满足：
 
 - 所有核心命令均有明确输入、输出和副作用定义
-- 产品版本范围语义检索可用
+- 产品版本范围内的文档语义检索可用
 - 仓库地址接入后会自动触发远程图谱构建
-- `DocChange-ID` 校验与推送后刷新可用
-- 节点刷新和链路获取可用
+- `DocChange-ID` 校验与整图刷新可用
+- 链路获取和上下文查询可用
+- 节点、关系、节点类型和关系类型的受控管理可用
 - 插件 / skill 可通过 `cli version-check` 与 CLI 保持一致

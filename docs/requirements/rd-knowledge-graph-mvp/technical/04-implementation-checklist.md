@@ -166,33 +166,33 @@ related:
 - 插件 / skill 不展示旧显式分析入口
 - 相同代码不会被重复全量构建
 
-### 3.5 W005 仓库图谱节点的结构化索引与语义检索
+### 3.5 W005 仓库图谱节点的结构化索引与文档语义检索
 
 目标：
 
-- 在代码解析结果基础上补齐可检索索引与向量化
-- 支持产品版本范围内的语义检索
+- 在代码解析结果基础上补齐可检索结构化索引
+- 支持产品版本范围内的文档语义检索，代码节点不参与语义检索
 
 核心任务：
 
-- 为图谱节点落地 `description`、`embedding`、`embedding_model`、`embedding_updated_at`
-- 在节点变更后触发 结构化描述与 embedding 刷新
-- 复用内容哈希，避免对未变化节点重复生成描述和向量
-- 实现 `graph semantic-search`
-- 明确 `semantic_status` 的返回语义
+- 代码图谱节点只保存结构事实与业务属性
+- 文档分块可落地 `embedding`、`embedding_model`、`embedding_updated_at`
+- 文档内容哈希未变化时复用既有 embedding
+- 实现面向文档分块的 `graph semantic-search`
+- 明确 `semantic_status` 只属于文档语义检索结果
 
 依赖现有能力：
 
-- `ai_analysis_runner.py`
 - `agent_profiles.py`
-- `ai_description_cache_repository.py`
+- `doc_semantic_search_service.py`
+- `document_chunk_repository.py`
 - `llm_client.py`
 
 完成标准：
 
-- 产品版本下可做语义检索
-- 检索命中结果可返回实体、描述、分数、所属项目分支
-- 未变化节点优先复用已有 embedding
+- 产品版本下可做文档语义检索
+- 检索命中结果可返回文档、分块、标题路径、摘要片段和分数
+- 代码节点不生成 AI 摘要、embedding 或语义状态
 
 ### 3.6 W006 图谱查询、节点刷新与链路获取
 
@@ -205,9 +205,9 @@ related:
 
 - 实现 `graph impact`
 - 实现 `graph entity-context`
-- 实现 `graph refresh-nodes`
+- 实现 `project refresh-commit-graph`
 - 实现 `graph get-chain`
-- 为 `graph refresh-nodes` 支持 `project/version/branch/node/path/commit` 范围
+- 为 `project refresh-commit-graph` 支持 `project/version/branch/commit` 范围
 - 为 `graph get-chain` 支持直接邻接与 N 跳链路
 - 输出节点、边、方向、摘要、受影响提交
 
@@ -227,7 +227,7 @@ related:
 
 - 让文档变更和代码提交形成最小一致性闭环
 - 允许危险提交受控放行并登记
-- 支持代码推送后刷新图谱节点和 结构化描述
+- 支持代码推送后按当前提交增量刷新图谱节点和关系；提交过大或无法定位时才使用分支级刷新兜底
 
 核心任务：
 
@@ -238,8 +238,9 @@ related:
 - 实现 `DangerousCommitRecord` 持久化
 - 实现危险提交待处理清单查询
 - 实现 `git dangerous-commit resolve`
-- 实现 `git post-push-refresh`
-- 推送后按 commit 或分支范围同步提交、刷新节点、刷新链路、刷新 结构化描述
+- 实现 `project refresh-commit-graph`
+- 保留 `project refresh-graph` 作为提交过大或无法定位提交时的分支级兜底命令
+- 推送后默认按本次提交同步提交、刷新节点和关系；兜底刷新不能丢失文档节点与代码节点关系
 
 依赖现有能力：
 
@@ -253,7 +254,7 @@ related:
 - 危险提交放行后进入待处理清单
 - CLI 支持查询待处理风险记录
 - 风险记录可回写 `resolved_by`、`resolved_at`
-- 推送后可增量刷新受影响节点和 结构化描述
+- 推送后可增量刷新受影响节点和关系
 - 不引入多级审批、自动升级或定时催办
 
 ### 3.8 W008 官方插件与官方 Skill 实现
@@ -304,14 +305,14 @@ related:
 ### Phase 2 分析与检索闭环
 
 - W004 仓库接入与自动图谱构建
-- W005 仓库图谱节点的结构化索引与语义检索
+- W005 仓库图谱节点的结构化索引与属性检索
 - W006 图谱查询、节点刷新与链路获取
 
 产出：
 
 - 传入仓库地址即可自动触发远程图谱构建
 - 可查询项目和图谱上下文
-- 可做产品版本范围语义检索
+- 可做产品版本范围结构化属性检索
 - 可获取链路与刷新节点
 
 ### Phase 3 Git 一致性与插件落地
@@ -332,11 +333,11 @@ related:
 | --- | --- | --- |
 | `doc change register` | 生成 `DocChange`、落库、返回状态 | 判断何时触发、补全文档上下文 |
 | `project create --repo-url` | 登记项目仓库并自动触发图谱构建 | 引导用户提供仓库地址和项目名称 |
-| `graph semantic-search` | 在产品版本作用域内返回检索结果 | 组织 query、解释命中结果 |
-| `graph refresh-nodes` | 刷新节点、结构化描述、embedding | 推荐刷新范围、解释刷新必要性 |
+| `graph node list` / `graph edge list` | 在项目作用域内返回结构化节点和关系 | 组织查询条件、解释命中结果 |
+| `project refresh-commit-graph` | 按本次提交增量刷新节点和关系 | 推送成功后提醒或编排调用 |
+| `project refresh-graph` | 分支级图谱刷新兜底，保留既有文档-代码关系 | 仅在提交过大或无法定位提交时推荐调用 |
 | `graph get-chain` | 返回链路事实 | 解释链路意义、推荐后续动作 |
 | `git verify-doc-change` | 校验 trailer、写回状态、输出风险 | 提示是否继续、补全说明文本 |
-| `git post-push-refresh` | 同步提交并刷新图谱 / 结构化描述 | 在推送成功后提醒或自动编排调用 |
 | `cli version-check` | 检查 CLI/插件/skill 兼容状态并执行拉齐 | 会话启动时调用并决定是否继续后续流程 |
 
 ## 6. 最小测试清单
@@ -347,13 +348,13 @@ related:
 - 不合法文档会被阻止登记 `DocChange`，并留下错误记录
 - 相同 HEAD 分支触发图谱构建时优先复用已有结果
 - 分析任务运行中再次触发同项目分析会返回冲突
-- 节点未变化时 embedding 被复用而不是重复生成
+- 文档分块未变化时 embedding 被复用而不是重复生成
 - `graph get-chain` 可返回节点、边、方向和摘要
-- `graph refresh-nodes` 可按 commit 范围刷新受影响节点
+- `project refresh-commit-graph` 可按当前提交刷新受影响节点和关系
 - `git verify-doc-change` 能识别合法 trailer 与非法 trailer
 - 危险提交二次确认后可被登记
 - 危险提交可进入待处理清单并被手工关闭
-- `git post-push-refresh` 可在推送后刷新受影响节点和 结构化描述
+- `project refresh-graph` 仅作为分支级兜底刷新，且不能丢失文档节点与代码节点关系
 - 插件 / skill 可通过 `cli version-check` 保持与 CLI 一致
 
 ## 7. 完成判定

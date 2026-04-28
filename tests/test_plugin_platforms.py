@@ -47,14 +47,14 @@ def test_claude_plugin_contains_commands_agent_and_hook_schema():
         "neodev-docchange",
         "neodev-doc-scan",
         "neodev-graph-impact",
-        "neodev-post-push-refresh",
+        "neodev-project-refresh-graph",
     ]:
         command = (PLUGIN_ROOT / "commands" / f"{command_name}.md").read_text(
             encoding="utf-8"
         )
         assert "neodev" in command
         assert "--json" in command
-        assert "remote NeoDev service" in command
+        assert "remote NeoDev service" in command or "远程 NeoDev 服务" in command
 
     agent = (PLUGIN_ROOT / "agents" / "neodev-rd-knowledge.md").read_text(
         encoding="utf-8"
@@ -74,7 +74,7 @@ def test_claude_plugin_contains_commands_agent_and_hook_schema():
     )
     assert "validate_mvp_docs.py" in all_commands
     assert "check_docchange_trailer.py" in all_commands
-    assert "git post-push-refresh" in all_commands
+    assert "project refresh-commit-graph" in all_commands
     assert "neodev doc scan" in all_commands
 
 

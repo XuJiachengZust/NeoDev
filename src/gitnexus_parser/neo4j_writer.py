@@ -11,20 +11,15 @@ CONSTRAINT_LABELS = [
 
 
 def ensure_constraints(driver, database: str | None = None) -> None:
-    """Create composite uniqueness constraint (n.id, n.branch) for each label (idempotent)."""
+    """Create repository-fact uniqueness constraints for each label."""
     with driver.session(database=database) as session:
         for label in CONSTRAINT_LABELS:
             try:
                 session.run(
-                    f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{label}) REQUIRE (n.id, n.branch) IS NODE KEY"
+                    f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{label}) REQUIRE n.id IS UNIQUE"
                 )
             except Exception:
-                try:
-                    session.run(
-                        f"CREATE CONSTRAINT IF NOT EXISTS FOR (n:{label}) REQUIRE (n.id, n.branch) IS UNIQUE"
-                    )
-                except Exception:
-                    pass
+                pass
 
 
 def _props_for_neo4j(properties: dict[str, Any]) -> dict[str, Any]:
@@ -32,65 +27,17 @@ def _props_for_neo4j(properties: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in properties.items() if v is not None}
 
 
-def delete_branch(
-    driver, branch: str, project_id: int = 0, database: str | None = None
-) -> None:
-    """Remove all nodes and relationships for the given branch (and project_id when given)."""
-    with driver.session(database=database) as session:
-        if project_id == 0:
-            session.run(
-                "MATCH (n) WHERE n.branch = $branch AND (n.project_id = 0 OR n.project_id IS NULL) DETACH DELETE n",
-                branch=branch,
-            )
-        else:
-            session.run(
-                "MATCH (n) WHERE n.branch = $branch AND n.project_id = $project_id DETACH DELETE n",
-                branch=branch,
-                project_id=project_id,
-            )
-
-
-def delete_nodes_by_file_paths(
-    driver,
-    branch: str,
-    file_paths: list[str],
-    project_id: int = 0,
-    database: str | None = None,
-) -> None:
-    """
-    Remove nodes (and their relationships) for the given branch and project_id whose filePath is in file_paths.
-    Used for incremental update: only re-scanned paths are removed then rewritten.
-    """
-    if not file_paths:
-        return
-    with driver.session(database=database) as session:
-        if project_id == 0:
-            session.run(
-                "MATCH (n) WHERE n.branch = $branch AND n.filePath IN $paths AND (n.project_id = 0 OR n.project_id IS NULL) DETACH DELETE n",
-                branch=branch,
-                paths=file_paths,
-            )
-        else:
-            session.run(
-                "MATCH (n) WHERE n.branch = $branch AND n.filePath IN $paths AND n.project_id = $project_id DETACH DELETE n",
-                branch=branch,
-                paths=file_paths,
-                project_id=project_id,
-            )
-
-
 def write_graph(
     graph,
     driver,
-    branch: str,
     project_id: int = 0,
     batch_size: int = 5000,
     rel_batch_size: int = 2000,
     database: str | None = None,
 ) -> tuple[int, int]:
     """
-    MERGE all nodes by (id, branch), set project_id on each node.
-    Create relationships only when both endpoints already exist (matched by id+branch).
+    MERGE all repository fact nodes by id, set project_id on each node.
+    Create relationships only when both endpoints already exist.
     Returns (nodes_written, relationships_written).
     """
     nodes_written = 0
@@ -106,12 +53,10 @@ def write_graph(
                     label = n["label"]
                     props = _props_for_neo4j(n.get("properties", {}))
                     props["id"] = n["id"]
-                    props["branch"] = branch
                     props["project_id"] = project_id
                     tx.run(
-                        f"MERGE (n:{label} {{id: $id, branch: $branch}}) SET n += $props",
+                        f"MERGE (n:{label} {{id: $id}}) SET n += $props",
                         id=n["id"],
-                        branch=branch,
                         props=props,
                     )
                     nodes_written += 1
@@ -128,15 +73,14 @@ def write_graph(
                     rid = r.get("id") or f"{r['sourceId']}-{r['targetId']}"
                     result = tx.run(
                         f"""
-                        MATCH (a {{id: $sourceId, branch: $branch}})
-                        MATCH (b {{id: $targetId, branch: $branch}})
+                        MATCH (a {{id: $sourceId}})
+                        MATCH (b {{id: $targetId}})
                         MERGE (a)-[r:{rel_type} {{id: $relId}}]->(b)
                         SET r.confidence = $confidence, r.reason = $reason
                         RETURN 1 AS written
                         """,
                         sourceId=r["sourceId"],
                         targetId=r["targetId"],
-                        branch=branch,
                         relId=rid,
                         confidence=r.get("confidence", 1.0),
                         reason=r.get("reason", ""),

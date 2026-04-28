@@ -116,12 +116,14 @@ def process_imports(
     extracted_imports: list,
     all_file_paths: set[str],
     resolve_cache: Optional[dict[str, Optional[str]]] = None,
+    file_ids_by_path: Optional[dict[str, str]] = None,
 ) -> None:
     """
     For each ExtractedImport, resolve target file and add IMPORTS edge (File -> File).
     extracted_imports: list of ExtractedImport (filePath, rawImportPath, language).
     """
     cache = resolve_cache if resolve_cache is not None else {}
+    file_ids_by_path = file_ids_by_path or {}
     for imp in extracted_imports:
         resolved = resolve_import_path(
             imp.filePath,
@@ -131,11 +133,11 @@ def process_imports(
         )
         if not resolved or resolved == imp.filePath:
             continue
-        source_id = generate_id("File", imp.filePath)
-        target_id = generate_id("File", resolved)
+        source_id = file_ids_by_path.get(imp.filePath) or generate_id("File", imp.filePath)
+        target_id = file_ids_by_path.get(resolved) or generate_id("File", resolved)
         if not graph.getNode(source_id) or not graph.getNode(target_id):
             continue
-        rel_id = generate_id("IMPORTS", f"{imp.filePath}->{resolved}")
+        rel_id = generate_id("IMPORTS", f"{source_id}->{target_id}")
         graph.addRelationship({
             "id": rel_id,
             "sourceId": source_id,

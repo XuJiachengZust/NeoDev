@@ -18,7 +18,7 @@
 
 - 不要直接写 PostgreSQL。
 - 不要直接写 Neo4j。
-- 不要用临时脚本替代 `doc change register`、`graph impact`、`git verify-doc-change` 或 `git post-push-refresh`。
+- 不要用临时脚本替代 `doc change register`、`graph impact`、`git verify-doc-change` 或 `project refresh-commit-graph`。
 - `semantic_status=degraded` 表示语义能力降级，不等同于主流程失败。
 
 ## 主链路
@@ -45,4 +45,4 @@ Before `doc scan` or `doc change register`, validate controlled documents:
 python plugins/neodev-rd-knowledge/validate_mvp_docs.py examples/neodev-rd-knowledge/doc-repo
 ```
 
-Commit messages should contain exactly one `DocChange-ID` trailer and push refreshes should go through `neodev git post-push-refresh ... --json`.
+提交信息必须包含且只包含一个 `DocChange-ID` trailer；推送后的默认图刷新统一通过 `neodev project refresh-commit-graph ... --json` 执行，只有提交过大或无法定位时才回退到分支图刷新。

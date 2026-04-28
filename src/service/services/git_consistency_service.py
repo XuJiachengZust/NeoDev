@@ -4,8 +4,6 @@ from typing import Any
 from service.repositories import code_change_link_repository
 from service.repositories import dangerous_commit_repository
 from service.repositories import doc_change_repository
-from service.repositories import product_version_repository
-from service.services import graph_refresh_service
 from service.services import commit_message_parser
 
 
@@ -111,116 +109,6 @@ def resolve_dangerous_commit(
     return {"dangerous_commit": resolved}
 
 
-def post_push_refresh(
-    conn,
-    *,
-    project_id: int,
-    branch: str,
-    version_id: int | None = None,
-    commit_sha: str | None = None,
-) -> dict[str, Any]:
-    normalized_branch = _required_text(branch, "branch")
-    normalized_commit_sha = _optional_text(commit_sha, "commit_sha")
-    if normalized_commit_sha and len(normalized_commit_sha) > 40:
-        raise GitConsistencyError(
-            category="invalid_argument",
-            message="commit_sha must be at most 40 characters",
-            details={"commit_sha": normalized_commit_sha},
-        )
-
-    product_version_id = _resolve_bound_product_version(
-        conn,
-        project_id=project_id,
-        branch=normalized_branch,
-        version_id=version_id,
-    )
-    refresh = graph_refresh_service.refresh_nodes(
-        conn,
-        product_version_id=product_version_id,
-        project_id=project_id,
-        branch=normalized_branch,
-        commit_sha=normalized_commit_sha,
-    )
-    return {
-        "project_id": project_id,
-        "branch": normalized_branch,
-        "product_version_id": product_version_id,
-        "commits_synced": 0,
-        "graph_nodes_updated": refresh.get("graph_nodes_updated", 0),
-        "chains_updated": 0,
-        "ai_descriptions_updated": refresh.get("ai_descriptions_updated", 0),
-        "embeddings_reused": refresh.get("embeddings_reused", 0),
-        "embeddings_regenerated": refresh.get("embeddings_regenerated", 0),
-        "refresh_scope": refresh.get("refresh_scope", {}),
-        "status": refresh.get("status"),
-        "semantic_status": refresh.get("semantic_status"),
-        "degraded_reasons": refresh.get("degraded_reasons", []),
-    }
-
-
-def _resolve_bound_product_version(
-    conn,
-    *,
-    project_id: int,
-    branch: str,
-    version_id: int | None = None,
-) -> int:
-    if version_id is not None:
-        version = product_version_repository.find_by_id(conn, version_id)
-        if not version:
-            raise GitConsistencyError(
-                category="not_found",
-                message="product version not found",
-                details={"version_id": version_id},
-            )
-        mappings = product_version_repository.list_branches(conn, version_id)
-        match = next(
-            (row for row in mappings if row["project_id"] == project_id and row["branch"] == branch),
-            None,
-        )
-        if not match:
-            raise GitConsistencyError(
-                category="invalid_scope",
-                message="project branch is not bound to this product version",
-                details={"version_id": version_id, "project_id": project_id, "branch": branch},
-            )
-        return version_id
-
-    matches = _find_product_version_branches(conn, project_id, branch)
-    if not matches:
-        raise GitConsistencyError(
-            category="not_found",
-            message="no product version is bound to this project branch",
-            details={"project_id": project_id, "branch": branch},
-        )
-    if len(matches) > 1:
-        raise GitConsistencyError(
-            category="conflict",
-            message="project branch is bound to multiple product versions",
-            details={
-                "project_id": project_id,
-                "branch": branch,
-                "product_version_ids": [row["product_version_id"] for row in matches],
-            },
-        )
-    return int(matches[0]["product_version_id"])
-
-
-def _find_product_version_branches(conn, project_id: int, branch: str) -> list[dict[str, Any]]:
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT product_version_id, project_id, branch
-            FROM product_version_branches
-            WHERE project_id = %s AND branch = %s
-            ORDER BY product_version_id
-            """,
-            (project_id, branch),
-        )
-        columns = [desc[0] for desc in cur.description]
-        return [dict(zip(columns, row)) for row in cur.fetchall()]
-
-
 def _required_text(value: str | None, field_name: str) -> str:
     text = str(value or "").strip()
     if not text:
@@ -230,9 +118,3 @@ def _required_text(value: str | None, field_name: str) -> str:
             details={"field": field_name},
         )
     return text
-
-
-def _optional_text(value: str | None, field_name: str) -> str | None:
-    if value is None:
-        return None
-    return _required_text(value, field_name)

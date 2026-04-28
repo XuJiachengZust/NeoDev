@@ -60,7 +60,7 @@ def test_minimal_e2e_demo_steps_use_plugin_skill_and_cli_chain():
         "doc change register",
         "graph impact",
         "git verify-doc-change",
-        "git post-push-refresh",
+        "project refresh-commit-graph",
     ]:
         assert expected in joined
 
