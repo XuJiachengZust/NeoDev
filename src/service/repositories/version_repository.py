@@ -72,6 +72,17 @@ def update_last_parsed_commit(
         return dict(row) if row else None
 
 
+def update_version_name(conn, version_id: int, version_name: str | None) -> dict | None:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """UPDATE versions SET version_name = %s WHERE id = %s
+             RETURNING id, project_id, branch, version_name, created_at, last_parsed_commit""",
+            (version_name, version_id),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 def project_exists(conn, project_id: int) -> bool:
     with conn.cursor() as cur:
         cur.execute("SELECT 1 FROM projects WHERE id = %s", (project_id,))

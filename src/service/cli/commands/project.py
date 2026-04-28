@@ -6,6 +6,7 @@ from service.cli.errors import CliError
 from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
 from service.services import project_service
+from service.services import version_service
 
 
 def register(subparsers) -> None:
@@ -130,9 +131,14 @@ def handle_project_show(args) -> dict:
     def run(conn):
         project = _resolve_project(conn, args)
         init_status = project_service.get_init_status(conn, project["id"])
+        versions = version_service.list_versions(conn, project["id"]) or []
         return build_success_payload(
             args.command_name,
-            {"project": project, "init_status": (init_status or {}).get("init_status")},
+            {
+                "project": project,
+                "versions": versions,
+                "init_status": (init_status or {}).get("init_status"),
+            },
         )
 
     return _with_db(run)

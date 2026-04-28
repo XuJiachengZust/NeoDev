@@ -139,6 +139,57 @@ def test_project_init_status_returns_process_and_key_nodes(monkeypatch):
     assert payload["data"]["init_status"]["key_nodes"][1]["stage"] == "graph_sync"
 
 
+def test_project_show_includes_project_versions_with_id_and_name(monkeypatch):
+    from service.cli.commands import project as project_command
+
+    def fake_with_db(callback):
+        return callback(object())
+
+    monkeypatch.setattr(project_command, "_with_db", fake_with_db)
+    monkeypatch.setattr(
+        project_command.project_service,
+        "find_projects_by_name",
+        lambda conn, name: [{"id": 42, "name": name, "repo_url": "git@example/repo.git"}],
+    )
+    monkeypatch.setattr(
+        project_command.project_service,
+        "get_init_status",
+        lambda conn, project_id: {"init_status": {"status": "completed"}},
+    )
+    monkeypatch.setattr(
+        project_command.version_service,
+        "list_versions",
+        lambda conn, project_id: [
+            {
+                "id": 7,
+                "project_id": project_id,
+                "branch": "release/V2.0R26C01",
+                "version_name": "V2.0R26C01",
+                "last_parsed_commit": None,
+            }
+        ],
+    )
+
+    payload = project_command.handle_project_show(
+        argparse.Namespace(
+            command_name="project show",
+            project_id=None,
+            project_name="dsc-web-server",
+        )
+    )
+
+    assert payload["ok"] is True
+    assert payload["data"]["versions"] == [
+        {
+            "id": 7,
+            "project_id": 42,
+            "branch": "release/V2.0R26C01",
+            "version_name": "V2.0R26C01",
+            "last_parsed_commit": None,
+        }
+    ]
+
+
 def test_project_name_locator_selects_latest_duplicate(monkeypatch):
     from service.cli.commands import project as project_command
 

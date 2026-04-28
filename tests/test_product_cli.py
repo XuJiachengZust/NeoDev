@@ -193,6 +193,13 @@ def test_product_version_cli_supports_business_keys_for_create_show_and_bind(pg_
     assert shown["data"]["branches"][0]["project_name"] == project_name
     assert shown["data"]["branches"][0]["branch"] == "release/V1.0"
 
+    project_show = _run_cli("project", "show", "--project-name", project_name, "--json")
+    assert project_show.returncode == 0, project_show.stderr
+    project_versions = _payload(project_show)["data"]["versions"]
+    project_version = next(row for row in project_versions if row["branch"] == "release/V1.0")
+    assert project_version["id"]
+    assert project_version["version_name"] == "V1.0"
+
 
 def test_product_cli_missing_business_key_returns_not_found(pg_conn):
     proc = _run_cli("product", "show", "--product-code", f"NOPE-{uuid.uuid4().hex}", "--json")

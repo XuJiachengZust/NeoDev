@@ -46,8 +46,14 @@ def list_branches(conn, version_id: int) -> list[dict]:
 def set_branch(conn, version_id: int, project_id: int, branch: str) -> dict:
     row = repo.set_branch(conn, version_id, project_id, branch)
     branch = (branch or "").strip()
-    if branch and version_repository.find_by_project_and_branch(conn, project_id, branch) is None:
-        version_service.create_version(conn, project_id, branch)
+    product_version = repo.find_by_id(conn, version_id) or {}
+    version_name = product_version.get("version_name")
+    if branch:
+        project_version = version_repository.find_by_project_and_branch(conn, project_id, branch)
+        if project_version is None:
+            version_service.create_version(conn, project_id, branch, version_name=version_name)
+        elif version_name and not project_version.get("version_name"):
+            version_repository.update_version_name(conn, project_version["id"], version_name)
     return row
 
 
