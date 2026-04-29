@@ -32,7 +32,7 @@ def _run_all_migrations_if_needed(conn) -> None:
         cur.execute(
             """
             SELECT to_regclass('public.projects'),
-                   to_regclass('public.requirement_split_suggestions')
+                   to_regclass('public.code_facts')
             """
         )
         projects_table, latest_table = cur.fetchone()

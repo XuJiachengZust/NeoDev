@@ -1,5 +1,6 @@
 -- 021: rebuild graph storage around project-level code facts.
--- This migration intentionally drops the old file-level branch snapshot storage.
+-- This migration intentionally drops the old file-level branch snapshot storage,
+-- project-version commit storage, and commit-incremental graph storage.
 
 DROP TABLE IF EXISTS branch_snapshot_facts CASCADE;
 DROP TABLE IF EXISTS branch_snapshot_entries CASCADE;
@@ -7,6 +8,24 @@ DROP TABLE IF EXISTS branch_snapshots CASCADE;
 DROP TABLE IF EXISTS doc_code_links CASCADE;
 DROP TABLE IF EXISTS code_facts CASCADE;
 DROP TABLE IF EXISTS product_version_branches CASCADE;
+DROP TABLE IF EXISTS requirement_doc_meta CASCADE;
+DROP TABLE IF EXISTS requirement_split_suggestions CASCADE;
+DROP TABLE IF EXISTS ai_agent_context_snapshots CASCADE;
+DROP TABLE IF EXISTS ai_agent_messages CASCADE;
+DROP TABLE IF EXISTS ai_agent_conversations CASCADE;
+DROP TABLE IF EXISTS ai_agent_sandboxes CASCADE;
+DROP TABLE IF EXISTS ai_agent_sessions CASCADE;
+DROP TABLE IF EXISTS product_requirement_commits CASCADE;
+DROP TABLE IF EXISTS product_bug_commits CASCADE;
+DROP TABLE IF EXISTS product_requirements CASCADE;
+DROP TABLE IF EXISTS product_bugs CASCADE;
+DROP TABLE IF EXISTS impact_analysis_commits CASCADE;
+DROP TABLE IF EXISTS requirement_commits CASCADE;
+DROP TABLE IF EXISTS commits CASCADE;
+DROP TABLE IF EXISTS version_feature_summaries CASCADE;
+DROP TABLE IF EXISTS impact_analyses CASCADE;
+DROP TABLE IF EXISTS requirements CASCADE;
+DROP TABLE IF EXISTS versions CASCADE;
 DROP TABLE IF EXISTS graph_edges CASCADE;
 DROP TABLE IF EXISTS graph_nodes CASCADE;
 DROP TABLE IF EXISTS graph_relation_types CASCADE;
