@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from service.cli.errors import CliError, error_to_exit_code
 from service.cli.output import build_error_payload, build_success_payload, render_payload
@@ -141,6 +142,22 @@ def test_root_entrypoint_returns_version_check_json():
     assert isinstance(payload["data"]["message"], str)
     assert payload["data"]["message"]
     assert payload["errors"] == []
+
+
+def test_version_check_does_not_require_plugin_or_skill_versions(monkeypatch):
+    from service.cli.commands import cli as cli_command
+
+    monkeypatch.setattr(cli_command, "PLUGIN_MANIFEST", ROOT / ".test-tmp" / "missing-plugin.json")
+    monkeypatch.setattr(cli_command, "WORKFLOW_CONTRACT", ROOT / ".test-tmp" / "missing-skill.json")
+
+    payload = cli_command.handle_version_check(
+        SimpleNamespace(command_name="cli version-check")
+    )
+
+    assert payload["data"]["plugin_version"] is None
+    assert payload["data"]["skill_version"] is None
+    assert payload["data"]["compatible"] is True
+    assert payload["data"]["target_version"] == "dev"
 
 
 def test_root_entrypoint_defaults_to_plain_text_output():

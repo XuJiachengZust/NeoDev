@@ -22,18 +22,17 @@ def handle_version_check(args) -> dict:
     plugin_version = _read_version(PLUGIN_MANIFEST)
     skill_version = _read_version(WORKFLOW_CONTRACT)
     target_version = plugin_version or skill_version or "dev"
-    compatible = bool(plugin_version and skill_version and plugin_version == skill_version)
     return build_success_payload(
         command=args.command_name,
         data={
             "cli_version": "dev",
             "plugin_version": plugin_version,
             "skill_version": skill_version,
-            "compatible": compatible,
+            "compatible": True,
             "update_available": False,
             "updated": False,
             "target_version": target_version,
-            "message": _version_message(compatible, plugin_version, skill_version),
+            "message": _version_message(plugin_version, skill_version),
         },
     )
 
@@ -47,10 +46,9 @@ def _read_version(path: Path) -> str | None:
     return version if isinstance(version, str) and version else None
 
 
-def _version_message(compatible: bool, plugin_version: str | None, skill_version: str | None) -> str:
-    if compatible:
-        return "CLI、插件与 skill 契约版本一致。"
+def _version_message(plugin_version: str | None, skill_version: str | None) -> str:
     return (
-        "CLI、插件与 skill 契约版本不一致；"
-        f"plugin_version={plugin_version!r}, skill_version={skill_version!r}。"
+        "CLI available; plugin_version and skill_version are informational only "
+        "and are not used for compatibility checks. "
+        f"plugin_version={plugin_version!r}, skill_version={skill_version!r}."
     )
