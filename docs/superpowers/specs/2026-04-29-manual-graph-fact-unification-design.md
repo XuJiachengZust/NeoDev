@@ -1,93 +1,93 @@
-# Manual Graph Fact Unification Design
+# 手工图与事实图统一设计
 
-## Context
+## 背景
 
-NeoDev now has two graph write paths:
+NeoDev 当前存在两条图写入路径：
 
-- Scanner ingestion writes `code_facts`, `branch_snapshot_facts`, and Neo4j `GraphNode` / `CodeFact` nodes.
-- Manual graph commands write `graph_node_types`, `graph_relation_types`, `graph_nodes`, and `graph_edges`.
+- 扫描链路写入 `code_facts`、`branch_snapshot_facts`，并同步 Neo4j 的 `GraphNode` / `CodeFact` 节点。
+- 手工图命令写入 `graph_node_types`、`graph_relation_types`、`graph_nodes`、`graph_edges`。
 
-The manual command family must no longer behave like a separate graph. A node or edge created by `neodev graph node/edge/type ...` must become part of the same branch-visible fact graph used by scanner output. Query commands should not need to know whether a node came from scanning or manual entry.
+`neodev graph node/edge/type ...` 这组命令不能再表现为另一套独立图。手工创建的节点和边，最终必须进入和扫描产物一致的分支可见事实图。查询命令不应该需要区分节点来自扫描还是手工录入。
 
-## Decision
+## 设计决定
 
-Manual graph writes directly modify the current latest completed snapshot for the target project branch.
+手工图写入直接修改目标项目分支的当前 latest completed snapshot。
 
-Manual nodes and edges are treated as normal graph facts after the write:
+手工节点和边写入后，按普通事实图处理：
 
-- Manual nodes are represented in `code_facts`.
-- Manual node membership is added to `branch_snapshot_facts` for the selected latest completed snapshot.
-- Manual nodes are upserted into Neo4j with the same common labels used by scanned code facts.
-- Manual edges are represented in the same queryable graph as scanned edges.
-- Source differences are recorded only as metadata and operation logs.
+- 手工节点写入 `code_facts`。
+- 手工节点的快照归属写入目标 latest completed snapshot 的 `branch_snapshot_facts`。
+- 手工节点同步到 Neo4j，使用扫描节点同样的通用标签。
+- 手工边写入后，也进入同一套可查询图结构。
+- 来源差异只通过元数据和操作日志记录，不影响查询语义。
 
-When the branch is scanned again, the scanner creates a new latest snapshot from scanner output. It does not carry forward earlier manual additions. Therefore manual nodes or edges that are not produced by the new scan naturally disappear from latest-branch queries. Historical PG rows and operation logs may remain for audit.
+当分支重新扫描时，扫描链路会基于扫描结果创建新的 latest snapshot。扫描流程不会继承之前的手工补丁。因此，如果手工节点或边没有被新的扫描结果重新产生，它们会自然从最新分支查询中消失。历史 PG 记录和操作日志可以继续保留用于审计。
 
-## CLI Scope
+## CLI 范围
 
-Manual graph commands need branch context when they affect facts:
+会影响事实图的手工命令必须带分支上下文：
 
 - `graph node add/update/delete`
 - `graph edge add/update/delete`
 
-Supported locators should follow existing project and product-version patterns:
+定位方式遵循现有项目和产品版本命令风格：
 
-- `--project-id` or `--project-name`
+- `--project-id` 或 `--project-name`
 - `--branch`
-- optionally `--product-version-id` / `--product-code` + `--version-name` where existing command patterns already support product version lookup
+- 可选支持 `--product-version-id`，或 `--product-code` + `--version-name`
 
-The service resolves the target to:
+服务层解析目标范围：
 
 ```text
 project_id + branch_name -> latest completed branch_snapshot
 ```
 
-If no completed snapshot exists for the target branch, the command fails with a clear `invalid_scope` style error.
+如果目标分支没有 completed snapshot，命令返回明确的 `invalid_scope` 类错误。
 
-Type management commands remain project-scoped metadata operations:
+类型管理命令仍然是项目级元数据操作：
 
 - `graph type node add/list/archive`
 - `graph type edge add/list/archive`
 
-They do not modify snapshots by themselves.
+类型管理命令本身不修改快照。
 
-## Data Model
+## 数据模型
 
-### Existing Manual Tables
+### 现有手工表
 
-The existing `graph_*` tables remain management and audit-friendly source records:
+现有 `graph_*` 表继续保留，作为手工管理和审计友好的源记录：
 
 - `graph_node_types`
 - `graph_relation_types`
 - `graph_nodes`
 - `graph_edges`
 
-These tables continue to store labels, type keys, display names, arbitrary properties, and status.
+这些表继续保存标签、类型 key、展示名称、自定义属性和状态。
 
-### Fact Tables
+### 事实表
 
-Manual node writes also upsert `code_facts`.
+手工节点写入时，同时 upsert `code_facts`。
 
-Recommended manual node fact values:
+推荐的手工节点事实字段：
 
 ```text
-fact_id        = stable manual fact id derived from graph node id
-symbol_key     = stable manual symbol key derived from project/type/name or node id
-node_type      = supported fact node type used by existing fact queries
-file_path      = null or synthetic manual path
-qualified_name = manual qualified name
-name           = display name
-metadata_json  = source, manual_node_id, type_key, properties, operation_id
-status         = active or archived
+fact_id        = 基于 graph node id 生成的稳定手工 fact id
+symbol_key     = 基于 project/type/name 或 node id 生成的稳定 symbol key
+node_type      = 现有事实查询支持的节点类型
+file_path      = null 或合成的手工路径
+qualified_name = 手工 qualified name
+name           = 展示名称
+metadata_json  = source、manual_node_id、type_key、properties、operation_id
+status         = active 或 archived
 ```
 
-Because `code_facts.node_type` currently has a restricted enum-like check constraint, implementation must either map manual graph node types to supported fact node types or widen the schema deliberately. The first implementation should keep schema risk low by mapping manual nodes to an existing supported fact type and preserving the original graph type in `metadata_json.type_key`.
+当前 `code_facts.node_type` 有类似枚举的 check 约束。第一版实现不建议直接放开 schema 风险，而是把手工图类型映射到现有支持的事实节点类型，并把原始图类型保存在 `metadata_json.type_key`。
 
-`branch_snapshot_facts` is updated in place for the latest completed snapshot. Add/update adds the fact id. Delete/archive removes or archives it according to existing status semantics; latest snapshot visibility must no longer include deleted manual facts.
+`branch_snapshot_facts` 直接修改目标 latest completed snapshot。新增或更新时加入 fact id。删除或归档时，按照现有状态语义移除可见性或归档事实；最新快照查询不能再看到被删除的手工事实。
 
-### Operation Logs
+### 操作日志
 
-Add an operation log for manual graph writes:
+新增手工图操作日志：
 
 ```text
 graph_operation_logs
@@ -105,17 +105,17 @@ graph_operation_logs
 - created_at
 ```
 
-The log is the durable distinction between manual and scanned changes. Query behavior must not depend on the log.
+操作日志是手工变更与扫描变更的持久区别。查询行为不能依赖操作日志。
 
-## Neo4j Behavior
+## Neo4j 行为
 
-Manual nodes are upserted as normal queryable graph nodes:
+手工节点同步为普通可查询图节点：
 
 ```text
 (:GraphNode:CodeFact { project_id, fact_id, id, name, ... })
 ```
 
-Manual-specific details are properties, not query labels required by core traversal:
+手工相关信息作为属性保存，不作为核心遍历必须依赖的标签：
 
 ```text
 source = "manual"
@@ -123,43 +123,43 @@ manual_node_id = ...
 type_key = ...
 ```
 
-Manual edges are synchronized to Neo4j relationships between `:GraphNode` endpoints. Relationship type keys must be validated or normalized before being used as Cypher relationship types. Original type keys stay on relationship properties.
+手工边同步为 `:GraphNode` 端点之间的 Neo4j 关系。关系类型 key 在进入 Cypher 关系类型前必须校验或规范化。原始 type key 保存在关系属性里。
 
-Traversal queries must continue to derive branch visibility from PG snapshot membership. After branch rescan, latest snapshot membership changes, so old manual facts stop participating in latest branch traversals.
+遍历查询继续从 PG 快照归属推导分支可见性。分支重新扫描后，latest snapshot 的成员集合发生变化，旧手工事实不再参与最新分支遍历。
 
-## Error Handling
+## 错误处理
 
-Manual fact writes should be transactional:
+手工事实写入需要事务化：
 
-1. Validate project, branch, snapshot, node type, and relation type.
-2. Write or update the `graph_*` management row.
-3. Upsert or archive fact table rows.
-4. Write operation log.
-5. Commit PG transaction.
-6. Sync Neo4j.
+1. 校验 project、branch、snapshot、节点类型和关系类型。
+2. 写入或更新 `graph_*` 管理行。
+3. upsert 或归档事实表数据。
+4. 写入操作日志。
+5. 提交 PG 事务。
+6. 同步 Neo4j。
 
-If PG work fails, no Neo4j sync runs.
+如果 PG 写入失败，不执行 Neo4j 同步。
 
-If Neo4j sync fails after PG commit, return a failure that includes the committed operation id and enough context to retry sync. The PG operation log remains the source of truth for recovery.
+如果 PG 已提交但 Neo4j 同步失败，命令返回失败，并包含已提交的 operation id 和足够的重试上下文。PG 操作日志仍是恢复时的事实来源。
 
-## Testing
+## 测试
 
-Add targeted tests for:
+需要补充有针对性的测试：
 
-- `graph node add` creates or updates `graph_nodes`, `code_facts`, `branch_snapshot_facts`, and operation logs.
-- `graph node delete/archive` removes latest snapshot visibility.
-- Branch rescan creates a new snapshot without carrying manual snapshot membership.
-- `graph entity-context` and `graph get-chain` can see manual nodes only when their fact ids are present in the latest snapshot.
-- Manual type keys are preserved in metadata even when mapped to an existing `code_facts.node_type`.
-- PG transaction rollback prevents partial manual fact writes.
+- `graph node add` 会创建或更新 `graph_nodes`、`code_facts`、`branch_snapshot_facts` 和操作日志。
+- `graph node delete/archive` 会移除 latest snapshot 可见性。
+- 分支重新扫描会创建新 snapshot，并且不会继承手工 snapshot membership。
+- `graph entity-context` 和 `graph get-chain` 只能在 fact id 属于 latest snapshot 时看到手工节点。
+- 手工 type key 即使映射到现有 `code_facts.node_type`，也会保存在 metadata。
+- PG 事务回滚能避免手工事实部分写入。
 
-## Out Of Scope
+## 不在本次范围
 
-- A permanent manual overlay that survives rescans.
-- Separate query behavior for manual graph nodes.
-- A UI workflow for manual graph editing.
-- Full historical diff visualization for manual operations.
+- 重新扫描后仍永久保留的手工 overlay。
+- 手工图节点的独立查询语义。
+- 手工图编辑 UI。
+- 完整的历史差异可视化。
 
-## Self Review
+## 自检
 
-The design has no placeholder sections. The branch overwrite behavior is explicit: manual writes modify the current latest completed snapshot, while rescans create a new latest snapshot from scanner output and do not carry manual additions forward. Manual and scanned nodes are query-equivalent; only metadata and operation logs preserve source.
+本文档没有占位章节。分支覆盖语义已经明确：手工写入修改当前 latest completed snapshot；重新扫描会基于扫描结果创建新的 latest snapshot，不继承手工新增内容。手工节点和扫描节点在查询上等价，来源只通过 metadata 和操作日志保留。
