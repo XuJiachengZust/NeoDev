@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from service.repositories import version_repository as version_repo
 from service.services import product_service
 from service.services import product_version_service
 from service.services import project_service
@@ -41,8 +40,8 @@ def entity_context(
         raise GraphQueryError(category="invalid_argument", message="entity_id is required")
     depth = _validate_depth(depth, max_depth=3)
     context = _validate_scope(conn, product_version_id, project_id, branch)
-    current_snapshot, visible_file_ids = _load_visible_file_ids(conn, project_id, context["branch"])
-    if not visible_file_ids:
+    current_snapshot, visible_fact_ids = _load_visible_fact_ids(conn, project_id, context["branch"])
+    if not visible_fact_ids:
         return {
             "product_version_id": product_version_id,
             "project_id": project_id,
@@ -85,7 +84,7 @@ def entity_context(
             branch=context["branch"],
             entity_id=entity_id,
             depth=depth,
-            visible_file_ids=visible_file_ids,
+            visible_fact_ids=visible_fact_ids,
         )
     finally:
         driver.close()
@@ -130,11 +129,10 @@ def get_chain(
         commit_sha=commit_sha,
     )
     context = _validate_scope(conn, product_version_id, project_id, branch)
-    current_snapshot, visible_file_ids = _load_visible_file_ids(conn, project_id, context["branch"])
+    current_snapshot, visible_fact_ids = _load_visible_fact_ids(conn, project_id, context["branch"])
     current_snapshot = current_snapshot or {}
-    version = version_repo.find_by_project_and_branch(conn, project_id, context["branch"])
-    head_commit = current_snapshot.get("head_commit") or (version or {}).get("last_parsed_commit")
-    if not visible_file_ids:
+    head_commit = current_snapshot.get("head_commit")
+    if not visible_fact_ids:
         return _empty_chain(
             branch=context["branch"],
             depth=depth,
@@ -164,7 +162,7 @@ def get_chain(
             branch=context["branch"],
             locator=locator,
             depth=depth,
-            visible_file_ids=visible_file_ids,
+            visible_fact_ids=visible_fact_ids,
         )
     finally:
         driver.close()
@@ -225,14 +223,15 @@ def _validate_scope(conn, product_version_id: int, project_id: int, branch: str)
             message="project is not bound to this product version",
             details={"product_version_id": product_version_id, "project_id": project_id},
         )
-    if mapping["branch"] != normalized_branch:
+    expected_branch = mapping.get("branch_name") or mapping.get("branch")
+    if expected_branch != normalized_branch:
         raise GraphQueryError(
             category="invalid_scope",
             message="branch is not bound to this product version project mapping",
             details={
                 "product_version_id": product_version_id,
                 "project_id": project_id,
-                "expected_branch": mapping["branch"],
+                "expected_branch": expected_branch,
                 "actual_branch": normalized_branch,
             },
         )
@@ -298,16 +297,11 @@ def _open_driver(context: dict[str, Any]):
     return _create_neo4j_driver(neo4j_config), database, None
 
 
-def _load_visible_file_ids(conn, project_id: int, branch: str) -> tuple[dict[str, Any] | None, list[str]]:
+def _load_visible_fact_ids(conn, project_id: int, branch: str) -> tuple[dict[str, Any] | None, list[str]]:
     current_snapshot = _branch_snapshot_service().get_current_snapshot(conn, project_id, branch)
     if not current_snapshot:
         return None, []
-    entries = _branch_snapshot_service().list_entries(conn, current_snapshot["id"])
-    return current_snapshot, [
-        entry["file_node_id"]
-        for entry in entries
-        if entry.get("file_node_id")
-    ]
+    return current_snapshot, _branch_snapshot_service().list_fact_ids(conn, current_snapshot["id"])
 
 
 def _create_neo4j_driver(neo4j_config: dict):
@@ -330,25 +324,15 @@ def _load_entity_context(
     branch: str,
     entity_id: str,
     depth: int,
-    visible_file_ids: list[str],
+    visible_fact_ids: list[str],
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]]]:
     query = f"""
     MATCH (source {{id: $entity_id, project_id: $project_id}})
-    WHERE source.id IN $visible_file_ids
-       OR EXISTS {{
-            MATCH (visible_file)-[:CONTAINS|DEFINES*1..4]->(source)
-            WHERE visible_file.id IN $visible_file_ids
-       }}
+    WHERE source.id IN $visible_fact_ids
     OPTIONAL MATCH path = (source)-[*1..{depth}]-(neighbor)
     WHERE all(scoped_node IN nodes(path)
         WHERE scoped_node.project_id = $project_id
-          AND (
-            scoped_node.id IN $visible_file_ids
-            OR EXISTS {{
-                MATCH (visible_file)-[:CONTAINS|DEFINES*1..4]->(scoped_node)
-                WHERE visible_file.id IN $visible_file_ids
-            }}
-          )
+          AND scoped_node.id IN $visible_fact_ids
     )
     WITH source, collect(DISTINCT neighbor) AS neighbors, collect(path) AS paths
     WITH source, neighbors, [p IN paths WHERE p IS NOT NULL] AS valid_paths
@@ -379,7 +363,7 @@ def _load_entity_context(
             entity_id=entity_id,
             branch=branch,
             project_id=project_id,
-            visible_file_ids=visible_file_ids,
+            visible_fact_ids=visible_fact_ids,
         ))
     if not records:
         return None, [], []
@@ -398,7 +382,7 @@ def _load_chain(
     branch: str,
     locator: dict[str, str],
     depth: int,
-    visible_file_ids: list[str],
+    visible_fact_ids: list[str],
 ) -> dict[str, Any]:
     query = _chain_query(locator["type"], depth)
     params = {
@@ -408,7 +392,7 @@ def _load_chain(
         "file_path": locator["value"] if locator["type"] == "file_path" else None,
         "symbol": locator["value"] if locator["type"] == "symbol" else None,
         "commit_sha": locator["value"] if locator["type"] == "commit_sha" else None,
-        "visible_file_ids": visible_file_ids,
+        "visible_fact_ids": visible_fact_ids,
     }
     with driver.session(database=database) as session:
         records = list(session.run(query, **params))
@@ -453,23 +437,11 @@ def _chain_query(locator_type: str, depth: int) -> str:
     MATCH (start)
     WHERE start.project_id = $project_id
       AND {start_predicate}
-      AND (
-        start.id IN $visible_file_ids
-        OR EXISTS {{
-            MATCH (visible_file)-[:CONTAINS|DEFINES*1..4]->(start)
-            WHERE visible_file.id IN $visible_file_ids
-        }}
-      )
+      AND start.id IN $visible_fact_ids
     OPTIONAL MATCH path = (start)-[*1..{depth}]-(end)
     WHERE all(scoped_node IN nodes(path)
         WHERE scoped_node.project_id = $project_id
-          AND (
-            scoped_node.id IN $visible_file_ids
-            OR EXISTS {{
-                MATCH (visible_file)-[:CONTAINS|DEFINES*1..4]->(scoped_node)
-                WHERE visible_file.id IN $visible_file_ids
-            }}
-          )
+          AND scoped_node.id IN $visible_fact_ids
     )
     WITH start, collect(path) AS paths
     WITH start, [p IN paths WHERE p IS NOT NULL] AS valid_paths

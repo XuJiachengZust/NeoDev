@@ -60,12 +60,13 @@ def test_minimal_e2e_demo_steps_use_plugin_skill_and_cli_chain():
         "doc change register",
         "graph impact",
         "git verify-doc-change",
-        "project refresh-commit-graph",
+        "project refresh-graph",
     ]:
         assert expected in joined
+    assert "project refresh-commit-graph" not in joined
 
     guide = (EXAMPLE_ROOT / "README.md").read_text(encoding="utf-8")
     assert "plugins/neodev-rd-knowledge/workflows/core-workflows.json" in guide
     assert "neodev config set-server <remote-url>" in guide
-    assert "不要直接写 PostgreSQL" in guide
-    assert "不要直接写 Neo4j" in guide
+    assert "代码图谱不再使用提交级增量刷新" in guide
+    assert "neodev project refresh-graph" in guide

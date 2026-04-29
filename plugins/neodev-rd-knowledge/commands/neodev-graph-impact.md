@@ -1,11 +1,19 @@
 # /neodev-graph-impact
 
-通过本地 `neodev` CLI 调用已配置的远程 NeoDev 服务，检查某个 DocChange 的实现影响范围。
+用于通过远程 NeoDev 服务查询 DocChange 的影响范围。
 
-必要边界：
+执行前先确认远程 CLI 环境：
 
-- 先执行 `python plugins/neodev-rd-knowledge/check_neodev_environment.py`。
-- 先执行 `neodev config show` 和 `neodev cli version-check --json`。
-- 使用 `neodev graph impact --doc-change-id <doc_change_id> --json`。
-- 只有需要补充文档证据时，才使用 `neodev graph semantic-search --product-code <product_code> --version-name <version_name> --query <query> --json`。
-- 只解释远程 NeoDev CLI payload 返回的事实。
+```bash
+python plugins/neodev-rd-knowledge/check_neodev_environment.py
+neodev config show
+neodev cli version-check --json
+```
+
+查询影响范围：
+
+```bash
+neodev graph impact --doc-change-id <doc_change_id> --json
+```
+
+代码图谱不再提供语义搜索入口；需要代码上下文时使用 `graph entity-context` 或 `graph get-chain`。

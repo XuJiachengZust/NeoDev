@@ -36,7 +36,7 @@ class FakeDriver:
         self.closed = True
 
 
-def test_list_nodes_by_version_uses_snapshot_visible_file_ids(monkeypatch):
+def test_list_nodes_by_version_uses_snapshot_visible_fact_ids(monkeypatch):
     driver = FakeDriver()
 
     monkeypatch.setitem(
@@ -67,9 +67,7 @@ def test_list_nodes_by_version_uses_snapshot_visible_file_ids(monkeypatch):
             (),
             {
                 "get_current_snapshot": staticmethod(lambda conn, project_id, branch: {"id": 501}),
-                "list_entries": staticmethod(
-                    lambda conn, snapshot_id: [{"file_node_id": "file-fact-1"}]
-                ),
+                "list_fact_ids": staticmethod(lambda conn, snapshot_id: ["file-fact-1", "func-fact-1"]),
             },
         ),
         raising=False,
@@ -79,7 +77,7 @@ def test_list_nodes_by_version_uses_snapshot_visible_file_ids(monkeypatch):
 
     call = driver.session_obj.calls[0]
     assert result[0]["id"] == "func-fact-1"
-    assert call["params"]["visible_file_ids"] == ["file-fact-1"]
-    assert "visible_file_ids" in call["query"]
+    assert call["params"]["visible_fact_ids"] == ["file-fact-1", "func-fact-1"]
+    assert "visible_fact_ids" in call["query"]
     assert "n.branch = $branch" not in call["query"]
     assert driver.closed is True

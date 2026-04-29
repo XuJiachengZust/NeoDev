@@ -247,29 +247,20 @@ def test_project_refresh_graph_command_is_registered():
     assert "--project-id" in proc.stdout
     assert "--project-name" in proc.stdout
     assert "--branch" in proc.stdout
-    assert "--version-id" in proc.stdout
+    assert "--version-id" not in proc.stdout
     assert "--json" in proc.stdout
 
 
-def test_project_refresh_commit_graph_command_is_registered():
+def test_project_refresh_commit_graph_command_is_removed():
     proc = _run("neodev.py", "project", "refresh-commit-graph", "--help")
-    assert proc.returncode == 0
-    assert "--project-id" in proc.stdout
-    assert "--project-name" in proc.stdout
-    assert "--branch" in proc.stdout
-    assert "--version-id" in proc.stdout
-    assert "--commit-sha" in proc.stdout
-    assert "--max-changed-files" in proc.stdout
-    assert "--json" in proc.stdout
+    assert proc.returncode != 0
+    assert "invalid choice" in proc.stdout
 
 
-def test_graph_semantic_search_command_is_registered():
+def test_graph_semantic_search_command_is_removed():
     proc = _run("neodev.py", "graph", "semantic-search", "--help")
-    assert proc.returncode == 0
-    assert "--product-code" in proc.stdout
-    assert "--version-name" in proc.stdout
-    assert "--query" in proc.stdout
-    assert "--top-k" in proc.stdout
+    assert proc.returncode != 0
+    assert "invalid choice" in proc.stdout
 
 
 def test_graph_impact_command_is_registered():

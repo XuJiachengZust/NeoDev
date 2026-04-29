@@ -25,18 +25,13 @@ def _patch_valid_scope(monkeypatch, status_rows=None):
         branch_analysis_service.product_version_service,
         "list_branches",
         lambda conn, version_id: [
-            {"product_version_id": version_id, "project_id": 11, "branch": "release/unit"}
+            {"product_version_id": version_id, "project_id": 11, "branch_name": "release/unit"}
         ],
     )
     monkeypatch.setattr(
         branch_analysis_service.status_repo,
         "get_status",
         lambda conn, project_id, branch: status_rows or [],
-    )
-    monkeypatch.setattr(
-        branch_analysis_service.version_repo,
-        "find_by_project_and_branch",
-        lambda conn, project_id, branch: None,
     )
     monkeypatch.setattr(
         branch_analysis_service,
@@ -71,19 +66,16 @@ def test_analyze_version_branch_syncs_graph_only(monkeypatch):
     _patch_valid_scope(monkeypatch, status_rows=status_rows)
     calls = []
 
-    def fake_sync(conn, project_id):
-        calls.append({"project_id": project_id})
+    def fake_sync(conn, project_id, branch):
+        calls.append({"project_id": project_id, "branch": branch})
         return {
             "project_id": project_id,
-            "versions_synced": 1,
-            "commits_synced": 3,
-            "graph_actions": [
-                {"version_id": 5, "branch": "release/unit", "action": "full"}
-            ],
-            "graph_errors": None,
+            "branch": branch,
+            "graph_action": "full_refresh",
+            "current_snapshot_id": 77,
         }
 
-    monkeypatch.setattr(branch_analysis_service, "_sync_project_graph", fake_sync)
+    monkeypatch.setattr(branch_analysis_service, "_sync_project_branch", fake_sync)
 
     completed = []
 
@@ -131,7 +123,7 @@ def test_analyze_version_branch_syncs_graph_only(monkeypatch):
     )
 
     assert running == [{"project_id": 11, "branch": "release/unit"}]
-    assert calls == [{"project_id": 11}]
+    assert calls == [{"project_id": 11, "branch": "release/unit"}]
     assert completed == [
         {
             "project_id": 11,
@@ -142,12 +134,9 @@ def test_analyze_version_branch_syncs_graph_only(monkeypatch):
                 "progress": {"stage": "completed", "done": 1, "total": 1},
                 "sync": {
                     "project_id": 11,
-                    "versions_synced": 1,
-                    "commits_synced": 3,
-                    "graph_actions": [
-                        {"version_id": 5, "branch": "release/unit", "action": "full"}
-                    ],
-                    "graph_errors": None,
+                    "branch": "release/unit",
+                    "graph_action": "full_refresh",
+                    "current_snapshot_id": 77,
                 },
             },
         }
@@ -160,7 +149,7 @@ def test_analyze_version_branch_syncs_graph_only(monkeypatch):
     assert task["status"] == "completed"
     assert task["analysis_action"] == "graph_sync"
     assert task["progress"]["stage"] == "completed"
-    assert result["sync"]["commits_synced"] == 3
+    assert result["sync"]["graph_action"] == "full_refresh"
 
 
 def test_analyze_version_branch_marks_failed_when_graph_sync_fails(monkeypatch):
@@ -191,10 +180,10 @@ def test_analyze_version_branch_marks_failed_when_graph_sync_fails(monkeypatch):
 
     monkeypatch.setattr(branch_analysis_service.status_repo, "set_failed", fake_set_failed)
 
-    def fake_sync(conn, project_id):
+    def fake_sync(conn, project_id, branch):
         raise RuntimeError("sync failed")
 
-    monkeypatch.setattr(branch_analysis_service, "_sync_project_graph", fake_sync)
+    monkeypatch.setattr(branch_analysis_service, "_sync_project_branch", fake_sync)
 
     class DummyConn:
         def commit(self):
@@ -266,16 +255,6 @@ def test_get_analysis_status_includes_contract_snapshot_fields(monkeypatch):
         }
     ]
     _patch_valid_scope(monkeypatch, status_rows=status_rows)
-    monkeypatch.setattr(
-        branch_analysis_service.version_repo,
-        "find_by_project_and_branch",
-        lambda conn, project_id, branch: {
-            "id": 5,
-            "project_id": project_id,
-            "branch": branch,
-            "last_parsed_commit": "b" * 40,
-        },
-    )
     monkeypatch.setattr(
         branch_analysis_service.branch_snapshot_service,
         "get_current_snapshot",

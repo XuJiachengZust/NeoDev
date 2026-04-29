@@ -103,50 +103,9 @@ def test_handle_project_refresh_graph_calls_service(monkeypatch):
             project_id=9,
             project_name=None,
             branch="main",
-            version_id=12,
         )
     )
 
     assert payload["ok"] is True
     assert payload["command"] == "project refresh-graph"
-    assert captured == {"project_id": 9, "version_id": 12, "branch": "main"}
-
-
-def test_handle_project_refresh_commit_graph_calls_service(monkeypatch):
-    from service.cli.commands import project
-
-    _patch_db(monkeypatch, project)
-    monkeypatch.setattr(
-        project.project_service,
-        "get_project",
-        lambda conn, project_id: {"id": project_id, "name": "demo"},
-    )
-    captured = {}
-
-    def fake_refresh_commit_graph(conn, **kwargs):
-        captured.update(kwargs)
-        return {"project_id": kwargs["project_id"], "graph_action": "commit_incremental"}
-
-    monkeypatch.setattr(project.project_service, "refresh_commit_graph", fake_refresh_commit_graph)
-
-    payload = project.handle_project_refresh_commit_graph(
-        SimpleNamespace(
-            command_name="project refresh-commit-graph",
-            project_id=9,
-            project_name=None,
-            branch="main",
-            version_id=12,
-            commit_sha="a" * 40,
-            max_changed_files=25,
-        )
-    )
-
-    assert payload["ok"] is True
-    assert payload["command"] == "project refresh-commit-graph"
-    assert captured == {
-        "project_id": 9,
-        "version_id": 12,
-        "branch": "main",
-        "commit_sha": "a" * 40,
-        "max_changed_files": 25,
-    }
+    assert captured == {"project_id": 9, "branch": "main"}

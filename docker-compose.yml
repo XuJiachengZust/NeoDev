@@ -81,6 +81,7 @@ services:
       - repo_data:/data/repos
       - sandbox_data:/data/sandboxes
       - doc_data:/data/requirement_docs
+      - ${HOST_SSH_DIR:-/root/.ssh}:/root/.ssh:ro
     expose:
       - "8000"
 

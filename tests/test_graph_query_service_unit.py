@@ -63,19 +63,9 @@ def _patch_valid_scope(monkeypatch, driver):
                 "product_version_id": version_id,
                 "project_id": 11,
                 "project_name": "api-service",
-                "branch": "release/V1.0",
+                "branch_name": "release/V1.0",
             }
         ],
-    )
-    monkeypatch.setattr(
-        graph_query_service.version_repo,
-        "find_by_project_and_branch",
-        lambda conn, project_id, branch: {
-            "id": 5,
-            "project_id": project_id,
-            "branch": branch,
-            "last_parsed_commit": "a" * 40,
-        },
     )
     monkeypatch.setattr(
         graph_query_service,
@@ -102,10 +92,8 @@ def _patch_valid_scope(monkeypatch, driver):
                         "created_from_action": "incremental",
                     }
                 ),
-                "list_entries": staticmethod(
-                    lambda conn, snapshot_id: [
-                        {"file_node_id": "file-fact-auth", "file_path": "src/auth.py"}
-                    ]
+                "list_fact_ids": staticmethod(
+                    lambda conn, snapshot_id: ["file-fact-auth", "Function:auth:login"]
                 ),
             },
         ),
@@ -178,8 +166,8 @@ def test_entity_context_returns_scoped_neighbors(monkeypatch):
     assert call["params"]["entity_id"] == "Function:auth:login"
     assert call["params"]["project_id"] == 11
     assert call["params"]["branch"] == "release/V1.0"
-    assert call["params"]["visible_file_ids"] == ["file-fact-auth"]
-    assert "visible_file_ids" in call["query"]
+    assert call["params"]["visible_fact_ids"] == ["file-fact-auth", "Function:auth:login"]
+    assert "visible_fact_ids" in call["query"]
     assert "node.branch = $branch" not in call["query"]
     assert driver.closed is True
 
@@ -240,10 +228,8 @@ def test_get_chain_returns_nodes_edges_and_commit_scope(monkeypatch):
     )
     monkeypatch.setattr(
         graph_query_service.branch_snapshot_service,
-        "list_entries",
-        lambda conn, snapshot_id: [
-            {"file_node_id": "file-fact-auth", "file_path": "src/auth.py"}
-        ],
+        "list_fact_ids",
+        lambda conn, snapshot_id: ["file-fact-auth", "Function:auth:login"],
     )
 
     result = graph_query_service.get_chain(
@@ -271,7 +257,7 @@ def test_get_chain_returns_nodes_edges_and_commit_scope(monkeypatch):
     ]
     call = driver.sessions[0]["session"].calls[0]
     assert call["params"]["start_node"] == "Function:auth:login"
-    assert call["params"]["visible_file_ids"] == ["file-fact-auth"]
+    assert call["params"]["visible_fact_ids"] == ["file-fact-auth", "Function:auth:login"]
     assert "1..2" in call["query"]
     assert "node.branch = $branch" not in call["query"]
 

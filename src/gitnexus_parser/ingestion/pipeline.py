@@ -7,8 +7,10 @@ from pathlib import Path
 from gitnexus_parser.graph import create_knowledge_graph, generate_id
 from gitnexus_parser.ingestion.facts import (
     build_file_fact_id,
+    build_file_symbol_key,
     build_symbol_fact_id,
     build_symbol_fact_key,
+    build_symbol_key,
 )
 from gitnexus_parser.ingestion.walker import walk_repository_paths
 from gitnexus_parser.ingestion.structure import process_structure
@@ -30,6 +32,8 @@ class PipelineResult:
     node_count: int
     relationship_count: int
     file_count: int
+    code_facts: list[dict] | None = None
+    snapshot_hash: str | None = None
 
 
 def _build_file_content_hashes(repo: Path, paths: list[str]) -> dict[str, str]:
@@ -45,12 +49,14 @@ def _build_file_content_hashes(repo: Path, paths: list[str]) -> dict[str, str]:
 def _remap_parse_result_to_repository_facts(
     parse_result,
     *,
-    repo_id: int,
+    project_id: int,
     file_content_hashes: dict[str, str],
+    file_contents: dict[str, str] | None = None,
 ):
+    file_contents = file_contents or {}
     file_ids_by_path = {
         file_path: build_file_fact_id(
-            repo_id=repo_id,
+            project_id=project_id,
             file_path=file_path,
             file_content_hash=file_content_hash,
         )
@@ -70,28 +76,39 @@ def _remap_parse_result_to_repository_facts(
             name = str(props.get("name") or "")
             start_line = props.get("startLine")
             end_line = props.get("endLine")
+            node_content_hash = _node_content_hash(
+                file_contents.get(file_path or ""),
+                start_line=start_line,
+                end_line=end_line,
+                fallback=file_content_hash,
+            )
             fact_key = build_symbol_fact_key(
-                repo_id=repo_id,
+                project_id=project_id,
                 label=node.label,
                 file_path=file_path,
                 name=name,
                 start_line=start_line,
                 end_line=end_line,
-                file_content_hash=file_content_hash,
+                file_content_hash=node_content_hash,
             )
             new_id = build_symbol_fact_id(
-                repo_id=repo_id,
+                project_id=project_id,
                 label=node.label,
                 file_path=file_path,
                 name=name,
                 start_line=start_line,
                 end_line=end_line,
-                file_content_hash=file_content_hash,
+                file_content_hash=node_content_hash,
             )
             id_map[node.id] = new_id
-            props["repo_id"] = repo_id
             props["file_content_hash"] = file_content_hash
-            props["content_hash"] = file_content_hash
+            props["content_hash"] = node_content_hash
+            props["symbol_key"] = build_symbol_key(
+                project_id=project_id,
+                label=node.label,
+                file_path=file_path,
+                name=name,
+            )
             props["fact_key"] = fact_key
             remapped_nodes.append(replace(node, id=new_id, properties=props))
         else:
@@ -131,6 +148,23 @@ def _remap_parse_result_to_repository_facts(
         calls=remapped_calls,
         moduleMembers=remapped_members,
     ), file_ids_by_path
+
+
+def _node_content_hash(
+    content: str | None,
+    *,
+    start_line: int | None,
+    end_line: int | None,
+    fallback: str,
+) -> str:
+    if not content or not start_line or not end_line or start_line > end_line:
+        return fallback
+    lines = content.splitlines()
+    selected = lines[max(start_line - 1, 0) : min(end_line, len(lines))]
+    normalized = "\n".join(line.strip() for line in selected if line.strip())
+    if not normalized:
+        return fallback
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def run_pipeline(
@@ -196,11 +230,11 @@ def run_pipeline(
         paths_to_scan,
         branch=use_branch,
         project_id=project_id,
-        repo_id=write_project_id,
         file_content_hashes=file_content_hashes,
     )
 
     files_with_content: list[tuple[str, str]] = []
+    file_contents: dict[str, str] = {}
     for e in entries:
         if e.path not in paths_to_scan:
             continue
@@ -208,14 +242,16 @@ def run_pipeline(
         try:
             content = full.read_text(encoding="utf-8", errors="replace")
             files_with_content.append((e.path, content))
+            file_contents[e.path] = content
         except Exception:
             continue
 
     parse_result = parse_files(files_with_content)
     parse_result, file_ids_by_path = _remap_parse_result_to_repository_facts(
         parse_result,
-        repo_id=write_project_id,
+        project_id=write_project_id,
         file_content_hashes=file_content_hashes,
+        file_contents=file_contents,
     )
     symbol_table = create_symbol_table()
 
@@ -259,9 +295,12 @@ def run_pipeline(
             if graph.getNode(target_id) is None:
                 stub_props = {"filePath": resolved, "name": resolved.split("/")[-1]}
                 if resolved in file_content_hashes:
-                    stub_props["repo_id"] = write_project_id
                     stub_props["file_content_hash"] = file_content_hashes[resolved]
                     stub_props["content_hash"] = file_content_hashes[resolved]
+                    stub_props["symbol_key"] = build_file_symbol_key(
+                        project_id=write_project_id,
+                        file_path=resolved,
+                    )
                 if project_id is not None:
                     stub_props["project_id"] = project_id
                 graph.addNode({"id": target_id, "label": "File", "properties": stub_props})
@@ -294,8 +333,89 @@ def run_pipeline(
             logging.getLogger(__name__).exception("Neo4j 入库失败: %s", e)
             raise
 
+    code_facts = _code_facts_from_graph(graph, project_id=write_project_id)
+    snapshot_hash = _snapshot_hash(code_facts)
+
     return PipelineResult(
         node_count=graph.nodeCount,
         relationship_count=graph.relationshipCount,
         file_count=parse_result.fileCount,
+        code_facts=code_facts,
+        snapshot_hash=snapshot_hash,
     )
+
+
+_CODE_FACT_LABELS = {
+    "File",
+    "Class",
+    "Interface",
+    "Enum",
+    "Annotation",
+    "Method",
+    "Function",
+    "Constructor",
+}
+
+
+def _code_facts_from_graph(graph, *, project_id: int) -> list[dict]:
+    parent_by_child: dict[str, str] = {}
+    for rel in graph.iterRelationships():
+        if rel.get("type") in {"CONTAINS", "DEFINES", "MEMBER_OF"}:
+            parent_by_child[rel["targetId"]] = rel["sourceId"]
+
+    facts: list[dict] = []
+    for node in graph.iterNodes():
+        label = str(node.get("label") or "")
+        if label not in _CODE_FACT_LABELS:
+            continue
+        props = dict(node.get("properties") or {})
+        file_path = props.get("filePath") or props.get("file_path")
+        name = props.get("name") or file_path or node["id"]
+        qualified_name = props.get("qualified_name") or props.get("qualifiedName") or name
+        content_hash = props.get("content_hash") or props.get("file_content_hash") or ""
+        signature_basis = f"{label}:{file_path or ''}:{qualified_name}:{props.get('startLine') or ''}:{props.get('endLine') or ''}"
+        signature_hash = props.get("signature_hash") or hashlib.sha256(signature_basis.encode("utf-8")).hexdigest()
+        structure_hash = props.get("structure_hash") or hashlib.sha256(
+            f"{label}:{signature_hash}:{content_hash}".encode("utf-8")
+        ).hexdigest()
+        symbol_key = props.get("symbol_key")
+        if not symbol_key:
+            symbol_key = build_symbol_key(
+                project_id=project_id,
+                label=label,
+                file_path=str(file_path or ""),
+                name=str(qualified_name),
+            )
+        metadata = {
+            key: value
+            for key, value in props.items()
+            if key not in {"sourceCode", "content", "repo_id"}
+        }
+        facts.append(
+            {
+                "project_id": project_id,
+                "fact_id": node["id"],
+                "symbol_key": symbol_key,
+                "node_type": label,
+                "file_path": file_path,
+                "qualified_name": qualified_name,
+                "name": name,
+                "signature_hash": signature_hash,
+                "content_hash": content_hash,
+                "structure_hash": structure_hash,
+                "parent_fact_id": parent_by_child.get(node["id"]),
+                "start_line": props.get("startLine"),
+                "end_line": props.get("endLine"),
+                "metadata_json": metadata,
+                "status": "active",
+            }
+        )
+    return facts
+
+
+def _snapshot_hash(code_facts: list[dict]) -> str:
+    material = "\n".join(
+        f"{fact['fact_id']}:{fact.get('structure_hash') or ''}"
+        for fact in sorted(code_facts, key=lambda item: item["fact_id"])
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()

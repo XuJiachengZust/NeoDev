@@ -4,7 +4,7 @@ from typing import Any
 from service.repositories import graph_management_repository as repo
 
 
-IDENTITY_FIELDS = frozenset({"id", "project_id", "repo_id", "file_path", "content_hash", "node_id"})
+IDENTITY_FIELDS = frozenset({"id", "project_id", "file_path", "content_hash", "node_id"})
 EDGE_IDENTITY_FIELDS = frozenset(
     {"id", "project_id", "edge_id", "from_node_id", "to_node_id", "from_project_id", "to_project_id"}
 )

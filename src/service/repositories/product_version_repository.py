@@ -1,4 +1,4 @@
-"""Product Version aggregate: PG CRUD."""
+"""Product version repository."""
 
 from psycopg2.extras import RealDictCursor
 
@@ -23,10 +23,7 @@ def list_by_product(conn, product_id: int, status: str | None = None) -> list[di
 
 def find_by_id(conn, version_id: int) -> dict | None:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(
-            f"SELECT {_COLUMNS} FROM product_versions WHERE id = %s",
-            (version_id,),
-        )
+        cur.execute(f"SELECT {_COLUMNS} FROM product_versions WHERE id = %s", (version_id,))
         row = cur.fetchone()
         return dict(row) if row else None
 
@@ -54,8 +51,8 @@ def create(
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""INSERT INTO product_versions (product_id, version_name, description, status, release_date)
-             VALUES (%s, %s, %s, %s, %s)
-             RETURNING {_COLUMNS}""",
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING {_COLUMNS}""",
             (product_id, version_name, description, status, release_date),
         )
         return dict(cur.fetchone())
@@ -81,8 +78,10 @@ def update(conn, version_id: int, **kwargs) -> dict | None:
     args.append(version_id)
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
-            f"""UPDATE product_versions SET {", ".join(updates)} WHERE id = %s
-             RETURNING {_COLUMNS}""",
+            f"""UPDATE product_versions
+                SET {", ".join(updates)}
+                WHERE id = %s
+                RETURNING {_COLUMNS}""",
             args,
         )
         row = cur.fetchone()
@@ -95,13 +94,10 @@ def delete(conn, version_id: int) -> bool:
         return cur.rowcount > 0
 
 
-# ── 分支映射 ──
-
 def list_branches(conn, version_id: int) -> list[dict]:
-    """列出产品版本关联的项目分支。"""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
-            """SELECT pvb.id, pvb.product_version_id, pvb.project_id, pvb.branch,
+            """SELECT pvb.id, pvb.product_version_id, pvb.project_id, pvb.branch_name,
                       p.name AS project_name
                FROM product_version_branches pvb
                JOIN projects p ON p.id = pvb.project_id
@@ -113,13 +109,14 @@ def list_branches(conn, version_id: int) -> list[dict]:
 
 
 def set_branch(conn, version_id: int, project_id: int, branch: str) -> dict:
-    """设置或更新产品版本对应项目的分支。"""
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
-            """INSERT INTO product_version_branches (product_version_id, project_id, branch)
-             VALUES (%s, %s, %s)
-             ON CONFLICT (product_version_id, project_id) DO UPDATE SET branch = EXCLUDED.branch
-             RETURNING id, product_version_id, project_id, branch""",
+            """INSERT INTO product_version_branches (product_version_id, project_id, branch_name)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (product_version_id, project_id)
+               DO UPDATE SET branch_name = EXCLUDED.branch_name,
+                             updated_at = now()
+               RETURNING id, product_version_id, project_id, branch_name""",
             (version_id, project_id, branch),
         )
         return dict(cur.fetchone())
@@ -135,19 +132,4 @@ def remove_branch(conn, version_id: int, project_id: int) -> bool:
 
 
 def list_unversioned_project_branches(conn, project_id: int) -> list[str]:
-    """列出已映射但尚未存在项目级 version 的 branch。"""
-    with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        cur.execute(
-            """SELECT DISTINCT pvb.branch
-               FROM product_version_branches pvb
-               LEFT JOIN versions v
-                 ON v.project_id = pvb.project_id
-                AND v.branch = pvb.branch
-               WHERE pvb.project_id = %s
-                 AND pvb.branch IS NOT NULL
-                 AND btrim(pvb.branch) <> ''
-                 AND v.id IS NULL
-               ORDER BY pvb.branch""",
-            (project_id,),
-        )
-        return [str(row["branch"]) for row in cur.fetchall()]
+    return []

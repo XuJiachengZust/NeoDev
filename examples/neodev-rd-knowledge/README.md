@@ -1,48 +1,46 @@
 # NeoDev RD Knowledge Minimal E2E
 
-这个目录提供 T014 的最小联调样例，用于把 T001-T013 串成一条可复现主链路。
+这个示例用于演示产品、文档、项目分支和图谱刷新之间的最小闭环。
 
-## 范围
+## 目录
 
-- 官方插件：`plugins/neodev-rd-knowledge`
-- 官方 skill：`plugins/neodev-rd-knowledge/skills/neodev-rd-knowledge/SKILL.md`
-- 共享工作流：`plugins/neodev-rd-knowledge/workflows/core-workflows.json`
-- 示例文档仓库：`examples/neodev-rd-knowledge/doc-repo`
-- 示例项目仓库：`examples/neodev-rd-knowledge/project-repo`
+- `plugins/neodev-rd-knowledge`
+- `plugins/neodev-rd-knowledge/skills/neodev-rd-knowledge/SKILL.md`
+- `plugins/neodev-rd-knowledge/workflows/core-workflows.json`
+- `examples/neodev-rd-knowledge/doc-repo`
+- `examples/neodev-rd-knowledge/project-repo`
 
-## 执行方式
+## 前置
 
-按 `manifest.json` 的 `demo_steps` 顺序执行。开发者电脑只安装本地 `neodev` CLI 客户端、skill 和插件；本地客户端必须先通过 `neodev config set-server <remote-url>` 配置统一远程 NeoDev 服务，再用 `neodev config show` 和 `neodev cli version-check --json` 校验。除 `config show` 外，所有业务命令都必须使用 `neodev ... --json`，并以前一步 CLI 返回的结构化字段补齐后续参数。
+先配置远程服务：
 
-## 边界
+```bash
+neodev config set-server <remote-url>
+neodev config show
+neodev cli version-check --json
+```
 
-- 不要直接写 PostgreSQL。
-- 不要直接写 Neo4j。
-- 不要用临时脚本替代 `doc change register`、`graph impact`、`git verify-doc-change` 或 `project refresh-commit-graph`。
-- `semantic_status=degraded` 表示语义能力降级，不等同于主流程失败。
+## 示例步骤
 
-## 主链路
+`manifest.json` 的 `demo_steps` 给出了可复现命令链：
 
-1. `config show`
-2. `cli version-check`
-3. 创建产品与版本。
-4. 绑定 `main` 与 `feature/docchange-demo` 两个分支场景。
-5. 扫描 `doc-repo`。
-6. 登记 `DC-NEODEV-DEMO-001`。
-7. 查询影响面。
-8. 提交前校验 `DocChange-ID`。
-9. 推送后刷新图谱节点。
+1. 创建产品和版本。
+2. 绑定产品版本到项目分支。
+3. 扫描文档并登记 DocChange。
+4. 查询影响范围。
+5. 验证提交消息。
+6. 使用 `neodev project refresh-graph --project-id <project_id> --branch <branch> --json` 重建分支图谱。
+
+代码图谱不再使用提交级增量刷新，也不再使用代码语义搜索。
 
 ## Three-Client Plugin Use
 
-- Codex uses `plugins/neodev-rd-knowledge/.codex-plugin/plugin.json` and the bundled `skills/neodev-rd-knowledge/SKILL.md`.
-- Claude Code uses `plugins/neodev-rd-knowledge/.claude-plugin/plugin.json`, `commands/`, `agents/`, and `hooks/hooks.json`.
-- Cursor uses `.cursor/rules/*.mdc`; distributable copies live under `plugins/neodev-rd-knowledge/cursor/rules/`.
+- Codex 使用 `plugins/neodev-rd-knowledge/.codex-plugin/plugin.json` 和 bundled skill。
+- Claude Code 使用 `.claude-plugin`、`commands/`、`agents/`、`hooks/hooks.json`。
+- Cursor 使用 `.cursor/rules/*.mdc`，分发副本在 `plugins/neodev-rd-knowledge/cursor/rules/`。
 
-Before `doc scan` or `doc change register`, validate controlled documents:
+执行 `doc scan` 或 `doc change register` 前可校验受控文档：
 
 ```bash
 python plugins/neodev-rd-knowledge/validate_mvp_docs.py examples/neodev-rd-knowledge/doc-repo
 ```
-
-提交信息必须包含且只包含一个 `DocChange-ID` trailer；推送后的默认图刷新统一通过 `neodev project refresh-commit-graph ... --json` 执行，只有提交过大或无法定位时才回退到分支图刷新。

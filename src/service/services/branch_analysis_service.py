@@ -9,7 +9,6 @@ from service.repositories import branch_analysis_status_repository as status_rep
 from service.services import product_service
 from service.services import product_version_service
 from service.services import project_service
-from service.repositories import version_repository as version_repo
 
 
 @dataclass(slots=True)
@@ -32,7 +31,7 @@ def analyze_version_branch(
     context = _validate_scope(conn, product_version_id, project_id, branch)
     try:
         _mark_running(conn, project_id, context["branch"])
-        sync_result = _sync_project_graph(conn, project_id)
+        sync_result = _sync_project_branch(conn, project_id, context["branch"])
         if sync_result is None:
             raise BranchAnalysisError(
                 category="not_found",
@@ -102,10 +101,10 @@ def _mark_running(conn, project_id: int, branch: str) -> None:
     conn.commit()
 
 
-def _sync_project_graph(conn, project_id: int) -> dict | None:
+def _sync_project_branch(conn, project_id: int, branch: str) -> dict | None:
     from service.services import sync_service
 
-    return sync_service.sync_commits_for_project(conn, project_id)
+    return sync_service.refresh_graph_for_branch(conn, project_id, branch)
 
 
 def _branch_snapshot_service():
@@ -171,14 +170,15 @@ def _validate_scope(conn, product_version_id: int, project_id: int, branch: str)
             message="project is not bound to this product version",
             details={"product_version_id": product_version_id, "project_id": project_id},
         )
-    if mapping["branch"] != normalized_branch:
+    expected_branch = mapping.get("branch_name") or mapping.get("branch")
+    if expected_branch != normalized_branch:
         raise BranchAnalysisError(
             category="invalid_scope",
             message="branch is not bound to this product version project mapping",
             details={
                 "product_version_id": product_version_id,
                 "project_id": project_id,
-                "expected_branch": mapping["branch"],
+                "expected_branch": expected_branch,
                 "actual_branch": normalized_branch,
             },
         )
@@ -199,7 +199,6 @@ def _current_task(conn, context: dict) -> dict:
     row = rows[0] if rows else {}
     extra = row.get("extra") or {}
     progress = extra.get("progress") or {}
-    legacy_version = version_repo.find_by_project_and_branch(conn, project_id, branch) or {}
     current_snapshot = _branch_snapshot_service().get_current_snapshot(conn, project_id, branch) or {}
     analysis_action = extra.get("analysis_action") or extra.get("graph_action")
     return {
@@ -212,9 +211,7 @@ def _current_task(conn, context: dict) -> dict:
         "progress": progress,
         "current_snapshot_id": current_snapshot.get("id") or extra.get("current_snapshot_id"),
         "head_commit": current_snapshot.get("head_commit") or extra.get("head_commit"),
-        "last_parsed_commit": current_snapshot.get("last_parsed_commit")
-        or extra.get("last_parsed_commit")
-        or legacy_version.get("last_parsed_commit"),
+        "last_parsed_commit": current_snapshot.get("head_commit") or extra.get("head_commit"),
         "created_from_action": current_snapshot.get("created_from_action")
         or extra.get("created_from_action")
         or analysis_action,

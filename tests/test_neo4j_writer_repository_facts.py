@@ -59,7 +59,6 @@ class FakeGraph:
             "id": "file-fact-1",
             "label": "File",
             "properties": {
-                "repo_id": 11,
                 "project_id": 11,
                 "filePath": "src/a.py",
                 "file_content_hash": "h1",
@@ -69,7 +68,6 @@ class FakeGraph:
             "id": "func-fact-1",
             "label": "Function",
             "properties": {
-                "repo_id": 11,
                 "project_id": 11,
                 "filePath": "src/a.py",
                 "name": "handle",

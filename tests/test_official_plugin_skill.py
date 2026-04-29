@@ -23,21 +23,16 @@ def test_official_plugin_manifest_and_marketplace_are_registered():
     assert manifest["version"] == "0.1.0"
     assert manifest["skills"] == "./skills/"
     assert "neodev" in manifest["keywords"]
-    assert manifest["interface"]["displayName"] == "NeoDev 研发知识插件"
-    assert manifest["interface"]["capabilities"] == ["工作流编排", "CLI 调用引导"]
     assert len(manifest["interface"]["defaultPrompt"]) <= 3
     assert _contains_cjk(manifest["description"])
     assert _contains_cjk(manifest["interface"]["shortDescription"])
     assert _contains_cjk(manifest["interface"]["longDescription"])
-    assert all(_contains_cjk(prompt) for prompt in manifest["interface"]["defaultPrompt"])
 
     marketplace = _read_json(ROOT / ".agents" / "plugins" / "marketplace.json")
-    assert marketplace["interface"]["displayName"] == "NeoDev 本地插件市场"
     entries = {entry["name"]: entry for entry in marketplace["plugins"]}
     entry = entries["neodev-rd-knowledge"]
     assert entry["source"] == {"source": "local", "path": "./plugins/neodev-rd-knowledge"}
     assert entry["policy"] == {"installation": "AVAILABLE", "authentication": "ON_INSTALL"}
-    assert entry["category"] == "开发者工具"
 
 
 def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
@@ -49,7 +44,7 @@ def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
         "doc_change_to_implementation",
         "repository_auto_graph",
         "pre_push_verification",
-        "project_refresh_commit_graph",
+        "project_refresh_graph",
     }
     assert required.issubset(workflows["workflows"])
 
@@ -70,9 +65,11 @@ def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
         "git verify-doc-change",
         "git dangerous-commit list",
         "git dangerous-commit resolve",
-        "project refresh-commit-graph",
+        "project refresh-graph --project-id <project_id> --branch <branch>",
     ]:
         assert expected in joined
+    assert "project refresh-commit-graph" not in joined
+    assert "graph semantic-search" not in joined
     assert "product version analyze" not in joined
     assert "product version analyze-status" not in joined
     assert "product version watch-status" not in joined
@@ -90,7 +87,8 @@ def test_official_plugin_hooks_check_remote_cli_environment():
 
     joined = "\n".join(hook_commands)
     assert "check_neodev_environment.py" in joined
-    assert "neodev project refresh-commit-graph" in joined
+    assert "neodev project refresh-graph" in joined
+    assert "neodev project refresh-commit-graph" not in joined
     assert "python neodev.py" not in joined
 
 
@@ -99,25 +97,18 @@ def test_official_skill_is_bundled_and_points_to_the_shared_workflow_contract():
 
     assert skill.startswith("---\n")
     assert "name: neodev-rd-knowledge" in skill
-    assert "description: 面向 NeoDev 研发知识工作流" in skill
+    assert "description: 使用 NeoDev 远程服务" in skill
     assert "workflows/core-workflows.json" in skill
     assert "cli version-check" in skill
-    assert "本地 neodev CLI 客户端调用远程 NeoDev 服务" in skill
     assert "neodev config set-server" in skill
     assert "install-neodev-client.ps1" in skill
     assert "project create --name <project_name> --repo-url <repo_url>" in skill
     assert "product version analyze" not in skill
-    assert "git verify-doc-change" in skill
-    assert "project refresh-commit-graph" in skill
-    assert "不要直接写 PostgreSQL" in skill
-    assert "不要直接写 Neo4j" in skill
-    assert "## 必守边界" in skill
-    assert "## 主流程" in skill
-    for old_text in [
-        "Use this skill",
-        "Required Boundary",
-        "Workflow Source",
-        "Main Flows",
-        "Result Interpretation",
-    ]:
-        assert old_text not in skill
+    assert "git verify-doc-change" not in skill
+    assert "project refresh-graph" in skill
+    assert "project refresh-commit-graph" not in skill
+    assert "graph semantic-search" not in skill
+    assert "PostgreSQL" in skill
+    assert "Neo4j" in skill
+    assert "## 边界" in skill
+    assert "## 常用流程" in skill

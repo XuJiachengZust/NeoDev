@@ -8,7 +8,6 @@ from service.dependencies import get_database_url
 from service.services import graph_impact_service
 from service.services import graph_management_service
 from service.services import graph_query_service
-from service.services import graph_semantic_search_service
 from service.services import product_service
 from service.services import product_version_service
 from service.services import project_service
@@ -25,16 +24,6 @@ def register(subparsers) -> None:
     impact_parser.set_defaults(
         handler=handle_impact,
         command_name="graph impact",
-    )
-
-    semantic_parser = graph_subparsers.add_parser("semantic-search")
-    _add_version_locator(semantic_parser)
-    semantic_parser.add_argument("--query", required=True)
-    semantic_parser.add_argument("--top-k", type=int, default=5)
-    semantic_parser.add_argument("--json", action="store_true", dest="json_output")
-    semantic_parser.set_defaults(
-        handler=handle_semantic_search,
-        command_name="graph semantic-search",
     )
 
     entity_parser = graph_subparsers.add_parser("entity-context")
@@ -231,12 +220,6 @@ def _with_db(callback):
     except CliError:
         raise
     except graph_impact_service.GraphImpactError as exc:
-        raise CliError(
-            category=exc.category,
-            message=exc.message,
-            details=exc.details,
-        ) from exc
-    except graph_semantic_search_service.GraphSemanticSearchError as exc:
         raise CliError(
             category=exc.category,
             message=exc.message,
@@ -527,20 +510,6 @@ def _collect_updates(**kwargs) -> dict:
             message="provide at least one field to update",
         )
     return updates
-
-
-def handle_semantic_search(args) -> dict:
-    def run(conn):
-        version = _resolve_version(conn, args)
-        result = graph_semantic_search_service.semantic_search(
-            conn,
-            product_version_id=version["id"],
-            query=args.query,
-            top_k=args.top_k,
-        )
-        return build_success_payload(args.command_name, result)
-
-    return _with_db(run)
 
 
 def handle_entity_context(args) -> dict:

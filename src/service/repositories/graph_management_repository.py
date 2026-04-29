@@ -167,7 +167,7 @@ def get_node(conn, project_id: int, node_id: str) -> dict | None:
         cur.execute(
             """
             SELECT id, project_id, node_id, type_key, name, properties,
-                   source, repo_id, file_path, content_hash, status
+                   source, file_path, content_hash, status
             FROM graph_nodes
             WHERE project_id = %s AND node_id = %s
             """,
@@ -183,7 +183,7 @@ def list_nodes(conn, project_id: int, type_key: str | None = None) -> list[dict]
             cur.execute(
                 """
                 SELECT id, project_id, node_id, type_key, name, properties,
-                       source, repo_id, file_path, content_hash, status
+                       source, file_path, content_hash, status
                 FROM graph_nodes
                 WHERE project_id = %s AND type_key = %s
                 ORDER BY node_id
@@ -194,7 +194,7 @@ def list_nodes(conn, project_id: int, type_key: str | None = None) -> list[dict]
             cur.execute(
                 """
                 SELECT id, project_id, node_id, type_key, name, properties,
-                       source, repo_id, file_path, content_hash, status
+                       source, file_path, content_hash, status
                 FROM graph_nodes
                 WHERE project_id = %s
                 ORDER BY node_id
@@ -209,7 +209,7 @@ def get_node_by_any_project(conn, node_id: str) -> dict | None:
         cur.execute(
             """
             SELECT id, project_id, node_id, type_key, name, properties,
-                   source, repo_id, file_path, content_hash, status
+                   source, file_path, content_hash, status
             FROM graph_nodes
             WHERE node_id = %s
             ORDER BY project_id
@@ -229,7 +229,7 @@ def archive_node(conn, *, project_id: int, node_id: str) -> dict | None:
             SET status = 'archived', updated_at = now()
             WHERE project_id = %s AND node_id = %s
             RETURNING id, project_id, node_id, type_key, name, properties,
-                      source, repo_id, file_path, content_hash, status
+                      source, file_path, content_hash, status
             """,
             (project_id, node_id),
         )
@@ -262,7 +262,7 @@ def upsert_node(
                           status = EXCLUDED.status,
                           updated_at = now()
             RETURNING id, project_id, node_id, type_key, name, properties,
-                      source, repo_id, file_path, content_hash, status
+                      source, file_path, content_hash, status
             """,
             (project_id, node_id, type_key, name, Json(properties or {}), source, status),
         )
@@ -291,7 +291,7 @@ def update_node(conn, *, project_id: int, node_id: str, updates: dict) -> dict |
             SET {", ".join(assignments)}, updated_at = now()
             WHERE project_id = %s AND node_id = %s
             RETURNING id, project_id, node_id, type_key, name, properties,
-                      source, repo_id, file_path, content_hash, status
+                      source, file_path, content_hash, status
             """,
             args,
         )

@@ -44,12 +44,8 @@ def list_nodes_by_version(
     current_snapshot = snapshot_service.get_current_snapshot(conn, project_id, branch)
     if not current_snapshot:
         return []
-    visible_file_ids = [
-        entry["file_node_id"]
-        for entry in snapshot_service.list_entries(conn, current_snapshot["id"])
-        if entry.get("file_node_id")
-    ]
-    if not visible_file_ids:
+    visible_fact_ids = snapshot_service.list_fact_ids(conn, current_snapshot["id"])
+    if not visible_fact_ids:
         return []
 
     neo4j_config, database = load_neo4j_config(project)
@@ -69,18 +65,12 @@ def list_nodes_by_version(
         with driver.session(database=database) as session:
             conditions = [
                 "n.project_id = $project_id",
-                """(
-                    n.id IN $visible_file_ids
-                    OR EXISTS {
-                        MATCH (visible_file)-[:CONTAINS|DEFINES*1..4]->(n)
-                        WHERE visible_file.id IN $visible_file_ids
-                    }
-                )""",
+                "n.id IN $visible_fact_ids",
             ]
             params: dict = {
                 "branch": branch,
                 "project_id": project_id,
-                "visible_file_ids": visible_file_ids,
+                "visible_fact_ids": visible_fact_ids,
             }
             if name is not None and name.strip() != "":
                 conditions.append("n.name CONTAINS $name")

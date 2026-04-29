@@ -1,14 +1,14 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-06-GRAPH-STORAGE-STRUCTURE
-title: "图存储结构简化设计"
+title: "图谱存储结构设计"
 aliases:
-  - "图存储结构简化设计"
+  - "图谱存储结构设计"
 tags:
   - neodev/docs
   - neodev/tech-design
   - neodev/requirements
 created: 2026-04-27
-updated: 2026-04-27
+updated: 2026-04-29
 doc_type: tech-design
 product_key: NEODEV
 status: active
@@ -17,382 +17,632 @@ relations:
     - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
   - "[[01-master-prd]]"
+  - "[[T002-data-model-refactor-task-list]]"
 ---
-# 图存储结构简化设计
 
-## 1. 目标
+# 图谱存储结构设计
 
-这份文档用于明确 MVP 的图存储简化方向，重点解决：
+## 1. 设计目标
 
-- 同一个仓库在多个分支下重复存整套图数据
-- `copy_data` 语义不清，实际接近“复制整图结果”
-- 多分支场景下链路查询和上下文查询都要先区分“这是哪个分支那一份数据”
-- 分支越多，图存储空间、清理成本和维护复杂度越高
+本文定义研发知识图谱 MVP 的最终存储结构。新的设计以 PG 作为事实源，以 Neo4j 作为查询投影，支持产品版本下从文档定位到方法、函数等最小功能单位。
 
-本次简化不改变图节点类型和关系类型的业务语义，重点只改存储结构。
+核心目标：
 
-## 2. 结论
+- 一个产品可以包含多个项目。
+- 一个项目只能对应一个代码仓库。
+- `project_id` 即项目身份，也是仓库身份，不再引入 `repo_id`。
+- 分支名称只存在于产品版本绑定和分支快照层。
+- 代码事实节点不存储分支名称。
+- 删除 commit 增量同步能力，统一使用分支图谱刷新。
+- 分支快照直接关联方法、函数、构造器、类、接口、文件等代码事实节点。
+- PG 和 Neo4j 都不存储源码正文，只存 hash、路径、符号和必要元数据。
+- 文档长期绑定稳定功能锚点 `symbol_key`，刷新图谱后自动解析到当前版本可见的实际代码事实 `fact_id`。
 
-MVP 采用：
-
-- `仓库级事实图`
-- `分支快照引用`
-
-不再采用：
-
-- `一个仓库一个分支一套完整图`
-
-一句话定义：
-
-`图数据库存仓库级可复用代码事实；分支只维护“当前引用哪些代码事实”的快照，不再复制整套分支图。`
-
-### 2.1 总体结构图
+## 2. 总体架构
 
 ```mermaid
 flowchart LR
-    subgraph MetaDB[轻量元数据库]
-        PV[ProductVersion]
-        BS1[BranchSnapshot: main]
-        BS2[BranchSnapshot: feature-a]
-        BSE1[BranchSnapshotEntry]
-        BSE2[BranchSnapshotEntry]
-    end
-
-    subgraph GraphDB[图数据库]
-        F1[File Fact: src/a.py@h1]
-        F2[File Fact: src/b.py@h2]
-        F3[File Fact: src/c.py@h3]
-        S1[Symbol Fact: ClassA@h1]
-        S2[Symbol Fact: func_b@h2]
-        S3[Symbol Fact: func_c@h3]
-    end
-
-    PV --> BS1
-    PV --> BS2
-    BS1 --> BSE1
-    BS2 --> BSE2
-    BSE1 --> F1
-    BSE1 --> F2
-    BSE2 --> F1
-    BSE2 --> F3
-    F1 --> S1
-    F2 --> S2
-    F3 --> S3
-```
-
-## 3. 目标结构
-
-### 3.1 仓库事实图
-
-图数据库中的代码节点和关系按“仓库级事实”存储，只保留一份可复用事实。
-
-建议原则：
-
-- 节点身份不再以 `branch` 作为主维度
-- 节点身份以仓库、路径、符号签名、内容版本为主
-- 同内容代码在不同分支中尽量复用同一份节点和关系
-
-建议标识思路：
-
-- 文件节点：`repo_id + file_path + content_hash`
-- 符号节点：`repo_id + file_path + symbol_signature + content_hash`
-
-关系也跟随事实节点存储一份，不按分支复制。
-
-### 3.2 分支快照
-
-每个分支只维护一个当前可见视图，不维护独立整图。
-
-建议快照主信息：
-
-- `snapshot_id`
-- `repo_id`
-- `branch`
-- `head_commit`
-- `last_parsed_commit`
-- `base_snapshot_id`
-- `created_from_action`
-- `status`
-
-这里的 `created_from_action` 对应：
-
-- `copy_data`
-- `incremental`
-- `full`
-
-### 3.3 分支快照条目
-
-分支快照通过 entry 记录“这个分支当前引用了哪些代码事实”。
-
-MVP 推荐先以文件为主，不先把所有符号都单独存一份 membership。
-
-建议 entry 信息：
-
-- `snapshot_id`
-- `repo_id`
-- `file_path`
-- `file_node_id`
-- `file_content_hash`
-- `visible`
-
-符号可见性默认通过 `File -> Symbol` 的包含关系推导，不单独复制一层分支级符号 membership。
-
-这一步是简化的关键：
-
-`分支快照先只精确到文件层；符号层沿文件包含关系解析。`
-
-### 3.4 多分支复用对比图
-
-```mermaid
-flowchart TB
-    subgraph Old[旧结构：按分支复制整图]
-        OM1[main: a.py]
-        OM2[main: b.py]
-        OF1[feature-a: a.py]
-        OF2[feature-a: c.py]
-        OM1 --- OM2
-        OF1 --- OF2
-    end
-
-    subgraph New[新结构：仓库事实图 + 分支快照]
-        NS1[Snapshot: main]
-        NS2[Snapshot: feature-a]
-        NF1[a.py@h1]
-        NF2[b.py@h2]
-        NF3[c.py@h3]
-        NS1 --> NF1
-        NS1 --> NF2
-        NS2 --> NF1
-        NS2 --> NF3
-    end
-```
-
-## 4. 为什么这样更简单
-
-### 4.1 简化存储
-
-旧模型：
-
-- 每个分支存一套完整节点和关系
-
-新模型：
-
-- 代码事实只存一份
-- 分支只存快照头和文件级引用
-
-### 4.2 简化复用
-
-旧模型下：
-
-- `copy_data` 接近复制整套图
-- 相同 HEAD 也会带来大量重复数据
-
-新模型下：
-
-- `copy_data` 只复制快照引用
-- 相同 HEAD 可直接复用已有快照或从已有快照克隆
-- 相同文件内容可复用同一个 file/symbol 子图
-
-### 4.3 简化维护
-
-旧模型下：
-
-- 删除分支要处理整套图数据
-- 查询链路时先判断分支内哪一份节点才是真正当前版本
-
-新模型下：
-
-- 删除分支只删快照和引用
-- 图事实和分支视图边界清楚
-- 链路查询和上下文查询都先按快照限定范围，再查仓库级事实图
-
-## 5. 核心流程
-
-### 5.1 全量分析
-
-`full` 不再意味着“为该分支重建一整套独立图”。
-
-新的语义是：
-
-1. 解析该分支当前文件集
-2. 为变化文件生成新的事实节点
-3. 复用未变化文件对应的已有事实节点
-4. 生成新的分支快照和文件级引用
-
-### 5.2 增量分析
-
-`incremental` 的语义变成：
-
-1. 基于已有分支快照找到当前文件引用集合
-2. 只替换本次变更涉及的文件引用
-3. 未变化文件继续沿用旧快照中的引用
-4. 输出新的快照版本
-
-### 5.3 快照复制
-
-`copy_data` 的语义变成：
-
-1. 发现目标分支与已分析分支 `HEAD` 相同
-2. 不复制整图
-3. 直接复用已有快照，或创建一个指向相同 entry 集合的新快照
-
-也就是：
-
-`copy_data = 复制分支视图，不复制图事实。`
-
-### 5.4 三种动作如何改变快照
-
-```mermaid
-flowchart LR
-    S0[旧快照 S0]
-
-    subgraph CopyData[copy_data]
-        C1[检测到相同 HEAD]
-        C2[新快照 S1]
-    end
-
-    subgraph Incremental[incremental]
-        I1[仅变更 a.py]
-        I2[复用未变化文件]
-        I3[新快照 S2]
-    end
-
-    subgraph Full[full]
-        F1[重扫当前分支文件集]
-        F2[复用未变化事实节点]
-        F3[新快照 S3]
-    end
-
-    S0 --> C1 --> C2
-    S0 --> I1 --> I2 --> I3
-    S0 --> F1 --> F2 --> F3
-```
-
-## 6. 对查询能力的影响
-
-### 6.1 代码图谱查询
-
-代码图谱查询的边界改为：
-
-1. `ProductVersion`
-2. `product_version_branches`
-3. 对应分支的 `BranchSnapshot`
-4. 快照中可见的文件节点
-5. 文件节点下的符号节点
-
-代码节点不再生成 AI 摘要、embedding，也不再提供代码节点语义搜索。查询能力只基于仓库级结构事实和分支快照裁剪。
-
-### 6.2 链路查询
-
-链路查询不再从“某个 branch 的整图副本”出发，而是：
-
-1. 从快照限定当前分支可见节点
-2. 在可见节点范围内做关系遍历
-3. 返回结果时保留 `snapshot_id / branch / head_commit`
-
-### 6.3 推送后结构事实更新
-
-推送后不再执行代码节点 AI 或语义刷新，只按快照更新结构事实：
-
-1. 识别受影响文件
-2. 刷新对应文件子图
-3. 让当前分支快照切换到新事实节点
-4. 后续链路和上下文查询自动读取新快照范围
-
-### 6.4 查询路径图
-
-```mermaid
-flowchart LR
-    PV[ProductVersion] --> PVB[product_version_branches]
+    P[Product] --> PV[ProductVersion]
+    PV --> PVB[ProductVersionBranch]
     PVB --> BS[BranchSnapshot]
-    BS --> BSE[BranchSnapshotEntry]
-    BSE --> FF[File Fact]
-    FF --> SF[Symbol Fact]
-    FF --> R1[IMPORTS / CALLS / IMPLEMENTS]
-    SF --> R2[CALLS / INHERITS / USES]
+    BS --> BSF[BranchSnapshotFact]
+    BSF --> CF[CodeFact]
+
+    D[Document] --> DCL[DocCodeLink]
+    DCL --> SK[symbol_key]
+    SK --> CF
+
+    CF -.投影.-> N4J[Neo4j CodeFact]
+    D -.投影.-> N4JD[Neo4j Document]
 ```
 
-## 7. 存储边界
+核心链路：
 
-### 7.1 图数据库保留
+```text
+product_version
+-> product_version_branches
+-> project_id + branch_name
+-> latest completed branch_snapshot
+-> branch_snapshot_facts
+-> code_facts
+```
 
-- 仓库级代码事实节点
-- 仓库级代码事实关系
-- 文档节点和文档关系
+文档到代码链路：
 
-### 7.2 轻量元数据库保留
+```text
+document
+-> doc_code_links.symbol_key
+-> 当前产品版本可见的 code_facts
+```
 
-- `BranchSnapshot`
-- `BranchSnapshotEntry`
-- `Product`
-- `ProductVersion`
-- `DocChange`
-- 分支分析任务
-- `DangerousCommitRecord`
-- `GraphNodeType`
-- `GraphRelationType`
-- 节点和关系的 CLI 管理审计记录
+## 3. 存储边界
 
-这样分工更清楚：
+### 3.1 PG 事实源
 
-`图数据库负责知识事实；元数据库负责分支视图、业务状态和执行记录。`
+PG 负责保存可重建图谱的事实数据：
 
-### 7.3 CLI 手工管理边界
+- 产品版本和项目分支绑定。
+- 分支刷新快照。
+- 当前分支快照可见的代码事实节点。
+- 文档到代码稳定锚点关系。
+- 文档关系当前解析结果。
 
-所有图节点都允许通过 CLI 手工修改，但必须区分“身份字段”和“可管理字段”：
+PG 不保存：
 
-- 身份字段：`id/project_id/repo_id/file_path/content_hash` 等用于定位、复用和快照引用的字段，不允许 CLI 改写。
-- 可管理字段：`type/name/status/properties` 等面向人工治理的字段，允许 CLI 修改。
+- 源码正文。
+- 代码节点之间的结构边。
+- 分支名到代码事实节点的冗余字段。
+- AI 生成的代码语义描述或 embedding。
 
-节点类型和关系类型不允许临时自由输入：
+### 3.2 Neo4j 查询投影
 
-- 节点类型必须来自节点所属项目的 `graph_node_types` 白名单。
-- 关系类型必须来自关系归属项目的 `graph_relation_types` 白名单。
-- 代码解析生成节点时，也必须映射到项目允许的系统内置类型。
+Neo4j 负责图查询加速：
 
-关系允许跨项目：
+- 投影 `CodeFact` 节点。
+- 投影 `Document` 节点。
+- 投影代码结构关系。
+- 投影文档到代码关系。
 
-- 关系自身必须有 `project_id`，表示归属哪个项目管理。
-- 起点和终点节点可以属于不同项目。
-- 关系归属项目必须是起点或终点节点所属项目之一。
-- 当关系类型声明 `cross_project_allowed=false` 时，起点和终点节点必须属于同一项目。
+Neo4j 不是唯一事实源。Neo4j 数据可以删除后从 PG 和当前仓库重新生成。
 
-## 8. MVP 不做的事
+Neo4j 节点不存储：
 
-- 不做按 commit 的完整图快照
-- 不做分支级整图副本
-- 不做查询结果预聚合表
-- 不做链路结果缓存作为主路径
-- 不允许绕过项目类型白名单创建节点或关系类型
+- `branch_name`
+- 源码正文
+- AI/语义搜索字段
 
-MVP 优先使用：
+## 4. 核心概念
 
-- 仓库级事实复用
-- 分支快照裁剪
-- `content_hash` 复用
+### 4.1 project_id
 
-## 9. 对现有实现的改造含义
+`project_id` 是项目身份，也是仓库身份。
 
-当前本地实现里，很多能力已经存在：
+由于业务约束是“一个项目只能有一个仓库”，因此不需要 `repo_id`。
 
-- `copy_data / incremental / full`
-- `last_parsed_commit`
-- `content_hash`
-- 仓库级结构事实写入
+示例：
 
-这次改造不是推翻现有能力，而是重定义它们的存储语义：
+```text
+project_id=1 -> dsc-web-server 仓库
+project_id=2 -> dsc-job-server 仓库
+```
 
-- `copy_data` 从复制分析结果，改为复制快照引用
-- `incremental` 从分支级子图改写，改为快照级局部替换
-- `full` 从分支级重建整图，改为生成新的快照视图
+即使两个项目存在相同路径、相同方法名、相同代码内容，也会因为 `project_id` 不同而形成不同代码事实。
 
-## 10. 关键收益
+### 4.2 branch_name
 
-- 多分支共享相同代码时不再重复存整套图
-- 图数据和分支视图职责分离
-- 更容易删除分支、回溯分支状态、排查复用问题
-- 链路查询和上下文查询都能围绕统一结构工作
+`branch_name` 表示项目仓库中的分支，只存在于：
 
-## 11. 一句话结论
+- `product_version_branches`
+- `branch_snapshots`
 
-`简化的不是节点和关系语义，而是“同仓库多分支”的存储方式：代码事实仓库级唯一化，分支只保留快照引用。`
+代码事实节点不包含 `branch_name`。同一项目不同分支中内容相同的方法应复用同一个 `code_fact`。
+
+### 4.3 symbol_key
+
+`symbol_key` 是稳定功能锚点，不包含代码内容 hash。
+
+生成规则：
+
+```text
+symbol_key = hash(project_id + node_type + file_path + qualified_name)
+```
+
+用途：
+
+- 文档长期绑定功能。
+- 方法内容变化后仍能通过同一个 `symbol_key` 找到新版本代码事实。
+- 查询产品版本时解析到当前分支快照可见的 `fact_id`。
+
+### 4.4 fact_id
+
+`fact_id` 是具体代码事实身份，包含代码内容 hash。
+
+生成规则：
+
+```text
+fact_id = hash(project_id + node_type + file_path + qualified_name + content_hash)
+```
+
+用途：
+
+- 表示某个文件、类、方法、函数等节点的具体内容版本。
+- 被 `branch_snapshot_facts` 引用。
+- 被 Neo4j 投影为代码事实节点。
+
+## 5. 表结构
+
+### 5.1 projects
+
+```text
+projects
+- id
+- name
+- repo_url
+- repo_path
+- created_at
+- updated_at
+```
+
+说明：
+
+- 一个项目对应一个仓库。
+- `project_id` 直接作为仓库隔离维度。
+
+### 5.2 product_versions
+
+```text
+product_versions
+- id
+- product_id
+- version_name
+- description
+- status
+- created_at
+- updated_at
+```
+
+说明：
+
+- 产品版本是业务版本。
+- 产品版本不直接存储代码图。
+- 产品版本通过 `product_version_branches` 组合多个项目分支。
+
+### 5.3 product_version_branches
+
+```text
+product_version_branches
+- id
+- product_version_id
+- project_id
+- branch_name
+- created_at
+- updated_at
+```
+
+唯一约束：
+
+```text
+unique(product_version_id, project_id)
+```
+
+含义：
+
+- 一个产品版本可以绑定多个项目。
+- 一个产品版本下，一个项目只能绑定一个分支。
+- 同一项目可以在不同产品版本中绑定不同分支。
+
+### 5.4 branch_snapshots
+
+```text
+branch_snapshots
+- id
+- project_id
+- branch_name
+- head_commit
+- snapshot_hash
+- status
+- created_at
+```
+
+状态：
+
+```text
+running
+completed
+failed
+```
+
+索引：
+
+```text
+(project_id, branch_name, id desc)
+(project_id, branch_name, status)
+```
+
+说明：
+
+- 记录某个项目分支一次刷新后的可见代码事实集合。
+- 不保存 `base_snapshot_id`。
+- 不保存 `created_from_action=incremental/copy_data/full`。
+- `snapshot_hash` 用于判断本次刷新结果是否与最新快照一致。
+
+### 5.5 code_facts
+
+```text
+code_facts
+- id
+- project_id
+- fact_id
+- symbol_key
+- node_type
+- file_path
+- qualified_name
+- name
+- signature_hash
+- content_hash
+- structure_hash
+- parent_fact_id
+- start_line
+- end_line
+- metadata_json
+- status
+- created_at
+- updated_at
+```
+
+唯一约束：
+
+```text
+unique(project_id, fact_id)
+```
+
+节点类型：
+
+```text
+File
+Class
+Interface
+Enum
+Annotation
+Method
+Function
+Constructor
+```
+
+说明：
+
+- 文件、类、方法、函数等都存为 `code_facts`。
+- `content_hash` 基于规范化后的源码内容计算，但不保存源码。
+- `structure_hash` 用于整棵子树复用。
+- `parent_fact_id` 表达父级事实节点，例如方法属于类、类属于文件。
+
+### 5.6 branch_snapshot_facts
+
+```text
+branch_snapshot_facts
+- id
+- snapshot_id
+- fact_id
+```
+
+唯一约束：
+
+```text
+unique(snapshot_id, fact_id)
+```
+
+说明：
+
+- 这是快照和代码事实的唯一关联表。
+- 快照条目粒度是代码事实，不再只是文件。
+- 首版只保留 `snapshot_id + fact_id`。如果后续查询性能不足，再考虑冗余 `project_id`、`node_type`、`symbol_key`。
+
+### 5.7 doc_code_links
+
+```text
+doc_code_links
+- id
+- product_id
+- product_version_id nullable
+- doc_id
+- doc_node_id
+- code_project_id
+- symbol_key
+- resolved_fact_id nullable
+- resolved_snapshot_id nullable
+- relation_type
+- source
+- confidence
+- resolution_status
+- metadata_json
+- status
+- created_at
+- updated_at
+```
+
+关系类型：
+
+```text
+DESCRIBES
+REQUIRES
+IMPLEMENTS
+VALIDATES
+TESTS
+DEPENDS_ON
+```
+
+解析状态：
+
+```text
+resolved
+unresolved
+stale
+ambiguous
+```
+
+说明：
+
+- `symbol_key` 是长期稳定关系。
+- `resolved_fact_id` 是当前解析到的实际代码事实。
+- `resolved_snapshot_id` 表示解析基于哪个分支快照。
+- 刷新图谱后，如果 `resolved_fact_id` 不再属于当前快照，必须按 `symbol_key` 重建解析结果。
+
+## 6. Hash 规则
+
+系统不存源码，但 hash 必须基于源码内容计算。
+
+```text
+signature_hash = hash(名称 + 参数 + 返回值 + 修饰符 + 注解)
+content_hash = hash(规范化后的代码内容)
+structure_hash = hash(node_type + signature_hash + content_hash + sorted(child.structure_hash))
+```
+
+计算顺序：
+
+```text
+自底向上计算 hash
+自顶向下判断复用
+```
+
+复用规则：
+
+- 文件 `structure_hash` 一致时，文件下整棵子树复用。
+- 类 `structure_hash` 一致时，类下方法整体复用。
+- 方法或函数 `content_hash` 一致时，最小功能节点复用。
+- 同一项目不同分支中内容一致的代码事实复用同一个 `fact_id`。
+- 不同项目即使内容一致，也不复用同一个 `fact_id`。
+
+## 7. 分支刷新逻辑
+
+命令示例：
+
+```bash
+neodev project refresh-graph --project-id 1 --branch release/V2.0R26C01
+```
+
+处理流程：
+
+```text
+1. 拉取项目仓库
+2. checkout 指定分支
+3. 获取 head_commit
+4. 扫描代码文件
+5. 解析 AST，生成 File/Class/Method/Function 等代码树
+6. 自底向上计算 signature_hash/content_hash/structure_hash
+7. 生成 symbol_key 和 fact_id
+8. 按 fact_id 查找 code_facts
+9. 命中则复用，未命中则新增
+10. 计算 snapshot_hash
+11. 如果最新快照 snapshot_hash 相同，返回 no_change
+12. 如果不同，创建 branch_snapshots
+13. 批量写入 branch_snapshot_facts
+14. 投影当前快照相关节点和关系到 Neo4j
+15. 重建受影响 doc_code_links 的解析结果
+```
+
+说明：
+
+- 刷新是全分支刷新，不是 commit 增量同步。
+- 全分支刷新不等于全量重建，复用由 hash 决定。
+- `project refresh-graph` 不再要求 `version_id`。
+- `sync_commit_graph_for_version` 废弃。
+
+## 8. 产品版本逻辑
+
+### 8.1 创建产品版本
+
+```bash
+neodev product version create --product dsc --name V2.0R26C01
+```
+
+逻辑：
+
+```text
+1. 创建 product_versions
+2. 不自动绑定项目
+3. 不自动刷新图谱
+```
+
+### 8.2 绑定项目分支
+
+```bash
+neodev product version bind-project \
+  --version-id 1 \
+  --project-id 1 \
+  --branch release/V2.0R26C01
+```
+
+逻辑：
+
+```text
+1. 校验产品版本存在
+2. 校验项目存在
+3. 写入或更新 product_version_branches
+4. 检查 project_id + branch_name 是否已有 completed 快照
+5. 没有快照时提示执行 project refresh-graph
+6. 不自动刷新其他项目
+```
+
+### 8.3 查询产品版本功能节点
+
+输入：
+
+```text
+product_version_id
+```
+
+逻辑：
+
+```text
+1. 查询 product_version_branches
+2. 对每个 project_id + branch_name 找最新 completed 快照
+3. 读取 branch_snapshot_facts
+4. join code_facts
+5. 过滤 node_type in Method, Function, Constructor, Class, Interface
+6. 返回当前产品版本可见功能节点
+```
+
+## 9. 文档到代码关系
+
+### 9.1 建立关系
+
+文档关系绑定稳定锚点：
+
+```text
+Document -> symbol_key
+```
+
+不是只绑定具体代码事实：
+
+```text
+Document -> fact_id
+```
+
+原因：
+
+- 方法实现变化后 `content_hash` 会变化。
+- `fact_id` 会变化。
+- `symbol_key` 可以保持稳定。
+- 查询产品版本时再解析到当前分支快照可见的实际 `fact_id`。
+
+### 9.2 刷新后重建关系
+
+分支刷新完成后：
+
+```text
+1. 找到绑定当前 project_id + branch_name 的产品版本
+2. 找到这些产品版本下 code_project_id = project_id 的 doc_code_links
+3. 检查 resolved_fact_id 是否仍在当前 branch_snapshot_facts 中
+4. 如果仍在，保持 resolution_status = resolved
+5. 如果不在，按 symbol_key 在当前快照可见 code_facts 中查找
+6. 找到唯一候选，更新 resolved_fact_id/resolved_snapshot_id，状态为 resolved
+7. 找不到候选，状态为 unresolved
+8. 找到多个候选，状态为 ambiguous
+```
+
+### 9.3 查询文档对应功能节点
+
+输入：
+
+```text
+product_version_id + doc_id
+```
+
+逻辑：
+
+```text
+1. 查询 doc_code_links
+2. 根据 product_version_branches 找目标项目在该产品版本下绑定的分支
+3. 获取该分支最新 completed 快照
+4. 校验 resolved_fact_id 是否仍属于该快照
+5. 有效则返回对应 code_facts
+6. 无效则按 symbol_key 即时解析并更新 doc_code_links
+7. 返回解析后的实际方法、函数、类或接口节点
+```
+
+## 10. Neo4j 投影
+
+Neo4j 投影节点：
+
+```text
+CodeFact
+Document
+```
+
+Neo4j 投影关系：
+
+```text
+CONTAINS
+DEFINES
+CALLS
+EXTENDS
+IMPLEMENTS
+IMPORTS
+DOC_RELATES_TO_CODE
+```
+
+查询规则：
+
+```text
+1. 先由 PG 根据 product_version_id 计算 visible_fact_ids
+2. 再把 visible_fact_ids 传给 Neo4j
+3. Neo4j 只返回这些可见代码事实及其关系
+```
+
+示例：
+
+```cypher
+MATCH (n:CodeFact)
+WHERE n.fact_id IN $visible_fact_ids
+RETURN n
+```
+
+## 11. 删除和废弃项
+
+必须删除或废弃：
+
+- `repo_id`
+- 项目级 `versions` 作为图谱核心链路
+- 旧 `branch_snapshot_entries` 文件级设计
+- `base_snapshot_id`
+- `created_from_action=copy_data/incremental/full`
+- `sync_commit_graph_for_version`
+- commit 增量图谱同步
+- `git post-push-refresh`
+- 代码节点语义搜索
+- 代码节点 AI 处理
+- `code_fact_edges`
+
+说明：
+
+- `code_fact_edges` 不作为 PG 事实源保存。
+- 代码关系由刷新时解析并投影到 Neo4j。
+- 如果后续需要纯 PG 图遍历，再重新评估代码关系表。
+
+## 12. 与旧方案对比
+
+| 项目 | 旧方案 | 新方案 |
+| --- | --- | --- |
+| 仓库身份 | `repo_id`，实际等于 `project_id` | 只使用 `project_id` |
+| 分支归属 | 部分逻辑依赖文件级快照 | 分支只属于绑定和快照 |
+| 快照粒度 | 文件节点 | 方法、函数、类、文件等代码事实 |
+| 同内容复用 | 文件级复用 | 方法/函数级复用 |
+| 增量同步 | commit diff 增量 | 全分支刷新 + hash 复用 |
+| 文档关系 | 未稳定表达到代码节点 | `symbol_key + resolved_fact_id` |
+| PG 代码边 | 可考虑保存 | 不保存，Neo4j 投影 |
+| 源码存储 | 不应存储 | 明确不存储 |
+| 代码 AI/语义 | 有旧路径 | 删除 |
+
+## 13. 验收标准
+
+- `project refresh-graph` 不再要求 `version_id`。
+- 刷新分支后可以生成 `branch_snapshots` 和 `branch_snapshot_facts`。
+- 快照可以直接关联到方法、函数、类、接口等代码事实。
+- `code_facts` 不包含源码正文。
+- `code_facts` 不包含分支字段。
+- 数据模型不再使用 `repo_id`。
+- 同一项目不同分支中内容一致的代码事实可以复用。
+- 文档到代码关系使用 `symbol_key + resolved_fact_id`。
+- 刷新分支后能检测并重建失效文档关系。
+- Neo4j 不包含 `branch_name`、源码正文、AI/语义字段。
+- Neo4j 可从 PG 事实源和仓库重新投影。

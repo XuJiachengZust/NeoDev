@@ -1,4 +1,4 @@
-def test_create_snapshot_from_code_facts_records_fact_visibility(monkeypatch):
+def test_create_snapshot_from_code_facts_writes_snapshot_and_fact_membership(monkeypatch):
     from service.services import branch_snapshot_service
 
     calls = {}
@@ -12,7 +12,7 @@ def test_create_snapshot_from_code_facts_records_fact_visibility(monkeypatch):
         return len(facts)
 
     def fake_replace_facts(conn, snapshot_id, fact_ids):
-        calls["visibility"] = {"snapshot_id": snapshot_id, "fact_ids": list(fact_ids)}
+        calls["snapshot_facts"] = {"snapshot_id": snapshot_id, "fact_ids": list(fact_ids)}
         return len(fact_ids)
 
     monkeypatch.setattr(branch_snapshot_service.snapshot_repo, "create_snapshot", fake_create_snapshot)
@@ -22,15 +22,19 @@ def test_create_snapshot_from_code_facts_records_fact_visibility(monkeypatch):
     snapshot = branch_snapshot_service.create_snapshot_from_code_facts(
         object(),
         project_id=3,
-        branch="main",
+        branch="release/x",
         head_commit="a" * 40,
         snapshot_hash="snapshot-hash",
         code_facts=[
             {
-                "project_id": 3,
-                "fact_id": "Function:login",
-                "symbol_key": "project:3:Function:src/auth.py:login",
-                "node_type": "Function",
+                "fact_id": "Method:m1",
+                "symbol_key": "project:3:Method:src/a.py:A.m",
+                "node_type": "Method",
+                "file_path": "src/a.py",
+                "qualified_name": "A.m",
+                "name": "m",
+                "content_hash": "h1",
+                "structure_hash": "s1",
             }
         ],
     )
@@ -39,12 +43,10 @@ def test_create_snapshot_from_code_facts_records_fact_visibility(monkeypatch):
     assert snapshot["entry_count"] == 1
     assert calls["snapshot"] == {
         "project_id": 3,
-        "branch_name": "main",
+        "branch_name": "release/x",
         "head_commit": "a" * 40,
         "snapshot_hash": "snapshot-hash",
         "status": "completed",
     }
-    assert calls["visibility"] == {
-        "snapshot_id": 42,
-        "fact_ids": ["Function:login"],
-    }
+    assert calls["facts"][0]["fact_id"] == "Method:m1"
+    assert calls["snapshot_facts"] == {"snapshot_id": 42, "fact_ids": ["Method:m1"]}

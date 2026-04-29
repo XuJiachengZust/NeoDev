@@ -6,7 +6,6 @@ from service.cli.errors import CliError
 from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
 from service.services import project_service
-from service.services import version_service
 
 
 def register(subparsers) -> None:
@@ -41,23 +40,8 @@ def register(subparsers) -> None:
     refresh_locator.add_argument("--project-id", type=int)
     refresh_locator.add_argument("--project-name")
     refresh_parser.add_argument("--branch", required=True)
-    refresh_parser.add_argument("--version-id", type=int, required=True)
     refresh_parser.add_argument("--json", action="store_true", dest="json_output")
     refresh_parser.set_defaults(handler=handle_project_refresh_graph, command_name="project refresh-graph")
-
-    refresh_commit_parser = project_subparsers.add_parser("refresh-commit-graph")
-    refresh_commit_locator = refresh_commit_parser.add_mutually_exclusive_group(required=True)
-    refresh_commit_locator.add_argument("--project-id", type=int)
-    refresh_commit_locator.add_argument("--project-name")
-    refresh_commit_parser.add_argument("--branch", required=True)
-    refresh_commit_parser.add_argument("--version-id", type=int, required=True)
-    refresh_commit_parser.add_argument("--commit-sha", required=True)
-    refresh_commit_parser.add_argument("--max-changed-files", type=int, default=50)
-    refresh_commit_parser.add_argument("--json", action="store_true", dest="json_output")
-    refresh_commit_parser.set_defaults(
-        handler=handle_project_refresh_commit_graph,
-        command_name="project refresh-commit-graph",
-    )
 
     status_parser = project_subparsers.add_parser("init-status")
     status_locator = status_parser.add_mutually_exclusive_group(required=True)
@@ -65,6 +49,73 @@ def register(subparsers) -> None:
     status_locator.add_argument("--project-name")
     status_parser.add_argument("--json", action="store_true", dest="json_output")
     status_parser.set_defaults(handler=handle_project_init_status, command_name="project init-status")
+
+
+def handle_project_create(args) -> dict:
+    def run(conn):
+        repo_path = args.repo_url or args.repo_path
+        project = project_service.create_project(
+            conn,
+            name=args.name,
+            repo_path=repo_path,
+            watch_enabled=args.watch_enabled,
+            neo4j_database=args.neo4j_database,
+            neo4j_identifier=args.neo4j_identifier,
+            repo_username=args.repo_username,
+            repo_password=args.repo_password,
+            repo_url=args.repo_url,
+            async_init=True,
+            overwrite_existing=True,
+        )
+        return build_success_payload(
+            args.command_name,
+            {
+                "project": project,
+                "auto_graph_analysis": True,
+                "message": "仓库已登记，NeoDev 已自动触发默认分支图谱刷新。",
+            },
+        )
+
+    return _with_db(run)
+
+
+def handle_project_show(args) -> dict:
+    def run(conn):
+        project = _resolve_project(conn, args)
+        init_status = project_service.get_init_status(conn, project["id"])
+        return build_success_payload(
+            args.command_name,
+            {
+                "project": project,
+                "init_status": (init_status or {}).get("init_status"),
+            },
+        )
+
+    return _with_db(run)
+
+
+def handle_project_refresh_graph(args) -> dict:
+    def run(conn):
+        project = _resolve_project(conn, args)
+        result = project_service.refresh_graph(
+            conn,
+            project_id=project["id"],
+            branch=args.branch,
+        )
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
+
+
+def handle_project_init_status(args) -> dict:
+    def run(conn):
+        project = _resolve_project(conn, args)
+        result = project_service.get_init_status(conn, project["id"])
+        if result is None:
+            raise CliError(category="not_found", message="project not found")
+        return build_success_payload(args.command_name, result)
+
+    return _with_db(run)
 
 
 def _with_db(callback):
@@ -97,92 +148,6 @@ def _with_db(callback):
             message="database operation failed",
             details={"database_error": str(exc)},
         ) from exc
-
-
-def handle_project_create(args) -> dict:
-    def run(conn):
-        repo_path = args.repo_url or args.repo_path
-        project = project_service.create_project(
-            conn,
-            name=args.name,
-            repo_path=repo_path,
-            watch_enabled=args.watch_enabled,
-            neo4j_database=args.neo4j_database,
-            neo4j_identifier=args.neo4j_identifier,
-            repo_username=args.repo_username,
-            repo_password=args.repo_password,
-            repo_url=args.repo_url,
-            async_init=True,
-            overwrite_existing=True,
-        )
-        return build_success_payload(
-            args.command_name,
-            {
-                "project": project,
-                "auto_graph_analysis": True,
-                "message": "仓库已登记，远程 NeoDev 已自动触发图谱构建。",
-            },
-        )
-
-    return _with_db(run)
-
-
-def handle_project_show(args) -> dict:
-    def run(conn):
-        project = _resolve_project(conn, args)
-        init_status = project_service.get_init_status(conn, project["id"])
-        versions = version_service.list_versions(conn, project["id"]) or []
-        return build_success_payload(
-            args.command_name,
-            {
-                "project": project,
-                "versions": versions,
-                "init_status": (init_status or {}).get("init_status"),
-            },
-        )
-
-    return _with_db(run)
-
-
-def handle_project_refresh_graph(args) -> dict:
-    def run(conn):
-        project = _resolve_project(conn, args)
-        result = project_service.refresh_graph(
-            conn,
-            project_id=project["id"],
-            version_id=args.version_id,
-            branch=args.branch,
-        )
-        return build_success_payload(args.command_name, result)
-
-    return _with_db(run)
-
-
-def handle_project_refresh_commit_graph(args) -> dict:
-    def run(conn):
-        project = _resolve_project(conn, args)
-        result = project_service.refresh_commit_graph(
-            conn,
-            project_id=project["id"],
-            version_id=args.version_id,
-            branch=args.branch,
-            commit_sha=args.commit_sha,
-            max_changed_files=args.max_changed_files,
-        )
-        return build_success_payload(args.command_name, result)
-
-    return _with_db(run)
-
-
-def handle_project_init_status(args) -> dict:
-    def run(conn):
-        project = _resolve_project(conn, args)
-        result = project_service.get_init_status(conn, project["id"])
-        if result is None:
-            raise CliError(category="not_found", message="project not found")
-        return build_success_payload(args.command_name, result)
-
-    return _with_db(run)
 
 
 def _resolve_project(conn, args) -> dict:

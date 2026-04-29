@@ -39,7 +39,6 @@ CREATE TABLE IF NOT EXISTS graph_nodes (
     name TEXT NOT NULL,
     properties JSONB NOT NULL DEFAULT '{}'::jsonb,
     source VARCHAR(32) NOT NULL DEFAULT 'manual',
-    repo_id INTEGER,
     file_path TEXT,
     content_hash VARCHAR(128),
     status VARCHAR(32) NOT NULL DEFAULT 'active',

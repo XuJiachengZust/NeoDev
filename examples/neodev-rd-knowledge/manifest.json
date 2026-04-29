@@ -90,9 +90,9 @@
       "command": "neodev git verify-doc-change --project-id 1 --branch feature/docchange-demo --commit-sha <commit_sha> --commit-message \"feat: update demo service\\n\\nDocChange-ID: DC-NEODEV-DEMO-001\" --json"
     },
     {
-      "id": "project_refresh_commit_graph",
+      "id": "project_refresh_graph",
       "type": "cli",
-      "command": "neodev project refresh-commit-graph --project-id 1 --version-id <version_id> --branch feature/docchange-demo --commit-sha <commit_sha> --json"
+      "command": "neodev project refresh-graph --project-id 1 --branch feature/docchange-demo --json"
     }
   ]
 }

@@ -134,7 +134,6 @@ def test_graph_manual_management_columns_and_constraints_exist(
         "name",
         "properties",
         "source",
-        "repo_id",
         "file_path",
         "content_hash",
         "status",

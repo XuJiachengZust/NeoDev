@@ -61,7 +61,6 @@ def test_project_create_passes_repo_url_and_triggers_auto_graph_sync(monkeypatch
                 "progress": {"stage": "queued", "done": 0, "total": 5},
                 "key_nodes": [{"stage": "repository_clone", "status": "pending"}],
                 "default_branch": None,
-                "version_id": None,
                 "sync": None,
                 "error": None,
             },
@@ -139,7 +138,7 @@ def test_project_init_status_returns_process_and_key_nodes(monkeypatch):
     assert payload["data"]["init_status"]["key_nodes"][1]["stage"] == "graph_sync"
 
 
-def test_project_show_includes_project_versions_with_id_and_name(monkeypatch):
+def test_project_show_returns_project_and_init_status_without_project_versions(monkeypatch):
     from service.cli.commands import project as project_command
 
     def fake_with_db(callback):
@@ -156,20 +155,6 @@ def test_project_show_includes_project_versions_with_id_and_name(monkeypatch):
         "get_init_status",
         lambda conn, project_id: {"init_status": {"status": "completed"}},
     )
-    monkeypatch.setattr(
-        project_command.version_service,
-        "list_versions",
-        lambda conn, project_id: [
-            {
-                "id": 7,
-                "project_id": project_id,
-                "branch": "release/V2.0R26C01",
-                "version_name": "V2.0R26C01",
-                "last_parsed_commit": None,
-            }
-        ],
-    )
-
     payload = project_command.handle_project_show(
         argparse.Namespace(
             command_name="project show",
@@ -179,15 +164,9 @@ def test_project_show_includes_project_versions_with_id_and_name(monkeypatch):
     )
 
     assert payload["ok"] is True
-    assert payload["data"]["versions"] == [
-        {
-            "id": 7,
-            "project_id": 42,
-            "branch": "release/V2.0R26C01",
-            "version_name": "V2.0R26C01",
-            "last_parsed_commit": None,
-        }
-    ]
+    assert payload["data"]["project"]["id"] == 42
+    assert payload["data"]["init_status"] == {"status": "completed"}
+    assert "versions" not in payload["data"]
 
 
 def test_project_name_locator_selects_latest_duplicate(monkeypatch):

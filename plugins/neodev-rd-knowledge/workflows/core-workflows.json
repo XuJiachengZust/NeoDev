@@ -98,11 +98,6 @@
           "command": "neodev graph impact --doc-change-id <doc_change_id> --json"
         },
         {
-          "id": "search_version_context",
-          "type": "cli",
-          "command": "neodev graph semantic-search --product-code <product_code> --version-name <version_name> --query <query> --json"
-        },
-        {
           "id": "read_entity_context",
           "type": "cli",
           "command": "neodev graph entity-context --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --entity-id <entity_id> --json"
@@ -180,7 +175,7 @@
         }
       ]
     },
-    "project_refresh_commit_graph": {
+    "project_refresh_graph": {
       "goal": "推送成功后刷新受影响的图谱节点。",
       "steps": [
         {
@@ -197,9 +192,9 @@
           "command": "neodev cli version-check --json"
         },
         {
-          "id": "refresh_commit_graph",
+          "id": "refresh_branch_graph",
           "type": "cli",
-          "command": "neodev project refresh-commit-graph --project-id <project_id> --version-id <version_id> --branch <branch> --commit-sha <commit_sha> --json"
+          "command": "neodev project refresh-graph --project-id <project_id> --branch <branch> --json"
         },
         {
           "id": "inspect_chain_when_needed",

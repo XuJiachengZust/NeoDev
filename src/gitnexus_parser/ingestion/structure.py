@@ -4,7 +4,11 @@ from typing import TYPE_CHECKING, List
 
 from gitnexus_parser.graph import generate_id
 from gitnexus_parser.graph.types import GraphNode, GraphRelationship
-from gitnexus_parser.ingestion.facts import build_file_fact_id, build_file_fact_key
+from gitnexus_parser.ingestion.facts import (
+    build_file_fact_id,
+    build_file_fact_key,
+    build_file_symbol_key,
+)
 
 if TYPE_CHECKING:
     from gitnexus_parser.graph.graph import KnowledgeGraph
@@ -15,7 +19,6 @@ def process_structure(
     paths: List[str],
     branch: str | None = None,
     project_id: int | None = None,
-    repo_id: int | None = None,
     file_content_hashes: dict[str, str] | None = None,
 ) -> None:
     """
@@ -24,7 +27,7 @@ def process_structure(
     Aligned with structure-processor.ts.
     branch is accepted for API compatibility but is not stored on graph facts.
     When project_id is set, each node's properties include project_id for PG project association.
-    When repo_id and file_content_hashes are set, File nodes use repository fact identity.
+    When project_id and file_content_hashes are set, File nodes use code fact identity.
     """
     file_content_hashes = file_content_hashes or {}
     for path in paths:
@@ -37,30 +40,30 @@ def process_structure(
             current_path = f"{current_path}/{part}" if current_path else part
             props: dict = {"name": part, "filePath": current_path}
             content_hash = file_content_hashes.get(current_path) if is_file else None
-            if is_file and repo_id is not None and content_hash:
+            if is_file and project_id is not None and content_hash:
                 fact_key = build_file_fact_key(
-                    repo_id=repo_id,
+                    project_id=project_id,
                     file_path=current_path,
                     file_content_hash=content_hash,
                 )
                 node_id = build_file_fact_id(
-                    repo_id=repo_id,
+                    project_id=project_id,
                     file_path=current_path,
                     file_content_hash=content_hash,
                 )
-                props["repo_id"] = repo_id
                 props["file_content_hash"] = content_hash
                 props["content_hash"] = content_hash
+                props["symbol_key"] = build_file_symbol_key(
+                    project_id=project_id,
+                    file_path=current_path,
+                )
                 props["fact_key"] = fact_key
-            elif not is_file and repo_id is not None:
-                fact_key = f"repo:{repo_id}:folder:{current_path}"
+            elif not is_file and project_id is not None:
+                fact_key = f"project:{project_id}:folder:{current_path}"
                 node_id = generate_id(label, fact_key)
-                props["repo_id"] = repo_id
                 props["fact_key"] = fact_key
             else:
                 node_id = generate_id(label, current_path)
-                if repo_id is not None:
-                    props["repo_id"] = repo_id
             if project_id is not None:
                 props["project_id"] = project_id
             node: GraphNode = {

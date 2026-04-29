@@ -74,7 +74,8 @@ def test_claude_plugin_contains_commands_agent_and_hook_schema():
     )
     assert "validate_mvp_docs.py" in all_commands
     assert "check_docchange_trailer.py" in all_commands
-    assert "project refresh-commit-graph" in all_commands
+    assert "project refresh-graph" in all_commands
+    assert "project refresh-commit-graph" not in all_commands
     assert "neodev doc scan" in all_commands
 
 
