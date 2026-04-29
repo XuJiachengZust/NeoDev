@@ -20,3 +20,4 @@ COPY docker/migrations/017_split_suggestions.sql                    /docker-entr
 COPY docker/migrations/018_cli_metadata_foundation.sql              /docker-entrypoint-initdb.d/018_cli_metadata_foundation.sql
 COPY docker/migrations/019_branch_snapshots.sql                     /docker-entrypoint-initdb.d/019_branch_snapshots.sql
 COPY docker/migrations/020_graph_manual_management.sql              /docker-entrypoint-initdb.d/020_graph_manual_management.sql
+COPY docker/migrations/021_code_fact_snapshot_rebuild.sql           /docker-entrypoint-initdb.d/021_code_fact_snapshot_rebuild.sql

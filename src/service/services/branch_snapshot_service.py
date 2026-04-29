@@ -54,6 +54,15 @@ def list_code_facts(
     return code_fact_repo.list_by_snapshot(conn, snapshot_id, node_types=node_types)
 
 
+def list_product_version_code_facts(
+    conn,
+    product_version_id: int,
+    *,
+    node_types: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    return code_fact_repo.list_by_product_version(conn, product_version_id, node_types=node_types)
+
+
 def _with_project_id(fact: dict[str, Any], project_id: int) -> dict[str, Any]:
     row = dict(fact)
     row["project_id"] = project_id

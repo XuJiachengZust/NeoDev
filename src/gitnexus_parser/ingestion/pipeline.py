@@ -73,7 +73,7 @@ def _remap_parse_result_to_repository_facts(
         file_path = props.get("filePath")
         file_content_hash = file_content_hashes.get(file_path or "")
         if file_path and file_content_hash:
-            name = str(props.get("name") or "")
+            name = str(props.get("qualified_name") or props.get("qualifiedName") or props.get("name") or "")
             start_line = props.get("startLine")
             end_line = props.get("endLine")
             node_content_hash = _node_content_hash(
@@ -359,9 +359,35 @@ _CODE_FACT_LABELS = {
 
 def _code_facts_from_graph(graph, *, project_id: int) -> list[dict]:
     parent_by_child: dict[str, str] = {}
+    children_by_parent: dict[str, list[str]] = {}
     for rel in graph.iterRelationships():
         if rel.get("type") in {"CONTAINS", "DEFINES", "MEMBER_OF"}:
             parent_by_child[rel["targetId"]] = rel["sourceId"]
+            children_by_parent.setdefault(rel["sourceId"], []).append(rel["targetId"])
+
+    nodes_by_id = {node["id"]: node for node in graph.iterNodes()}
+    structure_hashes: dict[str, str] = {}
+
+    def structure_hash_for(node_id: str) -> str:
+        if node_id in structure_hashes:
+            return structure_hashes[node_id]
+        node = nodes_by_id[node_id]
+        label = str(node.get("label") or "")
+        props = dict(node.get("properties") or {})
+        file_path = props.get("filePath") or props.get("file_path")
+        name = props.get("name") or file_path or node["id"]
+        qualified_name = props.get("qualified_name") or props.get("qualifiedName") or name
+        content_hash = props.get("content_hash") or props.get("file_content_hash") or ""
+        signature_basis = f"{label}:{file_path or ''}:{qualified_name}:{props.get('startLine') or ''}:{props.get('endLine') or ''}"
+        signature_hash = props.get("signature_hash") or hashlib.sha256(signature_basis.encode("utf-8")).hexdigest()
+        child_hashes = sorted(
+            structure_hash_for(child_id)
+            for child_id in children_by_parent.get(node_id, [])
+            if child_id in nodes_by_id and str(nodes_by_id[child_id].get("label") or "") in _CODE_FACT_LABELS
+        )
+        material = "\n".join([label, signature_hash, content_hash, *child_hashes])
+        structure_hashes[node_id] = props.get("structure_hash") or hashlib.sha256(material.encode("utf-8")).hexdigest()
+        return structure_hashes[node_id]
 
     facts: list[dict] = []
     for node in graph.iterNodes():
@@ -375,9 +401,7 @@ def _code_facts_from_graph(graph, *, project_id: int) -> list[dict]:
         content_hash = props.get("content_hash") or props.get("file_content_hash") or ""
         signature_basis = f"{label}:{file_path or ''}:{qualified_name}:{props.get('startLine') or ''}:{props.get('endLine') or ''}"
         signature_hash = props.get("signature_hash") or hashlib.sha256(signature_basis.encode("utf-8")).hexdigest()
-        structure_hash = props.get("structure_hash") or hashlib.sha256(
-            f"{label}:{signature_hash}:{content_hash}".encode("utf-8")
-        ).hexdigest()
+        structure_hash = structure_hash_for(node["id"])
         symbol_key = props.get("symbol_key")
         if not symbol_key:
             symbol_key = build_symbol_key(

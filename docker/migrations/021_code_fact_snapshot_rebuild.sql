@@ -204,7 +204,7 @@ CREATE TABLE doc_code_links (
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT chk_doc_code_links_relation_type
-        CHECK (relation_type IN ('describes', 'implements', 'verifies', 'references', 'depends_on', 'tests')),
+        CHECK (relation_type IN ('DESCRIBES', 'REQUIRES', 'IMPLEMENTS', 'VALIDATES', 'TESTS', 'DEPENDS_ON')),
     CONSTRAINT chk_doc_code_links_resolution_status
         CHECK (resolution_status IN ('resolved', 'unresolved', 'stale', 'ambiguous')),
     CONSTRAINT chk_doc_code_links_status

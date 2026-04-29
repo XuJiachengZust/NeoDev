@@ -327,12 +327,13 @@ def _load_entity_context(
     visible_fact_ids: list[str],
 ) -> tuple[dict[str, Any] | None, list[dict[str, Any]], list[dict[str, Any]]]:
     query = f"""
-    MATCH (source {{id: $entity_id, project_id: $project_id}})
-    WHERE source.id IN $visible_fact_ids
+    MATCH (source:CodeFact {{project_id: $project_id}})
+    WHERE (source.id = $entity_id OR source.fact_id = $entity_id)
+      AND coalesce(source.fact_id, source.id) IN $visible_fact_ids
     OPTIONAL MATCH path = (source)-[*1..{depth}]-(neighbor)
     WHERE all(scoped_node IN nodes(path)
         WHERE scoped_node.project_id = $project_id
-          AND scoped_node.id IN $visible_fact_ids
+          AND coalesce(scoped_node.fact_id, scoped_node.id) IN $visible_fact_ids
     )
     WITH source, collect(DISTINCT neighbor) AS neighbors, collect(path) AS paths
     WITH source, neighbors, [p IN paths WHERE p IS NOT NULL] AS valid_paths
@@ -434,14 +435,14 @@ def _chain_query(locator_type: str, depth: int) -> str:
             details={"locator_type": locator_type},
         )
     return f"""
-    MATCH (start)
+    MATCH (start:CodeFact)
     WHERE start.project_id = $project_id
       AND {start_predicate}
-      AND start.id IN $visible_fact_ids
+      AND coalesce(start.fact_id, start.id) IN $visible_fact_ids
     OPTIONAL MATCH path = (start)-[*1..{depth}]-(end)
     WHERE all(scoped_node IN nodes(path)
         WHERE scoped_node.project_id = $project_id
-          AND scoped_node.id IN $visible_fact_ids
+          AND coalesce(scoped_node.fact_id, scoped_node.id) IN $visible_fact_ids
     )
     WITH start, collect(path) AS paths
     WITH start, [p IN paths WHERE p IS NOT NULL] AS valid_paths

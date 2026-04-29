@@ -14,6 +14,10 @@ _COLUMNS = (
 )
 
 
+def _columns(alias: str = "cf") -> str:
+    return ", ".join(f"{alias}.{column.strip()}" for column in _COLUMNS.split(","))
+
+
 def upsert_many(conn, facts: list[dict[str, Any]]) -> int:
     if not facts:
         return 0
@@ -77,7 +81,7 @@ def list_by_snapshot(conn, snapshot_id: int, *, node_types: list[str] | None = N
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""
-            SELECT {_COLUMNS}
+            SELECT {_columns("cf")}
             FROM branch_snapshot_facts bsf
             JOIN branch_snapshots bs ON bs.id = bsf.snapshot_id
             JOIN code_facts cf ON cf.project_id = bs.project_id AND cf.fact_id = bsf.fact_id
@@ -94,7 +98,7 @@ def list_visible_by_symbol(conn, *, snapshot_id: int, project_id: int, symbol_ke
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""
-            SELECT {_COLUMNS}
+            SELECT {_columns("cf")}
             FROM branch_snapshot_facts bsf
             JOIN code_facts cf ON cf.fact_id = bsf.fact_id
             WHERE bsf.snapshot_id = %s
@@ -104,5 +108,46 @@ def list_visible_by_symbol(conn, *, snapshot_id: int, project_id: int, symbol_ke
             ORDER BY cf.id DESC
             """,
             (snapshot_id, project_id, symbol_key),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def list_by_product_version(
+    conn,
+    product_version_id: int,
+    node_types: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    params: list[Any] = [product_version_id]
+    type_filter = ""
+    if node_types:
+        type_filter = "AND cf.node_type = ANY(%s)"
+        params.append(node_types)
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""
+            SELECT {_columns("cf")},
+                   pvb.branch_name,
+                   latest_snapshot.id AS snapshot_id,
+                   latest_snapshot.head_commit
+            FROM product_version_branches pvb
+            JOIN LATERAL (
+                SELECT id, project_id, branch_name, head_commit
+                FROM branch_snapshots
+                WHERE project_id = pvb.project_id
+                  AND branch_name = pvb.branch_name
+                  AND status = 'completed'
+                ORDER BY id DESC
+                LIMIT 1
+            ) latest_snapshot ON TRUE
+            JOIN branch_snapshot_facts bsf ON bsf.snapshot_id = latest_snapshot.id
+            JOIN code_facts cf
+              ON cf.project_id = pvb.project_id
+             AND cf.fact_id = bsf.fact_id
+            WHERE pvb.product_version_id = %s
+              AND cf.status = 'active'
+              {type_filter}
+            ORDER BY pvb.project_id, cf.file_path, cf.start_line NULLS LAST, cf.name
+            """,
+            params,
         )
         return [dict(row) for row in cur.fetchall()]

@@ -50,3 +50,34 @@ def test_create_snapshot_from_code_facts_writes_snapshot_and_fact_membership(mon
     }
     assert calls["facts"][0]["fact_id"] == "Method:m1"
     assert calls["snapshot_facts"] == {"snapshot_id": 42, "fact_ids": ["Method:m1"]}
+
+
+def test_list_product_version_code_facts_uses_repository_scope(monkeypatch):
+    from service.services import branch_snapshot_service
+
+    calls = {}
+
+    def fake_list(conn, product_version_id, node_types=None):
+        calls["args"] = {
+            "product_version_id": product_version_id,
+            "node_types": node_types,
+        }
+        return [
+            {
+                "fact_id": "Function:login",
+                "node_type": "Function",
+                "branch_name": "release/V1",
+                "snapshot_id": 7,
+            }
+        ]
+
+    monkeypatch.setattr(branch_snapshot_service.code_fact_repo, "list_by_product_version", fake_list)
+
+    rows = branch_snapshot_service.list_product_version_code_facts(
+        object(),
+        product_version_id=23,
+        node_types=["Function"],
+    )
+
+    assert calls["args"] == {"product_version_id": 23, "node_types": ["Function"]}
+    assert rows[0]["fact_id"] == "Function:login"

@@ -268,6 +268,21 @@ def test_project_refresh_graph_command_is_registered():
     assert "--json" in proc.stdout
 
 
+def test_product_version_code_fact_commands_are_registered():
+    link = _run("neodev.py", "product", "version", "link-code", "--help")
+    assert link.returncode == 0
+    assert "--doc-id" in link.stdout
+    assert "--symbol-key" in link.stdout
+    assert "--relation-type" in link.stdout
+    assert "--code-project-id" in link.stdout
+
+    facts = _run("neodev.py", "product", "version", "code-facts", "--help")
+    assert facts.returncode == 0
+    assert "--doc-id" in facts.stdout
+    assert "--node-type" in facts.stdout
+    assert "--json" in facts.stdout
+
+
 def test_project_refresh_commit_graph_command_is_removed():
     proc = _run("neodev.py", "project", "refresh-commit-graph", "--help")
     assert proc.returncode != 0

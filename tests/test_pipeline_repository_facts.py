@@ -13,6 +13,7 @@ from gitnexus_parser.ingestion.parser import (
     ParsedSymbol,
 )
 from gitnexus_parser.ingestion.pipeline import _remap_parse_result_to_repository_facts
+from gitnexus_parser.ingestion.pipeline import _code_facts_from_graph
 from gitnexus_parser.ingestion.structure import process_structure
 
 
@@ -153,3 +154,79 @@ def test_import_relationship_id_uses_repository_fact_endpoint_ids():
             "reason": "",
         }
     ]
+
+
+def test_symbol_fact_id_uses_qualified_identity_and_content_not_line_position():
+    first = build_symbol_fact_id(
+        project_id=7,
+        label="Function",
+        file_path="src/a.py",
+        name="Api.handle",
+        start_line=2,
+        end_line=4,
+        file_content_hash="same-content",
+    )
+    moved = build_symbol_fact_id(
+        project_id=7,
+        label="Function",
+        file_path="src/a.py",
+        name="Api.handle",
+        start_line=20,
+        end_line=22,
+        file_content_hash="same-content",
+    )
+    changed = build_symbol_fact_id(
+        project_id=7,
+        label="Function",
+        file_path="src/a.py",
+        name="Api.handle",
+        start_line=20,
+        end_line=22,
+        file_content_hash="changed-content",
+    )
+
+    assert moved == first
+    assert changed != first
+
+
+def test_parent_structure_hash_changes_when_child_structure_changes():
+    def class_structure_hash(child_content_hash: str) -> str:
+        graph = create_knowledge_graph()
+        graph.addNode(
+            {
+                "id": "class-fact",
+                "label": "Class",
+                "properties": {
+                    "filePath": "src/a.py",
+                    "name": "Api",
+                    "qualified_name": "Api",
+                    "content_hash": "class-shell",
+                    "symbol_key": "project:7:Class:src/a.py:Api",
+                },
+            }
+        )
+        graph.addNode(
+            {
+                "id": f"method-{child_content_hash}",
+                "label": "Method",
+                "properties": {
+                    "filePath": "src/a.py",
+                    "name": "Api.handle",
+                    "qualified_name": "Api.handle",
+                    "content_hash": child_content_hash,
+                    "symbol_key": "project:7:Method:src/a.py:Api.handle",
+                },
+            }
+        )
+        graph.addRelationship(
+            {
+                "id": f"contains-{child_content_hash}",
+                "sourceId": "class-fact",
+                "targetId": f"method-{child_content_hash}",
+                "type": "CONTAINS",
+            }
+        )
+        facts = _code_facts_from_graph(graph, project_id=7)
+        return next(fact for fact in facts if fact["fact_id"] == "class-fact")["structure_hash"]
+
+    assert class_structure_hash("child-v1") != class_structure_hash("child-v2")

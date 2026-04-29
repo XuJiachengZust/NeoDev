@@ -7,6 +7,7 @@ from service.cli.errors import CliError
 from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
 from service.services import branch_analysis_service
+from service.services import doc_code_link_service
 from service.services import product_service
 from service.services import product_version_service
 from service.services import project_service
@@ -43,7 +44,7 @@ def register(subparsers) -> None:
     version_subparsers = version_parser.add_subparsers(
         dest="version_command",
         required=True,
-        metavar="{create,show,bind-branch}",
+        metavar="{create,show,bind-branch,link-code,code-facts}",
     )
 
     version_create_parser = version_subparsers.add_parser("create")
@@ -74,6 +75,31 @@ def register(subparsers) -> None:
     bind_parser.set_defaults(
         handler=handle_version_bind_branch,
         command_name="product version bind-branch",
+    )
+
+    link_code_parser = version_subparsers.add_parser("link-code")
+    _add_version_locator(link_code_parser)
+    _add_project_locator(link_code_parser, prefix="code-")
+    link_code_parser.add_argument("--doc-id", required=True)
+    link_code_parser.add_argument("--doc-node-id")
+    link_code_parser.add_argument("--symbol-key", required=True)
+    link_code_parser.add_argument("--relation-type", required=True)
+    link_code_parser.add_argument("--source", default="manual")
+    link_code_parser.add_argument("--confidence", type=float)
+    link_code_parser.add_argument("--json", action="store_true", dest="json_output")
+    link_code_parser.set_defaults(
+        handler=handle_version_link_code,
+        command_name="product version link-code",
+    )
+
+    code_facts_parser = version_subparsers.add_parser("code-facts")
+    _add_version_locator(code_facts_parser)
+    code_facts_parser.add_argument("--doc-id")
+    code_facts_parser.add_argument("--node-type", action="append", dest="node_types")
+    code_facts_parser.add_argument("--json", action="store_true", dest="json_output")
+    code_facts_parser.set_defaults(
+        handler=handle_version_code_facts,
+        command_name="product version code-facts",
     )
 
     analyze_parser = version_subparsers.add_parser("analyze", help=argparse.SUPPRESS)
@@ -126,9 +152,9 @@ def _add_version_locator(parser) -> None:
     parser.add_argument("--version-name")
 
 
-def _add_project_locator(parser) -> None:
-    parser.add_argument("--project-id", type=int)
-    parser.add_argument("--project-name")
+def _add_project_locator(parser, prefix: str = "") -> None:
+    parser.add_argument(f"--{prefix}project-id", type=int, dest=f"{prefix.replace('-', '_')}project_id")
+    parser.add_argument(f"--{prefix}project-name", dest=f"{prefix.replace('-', '_')}project_name")
 
 
 def _with_db(callback):
@@ -263,6 +289,64 @@ def handle_version_bind_branch(args) -> dict:
     return _with_db(run)
 
 
+def handle_version_link_code(args) -> dict:
+    def run(conn):
+        version = _resolve_version(conn, args)
+        product = product_service.get_product(conn, version["product_id"])
+        project = _resolve_project(
+            conn,
+            SimpleArgs(
+                project_id=getattr(args, "code_project_id", None),
+                project_name=getattr(args, "code_project_name", None),
+            ),
+        )
+        link = doc_code_link_service.create_link(
+            conn,
+            product_id=product["id"],
+            product_version_id=version["id"],
+            doc_id=args.doc_id,
+            doc_node_id=args.doc_node_id,
+            code_project_id=project["id"],
+            symbol_key=args.symbol_key,
+            relation_type=args.relation_type,
+            source=args.source,
+            confidence=args.confidence,
+        )
+        return build_success_payload(
+            args.command_name,
+            {"product": product, "version": version, "project": project, "link": link},
+        )
+
+    return _with_db(run)
+
+
+def handle_version_code_facts(args) -> dict:
+    def run(conn):
+        version = _resolve_version(conn, args)
+        product = product_service.get_product(conn, version["product_id"])
+        if args.doc_id:
+            result = doc_code_link_service.list_code_facts_for_doc(
+                conn,
+                product_version_id=version["id"],
+                doc_id=args.doc_id,
+            )
+        else:
+            result = {
+                "product_version_id": version["id"],
+                "code_facts": product_version_service.list_code_facts(
+                    conn,
+                    version["id"],
+                    node_types=args.node_types,
+                ),
+            }
+        return build_success_payload(
+            args.command_name,
+            {"product": product, "version": version, **result},
+        )
+
+    return _with_db(run)
+
+
 def handle_version_analyze(args) -> dict:
     def run(conn):
         version = _resolve_version(conn, args)
@@ -307,6 +391,11 @@ def handle_version_watch_status(args) -> dict:
         return build_success_payload(args.command_name, result)
 
     return _with_db(run)
+
+
+class SimpleArgs:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
 
 
 def _resolve_product(conn, args) -> dict:

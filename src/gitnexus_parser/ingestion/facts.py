@@ -51,7 +51,7 @@ def build_symbol_fact_key(
 ) -> str:
     return (
         f"project:{project_id}:symbol:{label}:{file_path}:{name}:"
-        f"{start_line or 0}:{end_line or 0}:hash:{file_content_hash}"
+        f"hash:{file_content_hash}"
     )
 
 

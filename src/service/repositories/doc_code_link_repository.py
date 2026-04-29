@@ -6,6 +6,84 @@ from typing import Any
 
 from psycopg2.extras import Json, RealDictCursor
 
+_COLUMNS = (
+    "id, product_id, product_version_id, doc_id, doc_node_id, code_project_id, "
+    "symbol_key, resolved_fact_id, resolved_snapshot_id, relation_type, source, "
+    "confidence, resolution_status, metadata_json, status, created_at, updated_at"
+)
+
+
+def create(
+    conn,
+    *,
+    product_id: int,
+    product_version_id: int | None,
+    doc_id: str,
+    doc_node_id: str | None,
+    code_project_id: int,
+    symbol_key: str,
+    relation_type: str,
+    source: str = "manual",
+    confidence: float | None = None,
+    metadata_json: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""
+            INSERT INTO doc_code_links (
+                product_id, product_version_id, doc_id, doc_node_id,
+                code_project_id, symbol_key, relation_type, source,
+                confidence, metadata_json
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING {_COLUMNS}
+            """,
+            (
+                product_id,
+                product_version_id,
+                doc_id,
+                doc_node_id,
+                code_project_id,
+                symbol_key,
+                relation_type,
+                source,
+                confidence,
+                Json(metadata_json or {}),
+            ),
+        )
+        return dict(cur.fetchone())
+
+
+def list_by_product_version_doc(conn, product_version_id: int, doc_id: str) -> list[dict[str, Any]]:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""
+            SELECT {_COLUMNS}
+            FROM doc_code_links
+            WHERE product_version_id = %s
+              AND doc_id = %s
+              AND status = 'active'
+            ORDER BY id
+            """,
+            (product_version_id, doc_id),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def get_product_version_branch(conn, product_version_id: int, project_id: int) -> dict[str, Any] | None:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT product_version_id, project_id, branch_name
+            FROM product_version_branches
+            WHERE product_version_id = %s
+              AND project_id = %s
+            """,
+            (product_version_id, project_id),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
 
 def list_active_for_branch_snapshot(
     conn,

@@ -1,6 +1,7 @@
 """Product version service."""
 
 from service.repositories import product_version_repository as repo
+from service.services import branch_snapshot_service
 
 
 def list_versions(conn, product_id: int, status: str | None = None) -> list[dict]:
@@ -51,3 +52,11 @@ def set_branch(conn, version_id: int, project_id: int, branch: str) -> dict:
 
 def remove_branch(conn, version_id: int, project_id: int) -> bool:
     return repo.remove_branch(conn, version_id, project_id)
+
+
+def list_code_facts(conn, version_id: int, *, node_types: list[str] | None = None) -> list[dict]:
+    return branch_snapshot_service.list_product_version_code_facts(
+        conn,
+        version_id,
+        node_types=node_types,
+    )

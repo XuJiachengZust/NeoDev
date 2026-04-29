@@ -8,7 +8,18 @@ from gitnexus_parser.graph.types import NodeLabel
 
 # Labels we create unique constraints on. Keep this tied to the declared graph
 # schema so newly supported parser labels cannot silently miss id uniqueness.
-CONSTRAINT_LABELS = list(get_args(NodeLabel))
+CODE_FACT_LABELS = {
+    "File",
+    "Class",
+    "Interface",
+    "Enum",
+    "Annotation",
+    "Method",
+    "Function",
+    "Constructor",
+}
+
+CONSTRAINT_LABELS = [*list(get_args(NodeLabel)), "CodeFact"]
 
 
 def ensure_constraints(driver, database: str | None = None) -> None:
@@ -53,15 +64,17 @@ def write_graph(
                 for n in label_batch:
                     props = _props_for_neo4j(n.get("properties", {}))
                     props["id"] = n["id"]
+                    props["fact_id"] = n["id"]
                     props["project_id"] = project_id
                     rows.append({"id": n["id"], "props": props})
 
                 def work(tx, *, node_label=label, node_rows=rows):
                     nonlocal nodes_written
+                    labels = _labels_for_merge(node_label)
                     tx.run(
                         f"""
                         UNWIND $nodes AS row
-                        MERGE (n:{node_label} {{id: row.id}})
+                        MERGE (n:{labels} {{id: row.id}})
                         SET n += row.props
                         """,
                         nodes=node_rows,
@@ -112,3 +125,9 @@ def _group_by(items: list[dict[str, Any]], key: str) -> dict[str, list[dict[str,
     for item in items:
         groups.setdefault(str(item[key]), []).append(item)
     return groups
+
+
+def _labels_for_merge(primary_label: str) -> str:
+    if primary_label in CODE_FACT_LABELS:
+        return f"{primary_label}:CodeFact"
+    return primary_label
