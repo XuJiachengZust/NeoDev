@@ -98,6 +98,7 @@ def list_branches(conn, version_id: int) -> list[dict]:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             """SELECT pvb.id, pvb.product_version_id, pvb.project_id, pvb.branch_name,
+                      pvb.branch_name AS branch,
                       p.name AS project_name
                FROM product_version_branches pvb
                JOIN projects p ON p.id = pvb.project_id
@@ -116,7 +117,7 @@ def set_branch(conn, version_id: int, project_id: int, branch: str) -> dict:
                ON CONFLICT (product_version_id, project_id)
                DO UPDATE SET branch_name = EXCLUDED.branch_name,
                              updated_at = now()
-               RETURNING id, product_version_id, project_id, branch_name""",
+               RETURNING id, product_version_id, project_id, branch_name, branch_name AS branch""",
             (version_id, project_id, branch),
         )
         return dict(cur.fetchone())

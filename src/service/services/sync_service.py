@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import subprocess
+import hashlib
+import logging
+import time
 from pathlib import Path
 
 from gitnexus_parser.ingestion.repo_resolve import ensure_repo_from_url, resolve_repo_root
 
 from service import git_ops
 from service.path_allowlist import ensure_path_allowed
+from service.repositories import branch_graph_repository as branch_graph_repo
 from service.repositories import project_repository as project_repo
+from service.services import branch_graph_neo4j_service
+from service.services import neo4j_config_service
 
 logger = logging.getLogger(__name__)
-
 
 def _git_checkout(repo_path: str, branch: str) -> str | None:
     try:
@@ -62,34 +66,6 @@ def _restore_checkout(repo_path: str, previous_branch: str | None, current_branc
     except Exception:
         pass
 
-
-def _load_graph_config() -> dict:
-    config = {}
-    try:
-        from gitnexus_parser import load_config
-
-        config = load_config()
-        if not config.get("neo4j_uri"):
-            for path in _default_config_paths():
-                try:
-                    config = load_config(path)
-                    if config.get("neo4j_uri"):
-                        break
-                except Exception as exc:
-                    logger.debug("load_config(%s) failed: %s", path, exc)
-    except Exception as exc:
-        logger.debug("load_config failed: %s", exc)
-    return config
-
-
-def _default_config_paths() -> list[Path]:
-    env_path = os.environ.get("CONFIG_PATH")
-    if env_path:
-        return [Path(env_path)]
-    src_dir = Path(__file__).resolve().parent.parent.parent
-    return [src_dir / "config.json", src_dir / "config.example.json"]
-
-
 def _is_remote_url(repo_path: str) -> bool:
     value = (repo_path or "").strip()
     return (
@@ -135,66 +111,181 @@ def refresh_graph_for_branch(conn, project_id: int, branch: str) -> dict | None:
     if not normalized_branch:
         return None
 
-    local_root = _resolve_local_repo(project, project_id)
-    git_ops.fetch_repo(local_root)
-    previous_branch = _git_checkout(local_root, normalized_branch)
-    head = git_ops.get_head_commit(local_root, normalized_branch)
+    timings: dict[str, float] = {}
+
+    def timed(name: str, callback):
+        started = time.perf_counter()
+        value = callback()
+        timings[name] = round(time.perf_counter() - started, 4)
+        return value
+
+    local_root = timed("resolve_local_repo", lambda: _resolve_local_repo(project, project_id))
+    timed("git_fetch", lambda: git_ops.fetch_repo(local_root))
+    previous_branch = timed("git_checkout", lambda: _git_checkout(local_root, normalized_branch))
+    graph = None
+    run = None
 
     try:
-        from service.services import branch_snapshot_service, manual_graph_sync_service
-
-        cleanup = branch_snapshot_service.clear_branch_graph(
-            conn,
-            project_id=project_id,
-            branch=normalized_branch,
-        )
-        manual_graph_sync_service.clear_project_graph(conn, project_id=project_id)
-
-        config = _load_graph_config()
-        from gitnexus_parser.ingestion.pipeline import run_pipeline
-
-        pipeline_result = run_pipeline(
-            local_root,
-            config=config,
-            branch=normalized_branch,
-            project_id=project_id,
-            write_neo4j=bool(config.get("neo4j_uri")),
-            incremental=False,
-            since_commit=None,
-        )
-
-        from service.services import doc_code_link_service
-
-        snapshot = branch_snapshot_service.create_snapshot_from_code_facts(
-            conn,
-            project_id=project_id,
-            branch=normalized_branch,
-            head_commit=head,
-            snapshot_hash=pipeline_result.snapshot_hash,
-            code_facts=pipeline_result.code_facts or [],
-        )
-        link_resolution = doc_code_link_service.rebuild_links_for_branch_snapshot(
+        head = timed("git_head", lambda: git_ops.get_head_commit(local_root, normalized_branch))
+        existing_graph = branch_graph_repo.get_by_project_branch(conn, project_id, normalized_branch)
+        neo4j_config, neo4j_database = neo4j_config_service.load_neo4j_config(project)
+        if not neo4j_config:
+            raise RuntimeError("Neo4j is not configured for branch graph refresh")
+        has_existing_neo4j_graph = False
+        if existing_graph and existing_graph.get("status") == "ready" and existing_graph.get("head_commit") == head:
+            has_existing_neo4j_graph = timed(
+                "neo4j_existing_graph_check",
+                lambda: branch_graph_neo4j_service.branch_has_graph(
+                    config=neo4j_config,
+                    database=neo4j_database,
+                    project_id=project_id,
+                    branch_name=normalized_branch,
+                ),
+            )
+        if (
+            existing_graph
+            and existing_graph.get("status") == "ready"
+            and existing_graph.get("head_commit") == head
+            and has_existing_neo4j_graph
+        ):
+            logger.info(
+                "branch graph refresh skipped project_id=%s branch=%s timings=%s",
+                project_id,
+                normalized_branch,
+                timings,
+            )
+            return {
+                "project_id": project_id,
+                "branch": normalized_branch,
+                "graph_id": existing_graph["id"],
+                "run_id": None,
+                "head_commit": head,
+                "graph_action": "skipped_unchanged",
+                "node_count": existing_graph.get("node_count") or 0,
+                "edge_count": existing_graph.get("edge_count") or 0,
+                "file_count": None,
+                "graph_hash": existing_graph.get("graph_hash"),
+                "timings": timings,
+                "graph_errors": [],
+            }
+        graph = branch_graph_repo.upsert(
             conn,
             project_id=project_id,
             branch_name=normalized_branch,
-            snapshot_id=snapshot["id"],
+            status="running",
         )
-        conn.commit()
+        run = branch_graph_repo.start_refresh_run(
+            conn,
+            graph_id=graph["id"],
+            project_id=project_id,
+            branch_name=normalized_branch,
+            head_commit_before=(existing_graph or {}).get("head_commit"),
+        )
+        from gitnexus_parser.ingestion.pipeline import run_pipeline
+
+        pipeline_result = timed(
+            "pipeline_total",
+            lambda: run_pipeline(
+                local_root,
+                config={},
+                branch=normalized_branch,
+                project_id=project_id,
+                write_neo4j=True,
+                incremental=False,
+                since_commit=None,
+            ),
+        )
+        if pipeline_result.graph is None:
+            raise RuntimeError("Parser did not return a graph for Neo4j writing")
+        neo4j_write = timed(
+            "neo4j_replace_branch_graph",
+            lambda: branch_graph_neo4j_service.replace_branch_graph(
+                conn=conn,
+                config=neo4j_config,
+                database=neo4j_database,
+                graph=pipeline_result.graph,
+                project_id=project_id,
+                branch_name=normalized_branch,
+                graph_id=graph["id"],
+                head_commit=head,
+            ),
+        )
+        pipeline_timings = getattr(pipeline_result, "timings", None)
+        if pipeline_timings:
+            timings["pipeline_breakdown"] = pipeline_timings
+        graph_hash = _graph_hash(
+            project_id=project_id,
+            branch_name=normalized_branch,
+            head_commit=head,
+            node_count=pipeline_result.node_count,
+            edge_count=pipeline_result.relationship_count,
+        )
+        branch_graph_repo.mark_ready(
+            conn,
+            graph_id=graph["id"],
+            head_commit=head,
+            graph_hash=graph_hash,
+            node_count=pipeline_result.node_count,
+            edge_count=pipeline_result.relationship_count,
+        )
+        branch_graph_repo.complete_refresh_run(
+            conn,
+            run_id=run["id"],
+            head_commit_after=head,
+            node_count=pipeline_result.node_count,
+            edge_count=pipeline_result.relationship_count,
+            metadata_json={
+                "file_count": pipeline_result.file_count,
+                "neo4j_write": neo4j_write,
+                "timings": timings,
+            },
+        )
+
+        timed("pg_commit", conn.commit)
+        logger.info(
+            "branch graph refresh completed project_id=%s branch=%s nodes=%s edges=%s timings=%s",
+            project_id,
+            normalized_branch,
+            pipeline_result.node_count,
+            pipeline_result.relationship_count,
+            timings,
+        )
         return {
             "project_id": project_id,
             "branch": normalized_branch,
+            "graph_id": graph["id"],
+            "run_id": run["id"],
             "head_commit": head,
-            "graph_action": "full_refresh",
-            "current_snapshot_id": snapshot.get("id"),
-            "snapshot_hash": pipeline_result.snapshot_hash,
-            "snapshot_entry_count": int(snapshot.get("entry_count") or 0),
-            "code_fact_count": len(pipeline_result.code_facts or []),
-            "graph_cleanup": cleanup,
-            "doc_code_link_resolution": link_resolution,
+            "graph_action": "full_replace",
+            "node_count": pipeline_result.node_count,
+            "edge_count": pipeline_result.relationship_count,
+            "file_count": pipeline_result.file_count,
+            "graph_hash": graph_hash,
+            "neo4j_write": neo4j_write,
+            "timings": timings,
             "graph_errors": [],
         }
+    except Exception as exc:
+        if graph is not None:
+            branch_graph_repo.mark_failed(conn, graph_id=graph["id"], error_message=str(exc))
+        if run is not None:
+            branch_graph_repo.fail_refresh_run(conn, run_id=run["id"], error_message=str(exc))
+        conn.commit()
+        raise
     finally:
         _restore_checkout(local_root, previous_branch, normalized_branch)
+
+
+def _graph_hash(
+    *,
+    project_id: int,
+    branch_name: str,
+    head_commit: str | None,
+    node_count: int,
+    edge_count: int,
+) -> str:
+    payload = f"{project_id}\0{branch_name}\0{head_commit or ''}\0{node_count}\0{edge_count}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def sync_commits_for_project(conn, project_id: int) -> dict | None:

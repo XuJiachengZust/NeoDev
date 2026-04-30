@@ -272,7 +272,11 @@ def test_product_version_code_fact_commands_are_registered():
     link = _run("neodev.py", "product", "version", "link-code", "--help")
     assert link.returncode == 0
     assert "--doc-id" in link.stdout
-    assert "--symbol-key" in link.stdout
+    assert "--symbol-key" not in link.stdout
+    assert "--code-node-id" in link.stdout
+    assert "--locator-json" in link.stdout
+    assert "--unlink" in link.stdout
+    assert "--link-id" in link.stdout
     assert "--relation-type" in link.stdout
     assert "--code-project-id" in link.stdout
 

@@ -450,11 +450,11 @@ def create_operation_log(
         cur.execute(
             """
             INSERT INTO graph_operation_logs (
-                project_id, branch_name, snapshot_id, object_kind, object_id,
+                project_id, branch_name, graph_id, object_kind, object_id,
                 operation, before_json, after_json, actor, source
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, project_id, branch_name, snapshot_id, object_kind,
+            RETURNING id, project_id, branch_name, graph_id, object_kind,
                       object_id, operation, before_json, after_json, actor,
                       source, created_at
             """,

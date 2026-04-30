@@ -2,13 +2,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from service.repositories import graph_management_repository as repo
-from service.repositories import code_fact_repository as code_fact_repo
-from service.services import branch_snapshot_service
-
-try:
-    from service.services import manual_graph_sync_service
-except Exception:  # pragma: no cover - optional Neo4j dependency path
-    manual_graph_sync_service = None
 
 
 IDENTITY_FIELDS = frozenset({"id", "project_id", "file_path", "content_hash", "node_id"})
@@ -385,12 +378,11 @@ def _project_node_to_current_snapshot(
     operation: str,
     before: dict | None,
 ) -> None:
-    snapshot = _require_current_snapshot(conn, project_id=project_id, branch=branch)
-    log = repo.create_operation_log(
+    repo.create_operation_log(
         conn,
         project_id=project_id,
         branch_name=(branch or "").strip(),
-        snapshot_id=snapshot["id"],
+        snapshot_id=None,
         object_kind="node",
         object_id=node["node_id"],
         operation=operation,
@@ -398,15 +390,6 @@ def _project_node_to_current_snapshot(
         after_json=node,
         source="manual",
     )
-    fact = _manual_node_fact(project_id=project_id, node=node, operation_id=log["id"])
-    code_fact_repo.upsert_many(conn, [fact])
-    branch_snapshot_service.add_fact(
-        conn,
-        snapshot_id=snapshot["id"],
-        fact_id=fact["fact_id"],
-    )
-    if manual_graph_sync_service:
-        manual_graph_sync_service.sync_node(conn, project_id=project_id, node=node, fact=fact)
 
 
 def _archive_node_from_current_snapshot(
@@ -417,18 +400,11 @@ def _archive_node_from_current_snapshot(
     node: dict,
     before: dict | None,
 ) -> None:
-    snapshot = _require_current_snapshot(conn, project_id=project_id, branch=branch)
-    fact_id = _manual_node_fact_id(project_id, node["node_id"])
-    branch_snapshot_service.remove_fact(
-        conn,
-        snapshot_id=snapshot["id"],
-        fact_id=fact_id,
-    )
     repo.create_operation_log(
         conn,
         project_id=project_id,
         branch_name=(branch or "").strip(),
-        snapshot_id=snapshot["id"],
+        snapshot_id=None,
         object_kind="node",
         object_id=node["node_id"],
         operation="archive",
@@ -436,8 +412,6 @@ def _archive_node_from_current_snapshot(
         after_json=node,
         source="manual",
     )
-    if manual_graph_sync_service:
-        manual_graph_sync_service.archive_node(conn, project_id=project_id, node=node, fact_id=fact_id)
 
 
 def _project_edge_to_current_snapshot(
@@ -449,12 +423,11 @@ def _project_edge_to_current_snapshot(
     operation: str,
     before: dict | None,
 ) -> None:
-    snapshot = _require_current_snapshot(conn, project_id=project_id, branch=branch)
     repo.create_operation_log(
         conn,
         project_id=project_id,
         branch_name=(branch or "").strip(),
-        snapshot_id=snapshot["id"],
+        snapshot_id=None,
         object_kind="edge",
         object_id=edge["edge_id"],
         operation=operation,
@@ -462,69 +435,6 @@ def _project_edge_to_current_snapshot(
         after_json=edge,
         source="manual",
     )
-    if manual_graph_sync_service:
-        if operation == "archive":
-            manual_graph_sync_service.archive_edge(conn, project_id=project_id, edge=edge)
-        else:
-            manual_graph_sync_service.sync_edge(
-                conn,
-                project_id=project_id,
-                branch=(branch or "").strip(),
-                snapshot_id=snapshot["id"],
-                edge=edge,
-            )
-
-
-def _require_current_snapshot(conn, *, project_id: int, branch: str) -> dict:
-    normalized_branch = _required_text(branch, "branch")
-    snapshot = branch_snapshot_service.get_current_snapshot(conn, project_id, normalized_branch)
-    if not snapshot:
-        raise GraphManagementError(
-            category="invalid_scope",
-            message="branch completed snapshot is required for manual graph edits",
-            details={"project_id": project_id, "branch": normalized_branch},
-        )
-    return snapshot
-
-
-def _manual_node_fact(*, project_id: int, node: dict, operation_id: int) -> dict:
-    fact_id = _manual_node_fact_id(project_id, node["node_id"])
-    type_key = str(node.get("type_key") or "")
-    properties = dict(node.get("properties") or {})
-    fact_node_type = properties.get("node_type") if properties.get("node_type") in _FACT_NODE_TYPES else "Function"
-    return {
-        "project_id": project_id,
-        "fact_id": fact_id,
-        "symbol_key": fact_id,
-        "node_type": fact_node_type,
-        "file_path": node.get("file_path"),
-        "qualified_name": f"manual.{type_key}.{node['node_id']}",
-        "name": node.get("name"),
-        "metadata_json": {
-            "source": "manual",
-            "manual_node_id": node.get("node_id"),
-            "type_key": type_key,
-            "properties": properties,
-            "operation_id": operation_id,
-        },
-        "status": node.get("status") or "active",
-    }
-
-
-def _manual_node_fact_id(project_id: int, node_id: str) -> str:
-    return f"manual:{project_id}:node:{node_id}"
-
-
-_FACT_NODE_TYPES = {
-    "File",
-    "Class",
-    "Interface",
-    "Enum",
-    "Annotation",
-    "Method",
-    "Function",
-    "Constructor",
-}
 
 
 def _require_node_type(conn, project_id: int, type_key: str) -> dict:

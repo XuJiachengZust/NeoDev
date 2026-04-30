@@ -1,7 +1,14 @@
 """Product version service."""
 
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+from service.repositories import branch_graph_repository
+from service.repositories import doc_code_link_repository
 from service.repositories import product_version_repository as repo
-from service.services import branch_snapshot_service
 
 
 def list_versions(conn, product_id: int, status: str | None = None) -> list[dict]:
@@ -54,9 +61,53 @@ def remove_branch(conn, version_id: int, project_id: int) -> bool:
     return repo.remove_branch(conn, version_id, project_id)
 
 
-def list_code_facts(conn, version_id: int, *, node_types: list[str] | None = None) -> list[dict]:
-    return branch_snapshot_service.list_product_version_code_facts(
+def bind_code_link(
+    conn,
+    *,
+    product_version_id: int,
+    project_id: int,
+    doc_id: str,
+    doc_node_id: str | None,
+    relation_type: str,
+    code_locator: dict[str, Any],
+    source: str = "manual",
+    confidence: float | None = None,
+) -> dict:
+    branch = _require_bound_branch(conn, product_version_id, project_id)
+    locator_hash = _locator_hash(code_locator)
+    graph = branch_graph_repository.get_by_project_branch(conn, project_id, branch["branch_name"])
+    resolved_node_id = code_locator.get("code_node_id")
+    resolution_status = "resolved" if graph and graph.get("status") == "ready" and resolved_node_id else "pending"
+    return doc_code_link_repository.upsert_active(
         conn,
-        version_id,
-        node_types=node_types,
+        product_version_id=product_version_id,
+        project_id=project_id,
+        branch_name=branch["branch_name"],
+        doc_id=doc_id,
+        doc_node_id=doc_node_id,
+        relation_type=relation_type,
+        code_locator_json=code_locator,
+        code_locator_hash=locator_hash,
+        resolved_graph_id=(graph or {}).get("id"),
+        resolved_node_id=resolved_node_id,
+        resolution_status=resolution_status,
+        source=source,
+        confidence=confidence,
     )
+
+
+def unbind_code_link(conn, *, link_id: int) -> dict | None:
+    return doc_code_link_repository.mark_inactive(conn, link_id=link_id)
+
+
+def _require_bound_branch(conn, product_version_id: int, project_id: int) -> dict:
+    branches = repo.list_branches(conn, product_version_id)
+    for branch in branches:
+        if int(branch["project_id"]) == int(project_id):
+            return branch
+    raise ValueError("project branch is not bound to product version")
+
+
+def _locator_hash(locator: dict[str, Any]) -> str:
+    payload = json.dumps(locator, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

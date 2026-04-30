@@ -1,4 +1,5 @@
 import argparse
+import json
 from contextlib import closing
 
 import psycopg2
@@ -6,8 +7,8 @@ import psycopg2
 from service.cli.errors import CliError
 from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
+from service.repositories import branch_graph_repository as branch_graph_repo
 from service.services import branch_analysis_service
-from service.services import doc_code_link_service
 from service.services import product_service
 from service.services import product_version_service
 from service.services import project_service
@@ -80,10 +81,13 @@ def register(subparsers) -> None:
     link_code_parser = version_subparsers.add_parser("link-code")
     _add_version_locator(link_code_parser)
     _add_project_locator(link_code_parser, prefix="code-")
-    link_code_parser.add_argument("--doc-id", required=True)
+    link_code_parser.add_argument("--doc-id")
     link_code_parser.add_argument("--doc-node-id")
-    link_code_parser.add_argument("--symbol-key", required=True)
-    link_code_parser.add_argument("--relation-type", required=True)
+    link_code_parser.add_argument("--code-node-id")
+    link_code_parser.add_argument("--locator-json")
+    link_code_parser.add_argument("--relation-type")
+    link_code_parser.add_argument("--unlink", action="store_true")
+    link_code_parser.add_argument("--link-id", type=int)
     link_code_parser.add_argument("--source", default="manual")
     link_code_parser.add_argument("--confidence", type=float)
     link_code_parser.add_argument("--json", action="store_true", dest="json_output")
@@ -281,9 +285,33 @@ def handle_version_bind_branch(args) -> dict:
             project["id"],
             args.branch,
         )
+        graph = branch_graph_repo.get_by_project_branch(conn, project["id"], args.branch)
+        graph_status = "ready" if graph and graph.get("status") == "ready" else "missing"
+        graph_payload = graph
+        graph_action = None
+        if graph_status != "ready":
+            try:
+                graph_payload = project_service.refresh_graph(
+                    conn,
+                    project_id=project["id"],
+                    branch=args.branch,
+                )
+                graph_status = "ready"
+                graph_action = "auto_refresh"
+            except Exception as exc:
+                graph_status = "refresh_failed"
+                graph_payload = {"error": str(exc)}
         return build_success_payload(
             args.command_name,
-            {"product": product, "version": version, "project": project, "binding": binding},
+            {
+                "product": product,
+                "version": version,
+                "project": project,
+                "binding": binding,
+                "graph_status": graph_status,
+                "graph_action": graph_action,
+                "graph": graph_payload,
+            },
         )
 
     return _with_db(run)
@@ -300,45 +328,73 @@ def handle_version_link_code(args) -> dict:
                 project_name=getattr(args, "code_project_name", None),
             ),
         )
-        link = doc_code_link_service.create_link(
-            conn,
-            product_id=product["id"],
-            product_version_id=version["id"],
-            doc_id=args.doc_id,
-            doc_node_id=args.doc_node_id,
-            code_project_id=project["id"],
-            symbol_key=args.symbol_key,
-            relation_type=args.relation_type,
-            source=args.source,
-            confidence=args.confidence,
-        )
+        link_action = "unlink" if getattr(args, "unlink", False) else "bind"
+        if link_action == "unlink":
+            link = product_version_service.unbind_code_link(conn, link_id=args.link_id)
+            code_locator = None
+        else:
+            code_locator = _build_code_locator(args)
+            link = product_version_service.bind_code_link(
+                conn,
+                product_version_id=version["id"],
+                project_id=project["id"],
+                doc_id=args.doc_id,
+                doc_node_id=args.doc_node_id,
+                relation_type=args.relation_type,
+                code_locator=code_locator or {},
+                source=args.source,
+                confidence=args.confidence,
+            )
         return build_success_payload(
             args.command_name,
-            {"product": product, "version": version, "project": project, "link": link},
+            {
+                "product": product,
+                "version": version,
+                "project": project,
+                "link": link,
+                "link_action": link_action,
+                "link_id": getattr(args, "link_id", None),
+                "code_locator": code_locator,
+            },
         )
 
     return _with_db(run)
+
+
+def _build_code_locator(args) -> dict | None:
+    if getattr(args, "locator_json", None):
+        try:
+            locator = json.loads(args.locator_json)
+        except json.JSONDecodeError as exc:
+            raise CliError(
+                category="validation_error",
+                message="--locator-json must be a valid JSON object",
+                details={"locator_json": args.locator_json},
+            ) from exc
+        if not isinstance(locator, dict):
+            raise CliError(
+                category="validation_error",
+                message="--locator-json must be a valid JSON object",
+                details={"locator_json": args.locator_json},
+            )
+        return locator
+    if getattr(args, "code_node_id", None):
+        return {"code_node_id": args.code_node_id}
+    return None
 
 
 def handle_version_code_facts(args) -> dict:
     def run(conn):
         version = _resolve_version(conn, args)
         product = product_service.get_product(conn, version["product_id"])
-        if args.doc_id:
-            result = doc_code_link_service.list_code_facts_for_doc(
-                conn,
-                product_version_id=version["id"],
-                doc_id=args.doc_id,
-            )
-        else:
-            result = {
-                "product_version_id": version["id"],
-                "code_facts": product_version_service.list_code_facts(
-                    conn,
-                    version["id"],
-                    node_types=args.node_types,
-                ),
-            }
+        result = {
+            "product_version_id": version["id"],
+            "doc_id": args.doc_id,
+            "node_types": args.node_types,
+            "code_facts": [],
+            "storage_status": "removed",
+            "message": "code node storage has been removed; code-facts is preserved as a no-op while storage is rebuilt",
+        }
         return build_success_payload(
             args.command_name,
             {"product": product, "version": version, **result},

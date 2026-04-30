@@ -2,30 +2,28 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-MIGRATION_FILE = ROOT / "docker" / "migrations" / "020_graph_manual_management.sql"
+INIT_SQL_FILE = ROOT / "docker" / "init.sql"
 DOCKERFILE_POSTGRES = ROOT / "docker" / "Dockerfile.postgres"
 
 
-def test_graph_manual_management_migration_file_is_registered():
-    assert MIGRATION_FILE.exists(), f"migration file missing: {MIGRATION_FILE}"
-    sql = MIGRATION_FILE.read_text(encoding="utf-8")
+def test_graph_manual_management_schema_is_in_init_sql():
+    assert INIT_SQL_FILE.exists(), f"init SQL missing: {INIT_SQL_FILE}"
+    sql = INIT_SQL_FILE.read_text(encoding="utf-8")
     assert "CREATE TABLE IF NOT EXISTS graph_node_types" in sql
     assert "CREATE TABLE IF NOT EXISTS graph_relation_types" in sql
     assert "CREATE TABLE IF NOT EXISTS graph_nodes" in sql
     assert "CREATE TABLE IF NOT EXISTS graph_edges" in sql
     assert "chk_graph_edges_relation_owner" in sql
     dockerfile = DOCKERFILE_POSTGRES.read_text(encoding="utf-8")
-    assert "020_graph_manual_management.sql" in dockerfile
-    assert "022_widen_code_fact_identifiers.sql" in dockerfile
-    assert "023_manual_graph_fact_unification.sql" in dockerfile
+    assert "docker/init.sql" in dockerfile
+    assert "docker/migrations/" not in dockerfile
 
 
-def test_manual_graph_fact_unification_migration_adds_operation_logs():
-    migration = ROOT / "docker" / "migrations" / "023_manual_graph_fact_unification.sql"
-    assert migration.exists(), f"migration file missing: {migration}"
-    sql = migration.read_text(encoding="utf-8")
+def test_init_sql_adds_operation_logs():
+    sql = INIT_SQL_FILE.read_text(encoding="utf-8")
 
     assert "CREATE TABLE IF NOT EXISTS graph_operation_logs" in sql
+    assert "graph_id" in sql
     assert "object_kind" in sql
     assert "operation" in sql
     assert "before_json" in sql
@@ -33,10 +31,22 @@ def test_manual_graph_fact_unification_migration_adds_operation_logs():
     assert "idx_graph_operation_logs_scope" in sql
 
 
+def test_init_sql_excludes_old_code_node_storage_tables():
+    sql = INIT_SQL_FILE.read_text(encoding="utf-8")
+
+    for table_name in [
+        "branch_snapshot_facts",
+        "code_facts",
+        "branch_snapshots",
+    ]:
+        assert f"CREATE TABLE IF NOT EXISTS {table_name}" not in sql
+        assert f"CREATE TABLE {table_name}" not in sql
+
+
 def _apply_migration(conn):
-    assert MIGRATION_FILE.exists(), f"migration file missing: {MIGRATION_FILE}"
+    assert INIT_SQL_FILE.exists(), f"init SQL missing: {INIT_SQL_FILE}"
     with conn.cursor() as cur:
-        cur.execute(MIGRATION_FILE.read_text(encoding="utf-8"))
+        cur.execute(INIT_SQL_FILE.read_text(encoding="utf-8"))
     conn.commit()
 
 

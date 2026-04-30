@@ -9,7 +9,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parent.parent
-MIGRATION_FILE = ROOT / "docker" / "migrations" / "018_cli_metadata_foundation.sql"
+INIT_SQL_FILE = ROOT / "docker" / "init.sql"
 
 
 def _get_database_url() -> str:
@@ -23,8 +23,7 @@ def _get_test_repo_path() -> str:
 
 
 def _run_all_migrations_if_needed(conn) -> None:
-    migration_dir = ROOT / "docker" / "migrations"
-    if not migration_dir.is_dir():
+    if not INIT_SQL_FILE.exists():
         return
 
     conn.rollback()
@@ -32,7 +31,7 @@ def _run_all_migrations_if_needed(conn) -> None:
         cur.execute(
             """
             SELECT to_regclass('public.projects'),
-                   to_regclass('public.code_facts')
+                   to_regclass('public.graph_node_types')
             """
         )
         projects_table, latest_table = cur.fetchone()
@@ -40,31 +39,17 @@ def _run_all_migrations_if_needed(conn) -> None:
     if projects_table and latest_table:
         return
 
-    for migration_path in sorted(migration_dir.glob("*.sql")):
-        sql = migration_path.read_text(encoding="utf-8")
-        with conn.cursor() as cur:
-            normalized_sql = "\n".join(
-                line for line in sql.splitlines() if not line.strip().startswith("--")
-            ).strip()
-            if not normalized_sql:
-                continue
-            # Keep PL/pgSQL blocks intact; naive ';' splitting breaks DO $$ ... $$; migrations.
-            if "$$" in normalized_sql:
-                cur.execute(normalized_sql)
-                continue
-            for stmt in normalized_sql.split(";"):
-                stmt = stmt.strip()
-                if stmt:
-                    cur.execute(stmt)
+    with conn.cursor() as cur:
+        cur.execute(INIT_SQL_FILE.read_text(encoding="utf-8"))
     conn.commit()
 
 
 def _run_migration_if_needed(conn) -> None:
-    if not MIGRATION_FILE.exists():
-        pytest.skip(f"metadata migration file missing: {MIGRATION_FILE}")
+    if not INIT_SQL_FILE.exists():
+        pytest.skip(f"database init SQL missing: {INIT_SQL_FILE}")
 
     with conn.cursor() as cur:
-        cur.execute(MIGRATION_FILE.read_text(encoding="utf-8"))
+        cur.execute(INIT_SQL_FILE.read_text(encoding="utf-8"))
     conn.commit()
 
 

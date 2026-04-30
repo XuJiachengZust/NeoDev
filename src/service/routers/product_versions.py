@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from service.dependencies import get_db
-from service.services import doc_code_link_service
 from service.services import product_service
 from service.services import product_version_service as service
 
@@ -28,17 +27,6 @@ class VersionUpdate(BaseModel):
 class BranchSetRequest(BaseModel):
     project_id: int
     branch: str
-
-
-class DocCodeLinkCreate(BaseModel):
-    doc_id: str
-    doc_node_id: str | None = None
-    code_project_id: int
-    symbol_key: str
-    relation_type: str
-    source: str = "manual"
-    confidence: float | None = None
-    metadata_json: dict | None = None
 
 
 def _check_product(db, product_id: int):
@@ -118,51 +106,3 @@ def remove_version_branch(product_id: int, version_id: int, project_id: int, db=
         raise HTTPException(status_code=404, detail="Branch mapping not found")
     return {"removed": True}
 
-
-@router.get("/{product_id}/versions/{version_id}/code-facts", response_model=list)
-def list_version_code_facts(
-    product_id: int,
-    version_id: int,
-    node_type: list[str] | None = Query(None),
-    db=Depends(get_db),
-):
-    _check_version_for_product(db, product_id, version_id)
-    return service.list_code_facts(db, version_id, node_types=node_type)
-
-
-@router.post("/{product_id}/versions/{version_id}/doc-code-links", response_model=dict)
-def create_doc_code_link(
-    product_id: int,
-    version_id: int,
-    body: DocCodeLinkCreate,
-    db=Depends(get_db),
-):
-    _check_version_for_product(db, product_id, version_id)
-    return doc_code_link_service.create_link(
-        db,
-        product_id=product_id,
-        product_version_id=version_id,
-        doc_id=body.doc_id,
-        doc_node_id=body.doc_node_id,
-        code_project_id=body.code_project_id,
-        symbol_key=body.symbol_key,
-        relation_type=body.relation_type,
-        source=body.source,
-        confidence=body.confidence,
-        metadata_json=body.metadata_json,
-    )
-
-
-@router.get("/{product_id}/versions/{version_id}/docs/{doc_id}/code-facts", response_model=dict)
-def list_doc_code_facts(
-    product_id: int,
-    version_id: int,
-    doc_id: str,
-    db=Depends(get_db),
-):
-    _check_version_for_product(db, product_id, version_id)
-    return doc_code_link_service.list_code_facts_for_doc(
-        db,
-        product_version_id=version_id,
-        doc_id=doc_id,
-    )

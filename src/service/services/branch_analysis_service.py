@@ -107,15 +107,6 @@ def _sync_project_branch(conn, project_id: int, branch: str) -> dict | None:
     return sync_service.refresh_graph_for_branch(conn, project_id, branch)
 
 
-def _branch_snapshot_service():
-    patched = globals().get("branch_snapshot_service")
-    if patched is not None:
-        return patched
-    from service.services import branch_snapshot_service as service
-
-    return service
-
-
 def get_analysis_status(
     conn,
     product_version_id: int,
@@ -199,7 +190,6 @@ def _current_task(conn, context: dict) -> dict:
     row = rows[0] if rows else {}
     extra = row.get("extra") or {}
     progress = extra.get("progress") or {}
-    current_snapshot = _branch_snapshot_service().get_current_snapshot(conn, project_id, branch) or {}
     analysis_action = extra.get("analysis_action") or extra.get("graph_action")
     return {
         "analysis_task_id": row.get("id"),
@@ -209,12 +199,10 @@ def _current_task(conn, context: dict) -> dict:
         "status": row.get("status") or "not_started",
         "analysis_action": analysis_action,
         "progress": progress,
-        "current_snapshot_id": current_snapshot.get("id") or extra.get("current_snapshot_id"),
-        "head_commit": current_snapshot.get("head_commit") or extra.get("head_commit"),
-        "last_parsed_commit": current_snapshot.get("head_commit") or extra.get("head_commit"),
-        "created_from_action": current_snapshot.get("created_from_action")
-        or extra.get("created_from_action")
-        or analysis_action,
+        "current_snapshot_id": None,
+        "head_commit": extra.get("head_commit"),
+        "last_parsed_commit": extra.get("head_commit"),
+        "created_from_action": extra.get("created_from_action") or analysis_action,
         "started_at": row.get("started_at"),
         "finished_at": row.get("finished_at"),
         "heartbeat_at": row.get("updated_at"),

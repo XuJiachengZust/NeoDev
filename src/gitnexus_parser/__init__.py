@@ -1,4 +1,4 @@
-# GitNexus Parser: code parsing + Neo4j storage. Self-contained, copy to any Python project.
+# GitNexus Parser: basic code parsing. Self-contained, copy to any Python project.
 
 from gitnexus_parser.config import load_config
 from gitnexus_parser.ingestion.pipeline import run_pipeline, PipelineResult

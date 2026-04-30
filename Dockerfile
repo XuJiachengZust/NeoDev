@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -i https://mirrors.aliyun.com/pypi/simple/ --trus
         psycopg[binary] psycopg_pool
 
 COPY src/ ./src/
-COPY docker/migrations/ ./docker/migrations/
+COPY docker/init.sql ./docker/init.sql
 
 RUN mkdir -p /data/repos /data/sandboxes /data/requirement_docs
 

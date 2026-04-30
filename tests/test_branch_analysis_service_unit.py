@@ -33,16 +33,6 @@ def _patch_valid_scope(monkeypatch, status_rows=None):
         "get_status",
         lambda conn, project_id, branch: status_rows or [],
     )
-    monkeypatch.setattr(
-        branch_analysis_service,
-        "branch_snapshot_service",
-        type(
-            "SnapshotService",
-            (),
-            {"get_current_snapshot": staticmethod(lambda conn, project_id, branch: None)},
-        ),
-        raising=False,
-    )
 
 
 def test_analyze_version_branch_syncs_graph_only(monkeypatch):
@@ -71,8 +61,8 @@ def test_analyze_version_branch_syncs_graph_only(monkeypatch):
         return {
             "project_id": project_id,
             "branch": branch,
-            "graph_action": "full_refresh",
-            "current_snapshot_id": 77,
+            "graph_action": "parse_only",
+            "storage_status": "removed",
         }
 
     monkeypatch.setattr(branch_analysis_service, "_sync_project_branch", fake_sync)
@@ -135,8 +125,8 @@ def test_analyze_version_branch_syncs_graph_only(monkeypatch):
                 "sync": {
                     "project_id": 11,
                     "branch": "release/unit",
-                    "graph_action": "full_refresh",
-                    "current_snapshot_id": 77,
+                    "graph_action": "parse_only",
+                    "storage_status": "removed",
                 },
             },
         }
@@ -149,7 +139,7 @@ def test_analyze_version_branch_syncs_graph_only(monkeypatch):
     assert task["status"] == "completed"
     assert task["analysis_action"] == "graph_sync"
     assert task["progress"]["stage"] == "completed"
-    assert result["sync"]["graph_action"] == "full_refresh"
+    assert result["sync"]["graph_action"] == "parse_only"
 
 
 def test_analyze_version_branch_marks_failed_when_graph_sync_fails(monkeypatch):
@@ -237,7 +227,7 @@ def test_get_analysis_status_returns_not_started_without_status_row(monkeypatch)
     assert task["progress"] == {}
 
 
-def test_get_analysis_status_includes_contract_snapshot_fields(monkeypatch):
+def test_get_analysis_status_keeps_snapshot_fields_empty_after_storage_removal(monkeypatch):
     now = datetime.now(timezone.utc)
     status_rows = [
         {
@@ -251,20 +241,11 @@ def test_get_analysis_status_includes_contract_snapshot_fields(monkeypatch):
             "error_message": None,
             "extra": {
                 "analysis_action": "graph_sync",
+                "head_commit": "a" * 40,
             },
         }
     ]
     _patch_valid_scope(monkeypatch, status_rows=status_rows)
-    monkeypatch.setattr(
-        branch_analysis_service.branch_snapshot_service,
-        "get_current_snapshot",
-        lambda conn, project_id, branch: {
-            "id": 77,
-            "head_commit": "a" * 40,
-            "last_parsed_commit": "a" * 40,
-            "created_from_action": "incremental",
-        },
-    )
 
     result = branch_analysis_service.get_analysis_status(
         object(),
@@ -274,7 +255,7 @@ def test_get_analysis_status_includes_contract_snapshot_fields(monkeypatch):
     )
 
     task = result["analysis_task"]
-    assert task["current_snapshot_id"] == 77
+    assert task["current_snapshot_id"] is None
     assert task["head_commit"] == "a" * 40
     assert task["last_parsed_commit"] == "a" * 40
-    assert task["created_from_action"] == "incremental"
+    assert task["created_from_action"] == "graph_sync"

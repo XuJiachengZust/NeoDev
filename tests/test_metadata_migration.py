@@ -3,7 +3,7 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-MIGRATION_FILE = ROOT / "docker" / "migrations" / "018_cli_metadata_foundation.sql"
+INIT_SQL_FILE = ROOT / "docker" / "init.sql"
 REQUIRED_COLUMNS = {
     "doc_bindings": {
         "product_id",
@@ -317,7 +317,7 @@ def test_metadata_key_indexes_and_constraints_exist(metadata_migration_pg_conn, 
 def test_metadata_migration_is_idempotent(
     metadata_migration_pg_conn, metadata_migration_schema_name
 ):
-    sql = MIGRATION_FILE.read_text(encoding="utf-8")
+    sql = INIT_SQL_FILE.read_text(encoding="utf-8")
     with metadata_migration_pg_conn.cursor() as cur:
         cur.execute(sql)
     metadata_migration_pg_conn.commit()
@@ -334,7 +334,7 @@ def test_metadata_migration_is_idempotent(
 
 def test_metadata_migration_backfills_missing_columns_on_existing_tables(metadata_migration_pg_conn):
     schema_name = f"tmp_cli_metadata_{uuid.uuid4().hex[:8]}"
-    sql = MIGRATION_FILE.read_text(encoding="utf-8")
+    sql = INIT_SQL_FILE.read_text(encoding="utf-8")
     try:
         with metadata_migration_pg_conn.cursor() as cur:
             cur.execute(f'CREATE SCHEMA "{schema_name}"')
