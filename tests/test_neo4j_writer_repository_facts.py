@@ -126,11 +126,13 @@ def test_write_graph_merges_repository_fact_nodes_without_branch_identity():
     assert rels == 1
     assert "UNWIND $nodes AS row" in node_query
     assert "MERGE (n:File:CodeFact {id: row.id})" in node_query
+    assert "SET n:GraphNode" in node_query
     assert "branch: $branch" not in node_query
     assert tx_calls[0]["params"]["nodes"][0]["props"]["fact_id"] == "file-fact-1"
     assert "{id: $sourceId, branch: $branch}" not in rel_query
     assert "UNWIND $rels AS rel" in rel_query
-    assert "MATCH (a {id: rel.sourceId})" in rel_query
+    assert "MATCH (a:GraphNode {id: rel.sourceId})" in rel_query
+    assert "MATCH (b:GraphNode {id: rel.targetId})" in rel_query
 
 
 def test_write_graph_preserves_existing_doc_code_relationships():
@@ -157,3 +159,12 @@ def test_constraints_include_code_fact_projection_label():
 
     queries = [call["query"] for call in driver.sessions[0].calls]
     assert any("FOR (n:CodeFact)" in query for query in queries)
+
+
+def test_constraints_include_common_graph_node_label_for_relationship_lookup():
+    driver = FakeDriver()
+
+    ensure_constraints(driver)
+
+    queries = [call["query"] for call in driver.sessions[0].calls]
+    assert any("FOR (n:GraphNode)" in query for query in queries)

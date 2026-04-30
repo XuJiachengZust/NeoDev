@@ -16,6 +16,21 @@ def test_graph_manual_management_migration_file_is_registered():
     assert "chk_graph_edges_relation_owner" in sql
     dockerfile = DOCKERFILE_POSTGRES.read_text(encoding="utf-8")
     assert "020_graph_manual_management.sql" in dockerfile
+    assert "022_widen_code_fact_identifiers.sql" in dockerfile
+    assert "023_manual_graph_fact_unification.sql" in dockerfile
+
+
+def test_manual_graph_fact_unification_migration_adds_operation_logs():
+    migration = ROOT / "docker" / "migrations" / "023_manual_graph_fact_unification.sql"
+    assert migration.exists(), f"migration file missing: {migration}"
+    sql = migration.read_text(encoding="utf-8")
+
+    assert "CREATE TABLE IF NOT EXISTS graph_operation_logs" in sql
+    assert "object_kind" in sql
+    assert "operation" in sql
+    assert "before_json" in sql
+    assert "after_json" in sql
+    assert "idx_graph_operation_logs_scope" in sql
 
 
 def _apply_migration(conn):

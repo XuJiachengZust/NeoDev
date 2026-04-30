@@ -19,7 +19,7 @@ CODE_FACT_LABELS = {
     "Constructor",
 }
 
-CONSTRAINT_LABELS = [*list(get_args(NodeLabel)), "CodeFact"]
+CONSTRAINT_LABELS = [*list(get_args(NodeLabel)), "CodeFact", "GraphNode"]
 
 
 def ensure_constraints(driver, database: str | None = None) -> None:
@@ -76,6 +76,7 @@ def write_graph(
                         UNWIND $nodes AS row
                         MERGE (n:{labels} {{id: row.id}})
                         SET n += row.props
+                        SET n:GraphNode
                         """,
                         nodes=node_rows,
                     )
@@ -103,8 +104,8 @@ def write_graph(
                     result = tx.run(
                         f"""
                         UNWIND $rels AS rel
-                        MATCH (a {{id: rel.sourceId}})
-                        MATCH (b {{id: rel.targetId}})
+                        MATCH (a:GraphNode {{id: rel.sourceId}})
+                        MATCH (b:GraphNode {{id: rel.targetId}})
                         MERGE (a)-[r:{relationship_type} {{id: rel.id}}]->(b)
                         SET r.confidence = rel.confidence,
                             r.reason = rel.reason

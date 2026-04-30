@@ -144,8 +144,8 @@ CREATE INDEX idx_branch_snapshots_project_branch_status
 CREATE TABLE code_facts (
     id              SERIAL PRIMARY KEY,
     project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    fact_id         VARCHAR(255) NOT NULL,
-    symbol_key      VARCHAR(255) NOT NULL,
+    fact_id         TEXT NOT NULL,
+    symbol_key      TEXT NOT NULL,
     node_type       VARCHAR(64) NOT NULL,
     file_path       TEXT,
     qualified_name  TEXT,
@@ -153,7 +153,7 @@ CREATE TABLE code_facts (
     signature_hash  VARCHAR(128),
     content_hash    VARCHAR(128),
     structure_hash  VARCHAR(128),
-    parent_fact_id  VARCHAR(255),
+    parent_fact_id  TEXT,
     start_line      INTEGER,
     end_line        INTEGER,
     metadata_json   JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -175,7 +175,7 @@ CREATE INDEX idx_code_facts_project_type
 CREATE TABLE branch_snapshot_facts (
     id          SERIAL PRIMARY KEY,
     snapshot_id INTEGER NOT NULL REFERENCES branch_snapshots(id) ON DELETE CASCADE,
-    fact_id     VARCHAR(255) NOT NULL,
+    fact_id     TEXT NOT NULL,
     CONSTRAINT uq_branch_snapshot_facts_snapshot_fact UNIQUE (snapshot_id, fact_id)
 );
 
@@ -192,8 +192,8 @@ CREATE TABLE doc_code_links (
     doc_id               TEXT NOT NULL,
     doc_node_id          TEXT,
     code_project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    symbol_key           VARCHAR(255) NOT NULL,
-    resolved_fact_id     VARCHAR(255),
+    symbol_key           TEXT NOT NULL,
+    resolved_fact_id     TEXT,
     resolved_snapshot_id INTEGER REFERENCES branch_snapshots(id) ON DELETE SET NULL,
     relation_type        VARCHAR(64) NOT NULL,
     source               VARCHAR(64) NOT NULL DEFAULT 'manual',

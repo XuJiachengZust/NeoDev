@@ -417,6 +417,71 @@ def _parse_import_source_text(node: Node, source_bytes: bytes) -> str:
     return re.sub(r"['\"<>]", "", text)
 
 
+def _definition_node(capture_map: dict[str, Node]) -> Node | None:
+    for capture_name in (
+        "definition.function",
+        "definition.class",
+        "definition.interface",
+        "definition.method",
+        "definition.constructor",
+        "definition.enum",
+        "definition.annotation",
+        "definition.struct",
+        "definition.namespace",
+        "definition.trait",
+        "definition.impl",
+        "definition.type_alias",
+        "definition.macro",
+        "definition.typedef",
+        "definition.union",
+    ):
+        node = capture_map.get(capture_name)
+        if node:
+            return node
+    return None
+
+
+def _node_line_range(node: Node) -> tuple[int, int]:
+    return node.start_point[0] + 1, node.end_point[0] + 1
+
+
+def _ancestor_name_parts(
+    node: Node,
+    source_bytes: bytes,
+    *,
+    ancestor_types: set[str],
+) -> list[str]:
+    parts: list[str] = []
+    current = getattr(node, "parent", None)
+    while current:
+        if current.type in ancestor_types:
+            name_node = current.child_by_field_name("name")
+            if name_node:
+                parts.append(_node_text(name_node, source_bytes))
+        current = getattr(current, "parent", None)
+    return list(reversed(parts))
+
+
+def _qualified_name(
+    node_name: str,
+    definition_node: Node | None,
+    source_bytes: bytes,
+    *,
+    ancestor_types: set[str],
+    explicit_full_name_node: Node | None = None,
+) -> str:
+    if explicit_full_name_node:
+        return _node_text(explicit_full_name_node, source_bytes)
+    if not definition_node:
+        return node_name
+    parts = _ancestor_name_parts(
+        definition_node,
+        source_bytes,
+        ancestor_types=ancestor_types,
+    )
+    return ".".join([*parts, node_name]) if parts else node_name
+
+
 def _parse_python_file(
     file_path: str,
     content: str,
@@ -503,19 +568,19 @@ def _parse_python_file(
         name_node = capture_map.get("name")
         if not name_node:
             continue
+        definition_node = _definition_node(capture_map)
         node_name = _node_text(name_node, source_bytes)
         node_id = generate_id(node_label, f"{file_path}:{node_name}")
-        start_line = name_node.start_point[0] + 1
-        end_line = name_node.end_point[0] + 1
+        target_node = definition_node or name_node
+        start_line, end_line = _node_line_range(target_node)
+        qualified_name = _qualified_name(
+            node_name,
+            definition_node,
+            source_bytes,
+            ancestor_types={"class_definition", "function_definition"},
+        )
         source_code: Optional[str] = None
         if should_store_source(language, node_label, file_path=file_path, name=node_name):
-            definition_node = (
-                capture_map.get("definition.function")
-                or capture_map.get("definition.class")
-                or capture_map.get("definition.method")
-                or capture_map.get("definition.constructor")
-            )
-            target_node = definition_node or name_node
             source_code = _node_text(target_node, source_bytes)
         is_exported = _is_node_exported_python(node_name)
         result.nodes.append(
@@ -524,6 +589,7 @@ def _parse_python_file(
                 label=node_label,
                 properties={
                     "name": node_name,
+                    "qualified_name": qualified_name,
                     "filePath": file_path,
                     "startLine": start_line,
                     "endLine": end_line,
@@ -642,18 +708,24 @@ def _parse_java_file(
         name_node = capture_map.get("name")
         if not name_node:
             continue
+        definition_node = _definition_node(capture_map)
         node_name = _node_text(name_node, source_bytes)
         node_id = generate_id(node_label, f"{file_path}:{node_name}")
-        start_line = name_node.start_point[0] + 1
-        end_line = name_node.end_point[0] + 1
+        target_node = definition_node or name_node
+        start_line, end_line = _node_line_range(target_node)
+        qualified_name = _qualified_name(
+            node_name,
+            definition_node,
+            source_bytes,
+            ancestor_types={
+                "class_declaration",
+                "interface_declaration",
+                "enum_declaration",
+                "annotation_type_declaration",
+            },
+        )
         source_code: Optional[str] = None
         if should_store_source(language, node_label, file_path=file_path, name=node_name):
-            definition_node = (
-                capture_map.get("definition.class")
-                or capture_map.get("definition.method")
-                or capture_map.get("definition.constructor")
-            )
-            target_node = definition_node or name_node
             source_code = _node_text(target_node, source_bytes)
         result.nodes.append(
             ParsedNode(
@@ -661,6 +733,7 @@ def _parse_java_file(
                 label=node_label,
                 properties={
                     "name": node_name,
+                    "qualified_name": qualified_name,
                     "filePath": file_path,
                     "startLine": start_line,
                     "endLine": end_line,
@@ -758,15 +831,21 @@ def _parse_lua_file(
         name_node = capture_map.get("name")
         if not name_node:
             continue
+        definition_node = _definition_node(capture_map)
         full_name_node = capture_map.get("function.full")
-        node_name = _node_text(full_name_node, source_bytes) if full_name_node else _node_text(name_node, source_bytes)
+        node_name = _node_text(name_node, source_bytes)
+        qualified_name = _qualified_name(
+            node_name,
+            definition_node,
+            source_bytes,
+            ancestor_types=set(),
+            explicit_full_name_node=full_name_node,
+        )
         node_id = generate_id(node_label, f"{file_path}:{node_name}")
-        start_line = name_node.start_point[0] + 1
-        end_line = name_node.end_point[0] + 1
+        target_node = definition_node or name_node
+        start_line, end_line = _node_line_range(target_node)
         source_code: Optional[str] = None
         if should_store_source(language, node_label, file_path=file_path, name=node_name):
-            definition_node = capture_map.get("definition.function")
-            target_node = definition_node or name_node
             source_code = _node_text(target_node, source_bytes)
         result.nodes.append(
             ParsedNode(
@@ -774,6 +853,7 @@ def _parse_lua_file(
                 label=node_label,
                 properties={
                     "name": node_name,
+                    "qualified_name": qualified_name,
                     "filePath": file_path,
                     "startLine": start_line,
                     "endLine": end_line,
@@ -939,21 +1019,26 @@ def _generic_parse_file(
         name_node = capture_map.get("name")
         if not name_node:
             continue
+        definition_node = _definition_node(capture_map)
         node_name = _node_text(name_node, source_bytes)
         node_id = generate_id(node_label, f"{file_path}:{node_name}")
-        start_line = name_node.start_point[0] + 1
-        end_line = name_node.end_point[0] + 1
+        target_node = definition_node or name_node
+        start_line, end_line = _node_line_range(target_node)
+        qualified_name = _qualified_name(
+            node_name,
+            definition_node,
+            source_bytes,
+            ancestor_types={
+                "class_declaration",
+                "class_body",
+                "interface_declaration",
+                "struct_item",
+                "impl_item",
+                "namespace_definition",
+            },
+        )
         source_code: Optional[str] = None
         if should_store_source(language, node_label, file_path=file_path, name=node_name):
-            definition_node = (
-                capture_map.get("definition.function")
-                or capture_map.get("definition.method")
-                or capture_map.get("definition.constructor")
-                or capture_map.get("definition.class")
-                or capture_map.get("definition.interface")
-                or capture_map.get("definition.enum")
-            )
-            target_node = definition_node or name_node
             source_code = _node_text(target_node, source_bytes)
         is_exported = is_exported_fn(node_name) if is_exported_fn else True
         result.nodes.append(
@@ -962,6 +1047,7 @@ def _generic_parse_file(
                 label=node_label,
                 properties={
                     "name": node_name,
+                    "qualified_name": qualified_name,
                     "filePath": file_path,
                     "startLine": start_line,
                     "endLine": end_line,

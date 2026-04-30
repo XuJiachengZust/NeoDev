@@ -141,6 +141,15 @@ def refresh_graph_for_branch(conn, project_id: int, branch: str) -> dict | None:
     head = git_ops.get_head_commit(local_root, normalized_branch)
 
     try:
+        from service.services import branch_snapshot_service, manual_graph_sync_service
+
+        cleanup = branch_snapshot_service.clear_branch_graph(
+            conn,
+            project_id=project_id,
+            branch=normalized_branch,
+        )
+        manual_graph_sync_service.clear_project_graph(conn, project_id=project_id)
+
         config = _load_graph_config()
         from gitnexus_parser.ingestion.pipeline import run_pipeline
 
@@ -154,29 +163,7 @@ def refresh_graph_for_branch(conn, project_id: int, branch: str) -> dict | None:
             since_commit=None,
         )
 
-        from service.services import branch_snapshot_service, doc_code_link_service
-
-        current = branch_snapshot_service.get_current_snapshot(conn, project_id, normalized_branch)
-        if current and current.get("snapshot_hash") == pipeline_result.snapshot_hash:
-            link_resolution = doc_code_link_service.rebuild_links_for_branch_snapshot(
-                conn,
-                project_id=project_id,
-                branch_name=normalized_branch,
-                snapshot_id=current["id"],
-            )
-            conn.commit()
-            return {
-                "project_id": project_id,
-                "branch": normalized_branch,
-                "head_commit": head,
-                "graph_action": "no_change",
-                "current_snapshot_id": current["id"],
-                "snapshot_hash": pipeline_result.snapshot_hash,
-                "snapshot_entry_count": len(pipeline_result.code_facts or []),
-                "code_fact_count": len(pipeline_result.code_facts or []),
-                "doc_code_link_resolution": link_resolution,
-                "graph_errors": [],
-            }
+        from service.services import doc_code_link_service
 
         snapshot = branch_snapshot_service.create_snapshot_from_code_facts(
             conn,
@@ -202,6 +189,7 @@ def refresh_graph_for_branch(conn, project_id: int, branch: str) -> dict | None:
             "snapshot_hash": pipeline_result.snapshot_hash,
             "snapshot_entry_count": int(snapshot.get("entry_count") or 0),
             "code_fact_count": len(pipeline_result.code_facts or []),
+            "graph_cleanup": cleanup,
             "doc_code_link_resolution": link_resolution,
             "graph_errors": [],
         }

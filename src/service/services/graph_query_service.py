@@ -335,6 +335,9 @@ def _load_entity_context(
         WHERE scoped_node.project_id = $project_id
           AND coalesce(scoped_node.fact_id, scoped_node.id) IN $visible_fact_ids
     )
+      AND all(rel IN relationships(path)
+        WHERE coalesce(rel.status, 'active') = 'active'
+    )
     WITH source, collect(DISTINCT neighbor) AS neighbors, collect(path) AS paths
     WITH source, neighbors, [p IN paths WHERE p IS NOT NULL] AS valid_paths
     WITH source, neighbors,
@@ -443,6 +446,9 @@ def _chain_query(locator_type: str, depth: int) -> str:
     WHERE all(scoped_node IN nodes(path)
         WHERE scoped_node.project_id = $project_id
           AND coalesce(scoped_node.fact_id, scoped_node.id) IN $visible_fact_ids
+    )
+      AND all(rel IN relationships(path)
+        WHERE coalesce(rel.status, 'active') = 'active'
     )
     WITH start, collect(path) AS paths
     WITH start, [p IN paths WHERE p IS NOT NULL] AS valid_paths

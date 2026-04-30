@@ -34,3 +34,43 @@ def test_project_init_refreshes_default_branch_without_project_version(monkeypat
     assert result["default_branch"] == "main"
     assert result["sync"] == {"graph_action": "full_refresh", "current_snapshot_id": 42}
     assert refreshed == {"project_id": 42, "branch": "main"}
+
+
+def test_project_init_rolls_back_before_marking_graph_refresh_failed(monkeypatch):
+    from service import git_ops
+    from service.repositories import branch_repository
+    from service.services import sync_service
+
+    class RollbackAwareConn:
+        rolled_back = False
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            self.rolled_back = True
+
+    monkeypatch.setattr(sync_service, "_resolve_local_repo", lambda project, project_id: "/repo")
+    monkeypatch.setattr(git_ops, "fetch_repo", lambda local_root: None)
+    monkeypatch.setattr(git_ops, "get_branches", lambda local_root: ["main"])
+    monkeypatch.setattr(git_ops, "get_default_branch", lambda local_root: "main")
+    monkeypatch.setattr(branch_repository, "upsert_many", lambda conn, project_id, branches: None)
+    monkeypatch.setattr(project_service, "_update_init_progress", lambda *args, **kwargs: None)
+
+    def fake_refresh(conn, project_id, branch):
+        raise RuntimeError("value too long for type character varying(255)")
+
+    def fake_fail_init(conn, project_id, result, error):
+        assert conn.rolled_back is True
+        result.update(status="failed", error=error)
+
+    monkeypatch.setattr(sync_service, "refresh_graph_for_branch", fake_refresh)
+    monkeypatch.setattr(project_service, "_fail_init", fake_fail_init)
+
+    result = project_service._init_repo_and_refresh_default_branch(
+        RollbackAwareConn(),
+        {"id": 42},
+    )
+
+    assert result["status"] == "failed"
+    assert "value too long" in result["error"]

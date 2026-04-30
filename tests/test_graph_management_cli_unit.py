@@ -2,11 +2,15 @@ from types import SimpleNamespace
 
 
 class FakeConn:
+    def __init__(self):
+        self.commits = 0
+        self.rollbacks = 0
+
     def commit(self):
-        return None
+        self.commits += 1
 
     def rollback(self):
-        return None
+        self.rollbacks += 1
 
     def close(self):
         return None
@@ -66,6 +70,7 @@ def test_handle_edge_add_calls_service_with_properties(monkeypatch):
         SimpleNamespace(
             command_name="graph edge add",
             project_id=1,
+            branch="release/x",
             edge_id="edge-1",
             from_node_id="node-a",
             to_node_id="node-b",
@@ -77,7 +82,41 @@ def test_handle_edge_add_calls_service_with_properties(monkeypatch):
     assert payload["ok"] is True
     assert payload["command"] == "graph edge add"
     assert payload["data"]["edge"]["edge_id"] == "edge-1"
+    assert captured["branch"] == "release/x"
     assert captured["properties"] == {"weight": "3", "reason": "runtime"}
+
+
+def test_handle_node_add_passes_branch_and_commits(monkeypatch):
+    from service.cli.commands import graph
+
+    conn = FakeConn()
+    monkeypatch.setattr(graph.psycopg2, "connect", lambda _: conn)
+    monkeypatch.setattr(graph, "get_database_url", lambda: "postgresql://test")
+    captured = {}
+
+    def fake_create_node(conn, **kwargs):
+        captured.update(kwargs)
+        return {"node_id": kwargs["node_id"], "type_key": kwargs["type_key"]}
+
+    monkeypatch.setattr(graph.graph_management_service, "create_node", fake_create_node)
+
+    payload = graph.handle_node_add(
+        SimpleNamespace(
+            command_name="graph node add",
+            project_id=1,
+            branch="release/x",
+            node_id="manual-login",
+            type="SERVICE",
+            name="Login Service",
+            prop=["owner=sec"],
+        )
+    )
+
+    assert payload["ok"] is True
+    assert captured["branch"] == "release/x"
+    assert captured["properties"] == {"owner": "sec"}
+    assert conn.commits == 1
+    assert conn.rollbacks == 0
 
 
 def test_handle_project_refresh_graph_calls_service(monkeypatch):

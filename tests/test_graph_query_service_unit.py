@@ -168,6 +168,7 @@ def test_entity_context_returns_scoped_neighbors(monkeypatch):
     assert call["params"]["branch"] == "release/V1.0"
     assert call["params"]["visible_fact_ids"] == ["file-fact-auth", "Function:auth:login"]
     assert "visible_fact_ids" in call["query"]
+    assert "coalesce(rel.status, 'active') = 'active'" in call["query"]
     assert "node.branch = $branch" not in call["query"]
     assert driver.closed is True
 
@@ -259,6 +260,7 @@ def test_get_chain_returns_nodes_edges_and_commit_scope(monkeypatch):
     assert call["params"]["start_node"] == "Function:auth:login"
     assert call["params"]["visible_fact_ids"] == ["file-fact-auth", "Function:auth:login"]
     assert "1..2" in call["query"]
+    assert "coalesce(rel.status, 'active') = 'active'" in call["query"]
     assert "node.branch = $branch" not in call["query"]
 
 

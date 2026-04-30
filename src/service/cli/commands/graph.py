@@ -119,6 +119,7 @@ def _register_edge_type_commands(subparsers) -> None:
 def _register_node_commands(subparsers) -> None:
     add_parser = subparsers.add_parser("add")
     add_parser.add_argument("--project-id", type=int, required=True)
+    add_parser.add_argument("--branch", required=True)
     add_parser.add_argument("--node-id", required=True)
     add_parser.add_argument("--type", required=True)
     add_parser.add_argument("--name", required=True)
@@ -128,6 +129,7 @@ def _register_node_commands(subparsers) -> None:
 
     update_parser = subparsers.add_parser("update")
     update_parser.add_argument("--project-id", type=int, required=True)
+    update_parser.add_argument("--branch", required=True)
     update_parser.add_argument("--node-id", required=True)
     update_parser.add_argument("--type")
     update_parser.add_argument("--name")
@@ -138,6 +140,7 @@ def _register_node_commands(subparsers) -> None:
 
     delete_parser = subparsers.add_parser("delete")
     delete_parser.add_argument("--project-id", type=int, required=True)
+    delete_parser.add_argument("--branch", required=True)
     delete_parser.add_argument("--node-id", required=True)
     delete_parser.add_argument("--json", action="store_true", dest="json_output")
     delete_parser.set_defaults(handler=handle_node_delete, command_name="graph node delete")
@@ -158,6 +161,7 @@ def _register_node_commands(subparsers) -> None:
 def _register_edge_commands(subparsers) -> None:
     add_parser = subparsers.add_parser("add")
     add_parser.add_argument("--project-id", type=int, required=True)
+    add_parser.add_argument("--branch", required=True)
     add_parser.add_argument("--edge-id", required=True)
     add_parser.add_argument("--from-node-id", required=True)
     add_parser.add_argument("--from-project-id", type=int)
@@ -170,6 +174,7 @@ def _register_edge_commands(subparsers) -> None:
 
     update_parser = subparsers.add_parser("update")
     update_parser.add_argument("--project-id", type=int, required=True)
+    update_parser.add_argument("--branch", required=True)
     update_parser.add_argument("--edge-id", required=True)
     update_parser.add_argument("--type")
     update_parser.add_argument("--prop", action="append", default=[])
@@ -179,6 +184,7 @@ def _register_edge_commands(subparsers) -> None:
 
     delete_parser = subparsers.add_parser("delete")
     delete_parser.add_argument("--project-id", type=int, required=True)
+    delete_parser.add_argument("--branch", required=True)
     delete_parser.add_argument("--edge-id", required=True)
     delete_parser.add_argument("--json", action="store_true", dest="json_output")
     delete_parser.set_defaults(handler=handle_edge_delete, command_name="graph edge delete")
@@ -214,30 +220,43 @@ def _add_project_locator(parser) -> None:
 
 
 def _with_db(callback):
+    conn = None
     try:
         with closing(psycopg2.connect(get_database_url())) as conn:
-            return callback(conn)
+            result = callback(conn)
+            conn.commit()
+            return result
     except CliError:
+        if conn is not None:
+            conn.rollback()
         raise
     except graph_impact_service.GraphImpactError as exc:
+        if conn is not None:
+            conn.rollback()
         raise CliError(
             category=exc.category,
             message=exc.message,
             details=exc.details,
         ) from exc
     except graph_management_service.GraphManagementError as exc:
+        if conn is not None:
+            conn.rollback()
         raise CliError(
             category=exc.category,
             message=exc.message,
             details=exc.details,
         ) from exc
     except graph_query_service.GraphQueryError as exc:
+        if conn is not None:
+            conn.rollback()
         raise CliError(
             category=exc.category,
             message=exc.message,
             details=exc.details,
         ) from exc
     except psycopg2.Error as exc:
+        if conn is not None:
+            conn.rollback()
         raise CliError(
             category="internal_error",
             message="database operation failed",
@@ -341,6 +360,7 @@ def handle_node_add(args) -> dict:
         node = graph_management_service.create_node(
             conn,
             project_id=args.project_id,
+            branch=args.branch,
             node_id=args.node_id,
             type_key=args.type,
             name=args.name,
@@ -363,6 +383,7 @@ def handle_node_update(args) -> dict:
         node = graph_management_service.update_node(
             conn,
             project_id=args.project_id,
+            branch=args.branch,
             node_id=args.node_id,
             updates=updates,
         )
@@ -376,6 +397,7 @@ def handle_node_delete(args) -> dict:
         node = graph_management_service.archive_node(
             conn,
             project_id=args.project_id,
+            branch=args.branch,
             node_id=args.node_id,
         )
         return build_success_payload(args.command_name, {"node": node})
@@ -412,6 +434,7 @@ def handle_edge_add(args) -> dict:
         edge = graph_management_service.create_edge(
             conn,
             project_id=args.project_id,
+            branch=args.branch,
             edge_id=args.edge_id,
             from_node_id=args.from_node_id,
             from_project_id=getattr(args, "from_project_id", None),
@@ -436,6 +459,7 @@ def handle_edge_update(args) -> dict:
         edge = graph_management_service.update_edge(
             conn,
             project_id=args.project_id,
+            branch=args.branch,
             edge_id=args.edge_id,
             updates=updates,
         )
@@ -449,6 +473,7 @@ def handle_edge_delete(args) -> dict:
         edge = graph_management_service.archive_edge(
             conn,
             project_id=args.project_id,
+            branch=args.branch,
             edge_id=args.edge_id,
         )
         return build_success_payload(args.command_name, {"edge": edge})

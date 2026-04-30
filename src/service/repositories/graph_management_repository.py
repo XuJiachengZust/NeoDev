@@ -430,3 +430,45 @@ def archive_edge(conn, *, project_id: int, edge_id: str) -> dict | None:
         )
         row = cur.fetchone()
         return dict(row) if row else None
+
+
+def create_operation_log(
+    conn,
+    *,
+    project_id: int,
+    branch_name: str | None,
+    snapshot_id: int | None,
+    object_kind: str,
+    object_id: str,
+    operation: str,
+    before_json: dict | None = None,
+    after_json: dict | None = None,
+    actor: str | None = None,
+    source: str = "manual",
+) -> dict:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            INSERT INTO graph_operation_logs (
+                project_id, branch_name, snapshot_id, object_kind, object_id,
+                operation, before_json, after_json, actor, source
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, project_id, branch_name, snapshot_id, object_kind,
+                      object_id, operation, before_json, after_json, actor,
+                      source, created_at
+            """,
+            (
+                project_id,
+                branch_name,
+                snapshot_id,
+                object_kind,
+                object_id,
+                operation,
+                Json(before_json or {}),
+                Json(after_json or {}),
+                actor,
+                source,
+            ),
+        )
+        return dict(cur.fetchone())

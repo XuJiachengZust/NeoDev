@@ -193,6 +193,7 @@ def _init_repo_and_refresh_default_branch(conn, project: dict) -> dict:
         git_ops.fetch_repo(local_root)
     except Exception as exc:
         logger.warning("project_id=%s: repository init failed: %s", project_id, exc)
+        conn.rollback()
         _fail_init(conn, project_id, result, f"仓库拉取失败: {exc}")
         return result
 
@@ -217,6 +218,7 @@ def _init_repo_and_refresh_default_branch(conn, project: dict) -> dict:
         result["sync"] = sync_service.refresh_graph_for_branch(conn, project_id, default_branch)
     except Exception as exc:
         logger.warning("project_id=%s: graph refresh failed: %s", project_id, exc)
+        conn.rollback()
         _fail_init(conn, project_id, result, f"图谱刷新失败: {exc}")
         return result
 

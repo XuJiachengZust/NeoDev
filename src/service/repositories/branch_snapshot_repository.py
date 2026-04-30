@@ -62,6 +62,65 @@ def replace_facts(conn, snapshot_id: int, fact_ids: list[str]) -> int:
     return len(values)
 
 
+def add_fact(conn, snapshot_id: int, fact_id: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO branch_snapshot_facts (snapshot_id, fact_id)
+            VALUES (%s, %s)
+            ON CONFLICT (snapshot_id, fact_id) DO NOTHING
+            """,
+            (snapshot_id, fact_id),
+        )
+
+
+def remove_fact(conn, snapshot_id: int, fact_id: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM branch_snapshot_facts
+            WHERE snapshot_id = %s
+              AND fact_id = %s
+            """,
+            (snapshot_id, fact_id),
+        )
+
+
+def clear_branch_graph(conn, project_id: int, branch_name: str) -> dict[str, int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id
+            FROM branch_snapshots
+            WHERE project_id = %s
+              AND branch_name = %s
+            """,
+            (project_id, branch_name),
+        )
+        snapshot_ids = [row[0] for row in cur.fetchall()]
+        if not snapshot_ids:
+            return {"deleted_snapshots": 0, "deleted_memberships": 0}
+
+        cur.execute(
+            "DELETE FROM branch_snapshot_facts WHERE snapshot_id = ANY(%s)",
+            (snapshot_ids,),
+        )
+        deleted_memberships = cur.rowcount
+        cur.execute(
+            """
+            DELETE FROM branch_snapshots
+            WHERE project_id = %s
+              AND branch_name = %s
+            """,
+            (project_id, branch_name),
+        )
+        deleted_snapshots = cur.rowcount
+    return {
+        "deleted_snapshots": int(deleted_snapshots or 0),
+        "deleted_memberships": int(deleted_memberships or 0),
+    }
+
+
 def list_fact_ids(conn, snapshot_id: int) -> list[str]:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(

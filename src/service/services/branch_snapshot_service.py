@@ -41,6 +41,18 @@ def get_current_snapshot(conn, project_id: int, branch: str) -> dict[str, Any] |
     return snapshot_repo.get_current_snapshot(conn, project_id, (branch or "").strip())
 
 
+def clear_branch_graph(conn, *, project_id: int, branch: str) -> dict[str, int]:
+    return snapshot_repo.clear_branch_graph(conn, project_id, (branch or "").strip())
+
+
+def add_fact(conn, *, snapshot_id: int, fact_id: str) -> None:
+    snapshot_repo.add_fact(conn, snapshot_id, fact_id)
+
+
+def remove_fact(conn, *, snapshot_id: int, fact_id: str) -> None:
+    snapshot_repo.remove_fact(conn, snapshot_id, fact_id)
+
+
 def list_fact_ids(conn, snapshot_id: int) -> list[str]:
     return snapshot_repo.list_fact_ids(conn, snapshot_id)
 

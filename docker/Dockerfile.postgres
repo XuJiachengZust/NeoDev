@@ -21,3 +21,5 @@ COPY docker/migrations/018_cli_metadata_foundation.sql              /docker-entr
 COPY docker/migrations/019_branch_snapshots.sql                     /docker-entrypoint-initdb.d/019_branch_snapshots.sql
 COPY docker/migrations/020_graph_manual_management.sql              /docker-entrypoint-initdb.d/020_graph_manual_management.sql
 COPY docker/migrations/021_code_fact_snapshot_rebuild.sql           /docker-entrypoint-initdb.d/021_code_fact_snapshot_rebuild.sql
+COPY docker/migrations/022_widen_code_fact_identifiers.sql          /docker-entrypoint-initdb.d/022_widen_code_fact_identifiers.sql
+COPY docker/migrations/023_manual_graph_fact_unification.sql        /docker-entrypoint-initdb.d/023_manual_graph_fact_unification.sql
