@@ -58,6 +58,8 @@ def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
 
     joined = "\n".join(all_commands)
     for expected in [
+        "doc binding list --product-code <product_code> --json",
+        "doc binding create --product-code <product_code> --project-id <doc_project_id> --branch <branch> --json",
         "doc import --doc-binding-id <doc_binding_id> --force --json",
         "doc change register",
         "graph impact",
@@ -103,6 +105,8 @@ def test_official_skill_is_bundled_and_points_to_the_shared_workflow_contract():
     assert "cli version-check" in skill
     assert "neodev config set-server" in skill
     assert "install-neodev-client.ps1" in skill
+    assert "doc binding create --product-code <product_code> --project-id <doc_project_id>" in skill
+    assert "doc binding list --product-code <product_code> --json" in skill
     assert "doc import --doc-binding-id <id> --force --json" in skill
     assert "DocChange-ID 默认使用文档 Git commit hash" in skill
     assert "project create --name <project_name> --repo-url <repo_url>" in skill

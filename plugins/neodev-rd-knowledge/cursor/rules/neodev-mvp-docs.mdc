@@ -27,6 +27,8 @@ Allowed `status` values are `draft`, `active`, and `deprecated`.
 
 `relations.target` must be a non-empty list of non-empty strings. Extra fields are allowed, but missing required fields block `doc import` and `doc change register`.
 
+Before import, obtain the active binding with `neodev doc binding list --product-code <product_code> --json`; create it with `neodev doc binding create ... --json` only when missing.
+
 Validate before import or registration:
 
 ```bash

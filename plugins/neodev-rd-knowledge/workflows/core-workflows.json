@@ -105,6 +105,22 @@
           "command": "python plugins/neodev-rd-knowledge/validate_obsidian_docs.py docs"
         },
         {
+          "id": "list_doc_binding",
+          "type": "cli",
+          "command": "neodev doc binding list --product-code <product_code> --json",
+          "expects": [
+            "data.bindings[].id"
+          ]
+        },
+        {
+          "id": "create_doc_binding_when_missing",
+          "type": "cli",
+          "command": "neodev doc binding create --product-code <product_code> --project-id <doc_project_id> --branch <branch> --json",
+          "expects": [
+            "data.binding.id"
+          ]
+        },
+        {
           "id": "import_controlled_docs",
           "type": "cli",
           "command": "neodev doc import --doc-binding-id <doc_binding_id> --force --json",

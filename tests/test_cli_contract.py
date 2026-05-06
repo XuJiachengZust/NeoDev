@@ -232,6 +232,20 @@ def test_doc_import_command_is_registered():
     assert "--force" in proc.stdout
 
 
+def test_doc_binding_commands_are_registered():
+    create = _run("neodev.py", "doc", "binding", "create", "--help")
+    assert create.returncode == 0
+    assert "--product-code" in create.stdout
+    assert "--project-id" in create.stdout
+    assert "--repo-url" in create.stdout
+    assert "--branch" in create.stdout
+
+    list_proc = _run("neodev.py", "doc", "binding", "list", "--help")
+    assert list_proc.returncode == 0
+    assert "--product-code" in list_proc.stdout
+    assert "--product-id" in list_proc.stdout
+
+
 def test_git_verify_doc_change_command_is_registered():
     proc = _run("neodev.py", "git", "verify-doc-change", "--help")
     assert proc.returncode == 0

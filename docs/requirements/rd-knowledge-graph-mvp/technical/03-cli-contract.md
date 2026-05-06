@@ -87,6 +87,7 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 
 默认无副作用命令：
 
+- `doc binding list`
 - `doc change show`
 - `graph semantic-search`
 - `graph entity-context`
@@ -96,6 +97,7 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 
 有副作用命令：
 
+- `doc binding create`
 - `doc scan`
 - `doc import`
 - `doc change register`
@@ -131,6 +133,8 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 
 ### 3.2 文档与变更
 
+- `doc binding create`
+- `doc binding list`
 - `doc scan`
 - `doc import`
 - `doc change register`
@@ -170,7 +174,41 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 
 ## 4. 核心命令契约
 
-### 4.0 `doc import`
+### 4.0 `doc binding create/list`
+
+`doc binding create` 输入：
+
+- `product_code` 或 `product_id`
+- 可选 `project_id` 或 `project_name`
+- 可选 `repo_url`
+- 可选 `repo_path`
+- 可选 `branch`
+
+输出：
+
+- `binding.id`
+- `binding.product_id`
+- `binding.repo_path`
+- `binding.repo_url`
+- `binding.default_branch`
+- `import_command`
+
+规则：
+
+- 产品下只能有一个 active `DocBinding`。
+- 可以从已登记文档项目创建绑定；当项目 `repo_path` 是 Git URL 时，写入 `repo_url`，并将 `repo_path` 解析为远端服务可克隆的文档目录。
+- `doc import` 前应先通过 `doc binding list` 获取 active `doc_binding_id`；缺失时再调用 `doc binding create`。
+- 不允许插件 / skill 绕过 CLI 直接写 `doc_bindings`。
+
+`doc binding list` 输入：
+
+- `product_code` 或 `product_id`
+
+输出：
+
+- `bindings[]`
+
+### 4.0.1 `doc import`
 
 输入：
 

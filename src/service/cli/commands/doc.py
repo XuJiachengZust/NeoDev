@@ -1,4 +1,6 @@
 from contextlib import closing
+import os
+import re
 
 import psycopg2
 
@@ -6,6 +8,8 @@ from service.cli.errors import CliError
 from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
 from service.repositories import doc_binding_repository
+from service.repositories import product_repository
+from service.repositories import project_repository
 from service.services import doc_change_service
 from service.services import doc_import_service
 from service.services import doc_scan_service
@@ -14,6 +18,34 @@ from service.services import doc_scan_service
 def register(subparsers) -> None:
     doc_parser = subparsers.add_parser("doc")
     doc_subparsers = doc_parser.add_subparsers(dest="doc_command", required=True)
+
+    binding_parser = doc_subparsers.add_parser("binding")
+    binding_subparsers = binding_parser.add_subparsers(
+        dest="binding_command",
+        required=True,
+    )
+
+    binding_create_parser = binding_subparsers.add_parser("create")
+    _add_product_locator(binding_create_parser)
+    project_source = binding_create_parser.add_mutually_exclusive_group()
+    project_source.add_argument("--project-id", type=int)
+    project_source.add_argument("--project-name")
+    binding_create_parser.add_argument("--repo-url")
+    binding_create_parser.add_argument("--repo-path")
+    binding_create_parser.add_argument("--branch", default="main")
+    binding_create_parser.add_argument("--json", action="store_true", dest="json_output")
+    binding_create_parser.set_defaults(
+        handler=handle_doc_binding_create,
+        command_name="doc binding create",
+    )
+
+    binding_list_parser = binding_subparsers.add_parser("list")
+    _add_product_locator(binding_list_parser)
+    binding_list_parser.add_argument("--json", action="store_true", dest="json_output")
+    binding_list_parser.set_defaults(
+        handler=handle_doc_binding_list,
+        command_name="doc binding list",
+    )
 
     scan_parser = doc_subparsers.add_parser("scan")
     scan_parser.add_argument("--doc-binding-id", type=int, required=True)
@@ -61,6 +93,67 @@ def register(subparsers) -> None:
 def _add_doc_change_locator(parser) -> None:
     parser.add_argument("--change-id", type=int)
     parser.add_argument("--doc-change-id")
+
+
+def _add_product_locator(parser) -> None:
+    locator = parser.add_mutually_exclusive_group(required=True)
+    locator.add_argument("--product-id", type=int)
+    locator.add_argument("--product-code")
+
+
+def handle_doc_binding_create(args) -> dict:
+    def run(conn):
+        product = _resolve_product(conn, args)
+        project = _resolve_project(conn, args)
+        source_repo_url = _first_text(
+            args.repo_url,
+            (project or {}).get("repo_url"),
+            _remote_url_or_empty((project or {}).get("repo_path")),
+        )
+        source_repo_path = _first_text(
+            args.repo_path,
+            _local_path_or_empty((project or {}).get("repo_path")),
+        )
+        if not source_repo_url and not source_repo_path:
+            raise CliError(
+                category="invalid_argument",
+                message="provide --repo-url, --repo-path, --project-id, or --project-name",
+            )
+        repo_path = source_repo_path or _default_doc_repo_path(product, project, source_repo_url)
+        binding = doc_binding_repository.create(
+            conn,
+            product_id=product["id"],
+            repo_path=repo_path,
+            repo_url=source_repo_url,
+            default_branch=args.branch,
+            is_active=True,
+        )
+        return build_success_payload(
+            args.command_name,
+            {
+                "product": product,
+                "project": project,
+                "binding": binding,
+                "import_command": f"neodev doc import --doc-binding-id {binding['id']} --json",
+            },
+        )
+
+    return _with_db(run)
+
+
+def handle_doc_binding_list(args) -> dict:
+    def run(conn):
+        product = _resolve_product(conn, args)
+        bindings = doc_binding_repository.list_active_by_product(conn, product["id"])
+        return build_success_payload(
+            args.command_name,
+            {
+                "product": product,
+                "bindings": bindings,
+            },
+        )
+
+    return _with_db(run)
 
 
 def handle_doc_scan(args) -> dict:
@@ -152,3 +245,69 @@ def _with_db(callback):
             message="database operation failed",
             details={"database_error": str(exc)},
         ) from exc
+
+
+def _resolve_product(conn, args) -> dict:
+    if args.product_id is not None:
+        product = product_repository.find_by_id(conn, args.product_id)
+    else:
+        product = product_repository.find_by_code(conn, args.product_code)
+    if not product:
+        raise CliError(category="not_found", message="product not found")
+    return product
+
+
+def _resolve_project(conn, args) -> dict | None:
+    if getattr(args, "project_id", None) is not None:
+        project = project_repository.find_by_id(conn, args.project_id)
+        if not project:
+            raise CliError(category="not_found", message="project not found")
+        return project
+    project_name = getattr(args, "project_name", None)
+    if not project_name:
+        return None
+    matches = project_repository.find_by_name(conn, project_name)
+    if not matches:
+        raise CliError(category="not_found", message="project not found")
+    return max(matches, key=lambda row: row["id"])
+
+
+def _first_text(*values: str | None) -> str:
+    for value in values:
+        text = str(value or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _is_remote_url(value: str | None) -> bool:
+    text = str(value or "").strip()
+    return (
+        text.startswith("http://")
+        or text.startswith("https://")
+        or text.startswith("git@")
+        or ("://" in text and not os.path.isdir(text))
+    )
+
+
+def _remote_url_or_empty(value: str | None) -> str:
+    text = str(value or "").strip()
+    return text if _is_remote_url(text) else ""
+
+
+def _local_path_or_empty(value: str | None) -> str:
+    text = str(value or "").strip()
+    return "" if _is_remote_url(text) else text
+
+
+def _default_doc_repo_path(product: dict, project: dict | None, repo_url: str) -> str:
+    base = (
+        os.environ.get("REQUIREMENT_DOCS_ROOT")
+        or os.environ.get("REPO_CLONE_BASE")
+        or "/data/requirement_docs"
+    )
+    name_source = (project or {}).get("name") or product.get("code") or repo_url or "docs"
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(name_source)).strip(".-").lower()
+    if not name:
+        name = "docs"
+    return os.path.join(base, name)

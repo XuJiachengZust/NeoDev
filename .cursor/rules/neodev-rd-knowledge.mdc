@@ -16,6 +16,8 @@ Do not write PostgreSQL directly. Do not write Neo4j directly. Do not replace th
 
 Use `neodev ... --json` and reason from structured payloads returned by the remote service.
 
+Resolve controlled document repository bindings through `neodev doc binding list --product-code <product_code> --json`. If no active binding exists, create one through `neodev doc binding create ... --json`; do not write `doc_bindings` directly.
+
 NeoSuperpower expectations:
 
 - Use `neosuperpower:requirements-or-design` before requirements or design work.

@@ -49,6 +49,21 @@ def _create_product(conn, code: str) -> int:
     return product_id
 
 
+def _create_project(conn, product_id: int, name: str, repo_path: str, repo_url: str | None = None) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO projects (name, repo_path, repo_url, product_id)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+            """,
+            (name, repo_path, repo_url, product_id),
+        )
+        project_id = cur.fetchone()[0]
+    conn.commit()
+    return project_id
+
+
 def _create_doc_binding_and_document(conn, code: str) -> tuple[dict, dict]:
     product_id = _create_product(conn, code)
     binding = doc_binding_repository.create(
@@ -77,6 +92,73 @@ def _make_doc_repo() -> Path:
 def _write_doc(path: Path, front_matter: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"---\n{front_matter}\n---\n\ncontent\n", encoding="utf-8")
+
+
+def test_doc_binding_create_cli_uses_project_source_and_returns_import_command(pg_conn):
+    token = uuid.uuid4().hex[:8]
+    product_code = f"BINDCLI-{token}"
+    product_id = _create_product(pg_conn, product_code)
+    project_id = _create_project(
+        pg_conn,
+        product_id,
+        f"docs-{token}",
+        f"git@example.com:docs/{token}.git",
+    )
+
+    proc = _run_cli(
+        "doc",
+        "binding",
+        "create",
+        "--product-code",
+        product_code,
+        "--project-id",
+        str(project_id),
+        "--branch",
+        "release/V1",
+        "--json",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = _payload(proc)
+    binding = payload["data"]["binding"]
+    assert payload["ok"] is True
+    assert payload["command"] == "doc binding create"
+    assert binding["product_id"] == product_id
+    assert binding["repo_url"] == f"git@example.com:docs/{token}.git"
+    assert binding["repo_path"].endswith(f"docs-{token}")
+    assert binding["default_branch"] == "release/V1"
+    assert payload["data"]["import_command"].endswith(
+        f"doc import --doc-binding-id {binding['id']} --json"
+    )
+
+
+def test_doc_binding_list_cli_returns_active_bindings(pg_conn):
+    token = uuid.uuid4().hex[:8]
+    product_code = f"BINDLIST-{token}"
+    product_id = _create_product(pg_conn, product_code)
+    binding = doc_binding_repository.create(
+        pg_conn,
+        product_id=product_id,
+        repo_path=f"/tmp/docs/{token}",
+        repo_url=f"https://example.invalid/docs/{token}.git",
+        default_branch="main",
+    )
+    pg_conn.commit()
+
+    proc = _run_cli(
+        "doc",
+        "binding",
+        "list",
+        "--product-code",
+        product_code,
+        "--json",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = _payload(proc)
+    bindings = payload["data"]["bindings"]
+    assert payload["command"] == "doc binding list"
+    assert [row["id"] for row in bindings] == [binding["id"]]
 
 
 def test_doc_scan_cli_scans_binding_and_returns_summary(pg_conn):
