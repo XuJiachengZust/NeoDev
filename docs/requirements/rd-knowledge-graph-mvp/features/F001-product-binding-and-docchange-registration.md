@@ -79,8 +79,8 @@ F001 负责把产品、产品版本、代码仓库、文档仓库以及文档变
 | `product version create` | 创建产品版本 |
 | `product version bind-branch` | 绑定 `project_id/project_name -> branch` 映射 |
 | `product version show` | 查看产品版本及其分支映射 |
-| `doc scan` | 扫描文档仓库，解析受控文档与 front matter |
-| `doc change register` | 基于文档提交生成 `DocChange ID` |
+| `doc import` | 导入文档仓库，解析受控文档与 front matter，并写入每篇文档的 Git commit hash |
+| `doc change register` | 基于文档 `last_seen_commit` 生成 `DocChange ID` |
 | `project create --repo-url` | 登记远程仓库并自动触发图谱构建 |
 | `project show` | 查看项目仓库和图谱构建结果 |
 | `product version bind-branch` | 按需把项目分支纳入产品版本范围 |
@@ -93,7 +93,7 @@ F001 负责把产品、产品版本、代码仓库、文档仓库以及文档变
 | BR-F001-02 | 一个 Product 只能绑定一个 `DocBinding` | AC-F001-01 |
 | BR-F001-03 | 文档扫描仅纳入 `prd/`、`prototype/`、`tech-design/` | AC-F001-02 |
 | BR-F001-04 | 文档必须使用 YAML front matter，并至少包含 `doc_id/title/doc_type/product_key/status/relations` | AC-F001-02 |
-| BR-F001-05 | 每次受控文档提交生成一个新的 `DocChange ID` | AC-F001-03 |
+| BR-F001-05 | 每次受控文档提交生成一个新的 `DocChange ID`，该 ID 直接等于文档 Git commit hash | AC-F001-03 |
 | BR-F001-06 | `DocChange` 初始状态固定为 `pending_implementation` | AC-F001-03 |
 | BR-F001-07 | ProductVersion 必须保存项目分支映射，作为后续检索和分析作用域 | AC-F001-04 |
 | BR-F001-08 | 触发自动图谱构建时，输入至少包含 `product_key/product_version_id/project_id(or name)/branch` | AC-F001-05 |

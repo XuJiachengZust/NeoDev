@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import re
 from typing import Any
 
 
@@ -26,6 +27,12 @@ def parse_doc_change_id(commit_message: str) -> dict[str, str]:
                 message="DocChange-ID trailer value is required",
                 details={"line": line_no},
             )
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", doc_change_id):
+            raise CommitMessageParseError(
+                category="invalid_argument",
+                message="DocChange-ID must be a 40-character document commit hash",
+                details={"line": line_no},
+            )
         matches.append({"doc_change_id": doc_change_id, "line": line_no})
 
     if not matches:
@@ -39,4 +46,4 @@ def parse_doc_change_id(commit_message: str) -> dict[str, str]:
             message="DocChange-ID trailer must be unique",
             details={"count": len(matches)},
         )
-    return {"doc_change_id": matches[0]["doc_change_id"], "matched_by": "trailer"}
+    return {"doc_change_id": matches[0]["doc_change_id"].lower(), "matched_by": "trailer"}

@@ -9,8 +9,10 @@ alwaysApply: false
 Implementation commits must include exactly one trailer:
 
 ```text
-DocChange-ID: DC-PRODUCT-001
+DocChange-ID: 0123456789abcdef0123456789abcdef01234567
 ```
+
+The value must be the 40-character Git commit hash of the imported source document.
 
 Validate commit messages with:
 

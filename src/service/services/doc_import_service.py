@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -59,6 +60,7 @@ def import_binding(conn, doc_binding_id: int, *, force: bool = False) -> dict[st
             front_matter = validate_front_matter(parsed["front_matter"])
             body_text = parsed["body_text"]
             content_hash = _content_hash(front_matter, body_text)
+            last_seen_commit = _last_commit_for_path(repo_path, relative_path)
             document = document_repository.upsert(
                 conn,
                 doc_binding_id=binding["id"],
@@ -68,6 +70,7 @@ def import_binding(conn, doc_binding_id: int, *, force: bool = False) -> dict[st
                 front_matter_json=front_matter,
                 relations_json=front_matter["relations"],
                 status=front_matter["status"],
+                last_seen_commit=last_seen_commit,
                 last_scanned_at=datetime.now(timezone.utc),
                 title=front_matter["title"],
                 body_text=body_text,
@@ -134,6 +137,51 @@ def _run_git(args: list[str]) -> None:
             category="internal_error",
             message="git document repository sync failed",
             details={"command": args, "stderr": proc.stderr},
+        )
+
+
+def _last_commit_for_path(repo_path: Path, relative_path: str) -> str:
+    _ensure_path_clean(repo_path, relative_path)
+    proc = subprocess.run(
+        ["git", "-C", str(repo_path), "log", "-1", "--format=%H", "--", relative_path],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise CliError(
+            category="internal_error",
+            message="git document commit lookup failed",
+            details={"relative_path": relative_path, "stderr": proc.stderr},
+        )
+    commit_hash = proc.stdout.strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", commit_hash):
+        raise CliError(
+            category="invalid_scope",
+            message="document file has no committed git version",
+            details={"relative_path": relative_path},
+        )
+    return commit_hash.lower()
+
+
+def _ensure_path_clean(repo_path: Path, relative_path: str) -> None:
+    proc = subprocess.run(
+        ["git", "-C", str(repo_path), "status", "--porcelain", "--", relative_path],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise CliError(
+            category="internal_error",
+            message="git document status lookup failed",
+            details={"relative_path": relative_path, "stderr": proc.stderr},
+        )
+    if proc.stdout.strip():
+        raise CliError(
+            category="invalid_scope",
+            message="document file has uncommitted changes; commit before import",
+            details={"relative_path": relative_path, "git_status": proc.stdout.strip()},
         )
 
 

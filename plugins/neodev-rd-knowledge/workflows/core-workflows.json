@@ -105,14 +105,21 @@
           "command": "python plugins/neodev-rd-knowledge/validate_obsidian_docs.py docs"
         },
         {
-          "id": "scan_controlled_docs",
+          "id": "import_controlled_docs",
           "type": "cli",
-          "command": "neodev doc scan --doc-binding-id <doc_binding_id> --json"
+          "command": "neodev doc import --doc-binding-id <doc_binding_id> --force --json",
+          "expects": [
+            "data.documents[].last_seen_commit"
+          ]
         },
         {
           "id": "register_doc_change",
           "type": "cli",
-          "command": "neodev doc change register --document-id <document_id> --json"
+          "command": "neodev doc change register --document-id <document_id> --json",
+          "expects": [
+            "data.doc_change.doc_change_id equals selected document last_seen_commit",
+            "data.doc_change.source_commit equals selected document last_seen_commit"
+          ]
         },
         {
           "id": "estimate_impact",

@@ -7,6 +7,8 @@ description: 使用 NeoDev 远程服务管理研发知识图谱、文档导入�
 
 只通过本地 `neodev` CLI 访问远程 NeoDev 服务；除排障外，不直接连接 PostgreSQL 或 Neo4j。
 
+共享工作流契约位于 `plugins/neodev-rd-knowledge/workflows/core-workflows.json`，插件、skill 和 CLI 引导必须以该文件为准。
+
 NeoDev 插件内的流程纪律统一称为 `neosuperpower`。新建或维护 NeoDev 受控文档时，目录、标签和工作流名称都应使用 `neosuperpower`。
 
 ## 启动检查
@@ -69,13 +71,14 @@ python plugins/neodev-rd-knowledge/validate_obsidian_docs.py <docs_path>
 
 1. 登记仓库：`neodev project create --name <project_name> --repo-url <repo_url> --json`
 2. 绑定产品版本分支：`neodev product version bind-branch --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json`
-3. 扫描文档：`neodev doc scan --doc-binding-id <id> --json`
-4. 导入文档：`neodev doc import --doc-binding-id <id> --force --json`
+3. 导入文档：`neodev doc import --doc-binding-id <id> --force --json`
+4. 登记文档变更：`neodev doc change register --document-id <document_id> --json`
 5. 查询文档影响：`neodev graph impact --doc-change-id <doc_change_id> --json`
 6. 重建代码分支图谱：`neodev project refresh-graph --project-id <project_id> --branch <branch> --json`
 
 ## 边界
 
-- 文档关系写入先维护源文件，再通过 CLI scan/import 验证。
+- 文档关系写入先维护源文件，再通过 CLI import 验证并写入文档 Git commit。
+- DocChange-ID 默认使用文档 Git commit hash；提交代码时 `DocChange-ID` trailer 也应填写该 40 位 commit hash。
 - 代码图谱刷新只使用 `project refresh-graph --branch`。
 - 远程数据库直连只用于定位 CLI/API 与存储层不一致的问题。

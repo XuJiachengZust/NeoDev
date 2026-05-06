@@ -1,4 +1,4 @@
-from uuid import uuid4
+import re
 
 from service.cli.errors import CliError
 from service.repositories import doc_change_repository
@@ -18,12 +18,42 @@ def register_doc_change(
     if not document:
         raise CliError(category="not_found", message="document not found")
 
-    resolved_doc_change_id = doc_change_id or _generate_doc_change_id(document)
+    resolved_doc_change_id = doc_change_id or source_commit or document.get("last_seen_commit")
+    if not resolved_doc_change_id:
+        raise CliError(
+            category="invalid_scope",
+            message="document commit is required for DocChange-ID",
+            details={"document_id": document_id},
+        )
+    if not _is_commit_hash(resolved_doc_change_id):
+        raise CliError(
+            category="invalid_argument",
+            message="DocChange-ID must be a 40-character document commit hash",
+            details={"doc_change_id": resolved_doc_change_id},
+        )
+    resolved_doc_change_id = resolved_doc_change_id.lower()
+    resolved_source_commit = source_commit or resolved_doc_change_id
+    if not _is_commit_hash(resolved_source_commit):
+        raise CliError(
+            category="invalid_argument",
+            message="source_commit must be a 40-character document commit hash",
+            details={"source_commit": resolved_source_commit},
+        )
+    resolved_source_commit = resolved_source_commit.lower()
+    if resolved_source_commit != resolved_doc_change_id:
+        raise CliError(
+            category="invalid_argument",
+            message="DocChange-ID and source_commit must match the document commit hash",
+            details={
+                "doc_change_id": resolved_doc_change_id,
+                "source_commit": resolved_source_commit,
+            },
+        )
     change = doc_change_repository.create(
         conn,
         document_id=document_id,
         doc_change_id=resolved_doc_change_id,
-        source_commit=source_commit,
+        source_commit=resolved_source_commit,
         summary=summary,
         details_json=details_json,
         created_by=created_by,
@@ -77,9 +107,5 @@ def _resolve_doc_change(
     if not change:
         raise CliError(category="not_found", message="doc change not found")
     return change
-
-
-def _generate_doc_change_id(document: dict) -> str:
-    source = str(document.get("doc_id") or document["id"]).upper()
-    safe_source = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in source)
-    return f"DC-{safe_source}-{uuid4().hex[:8].upper()}"
+def _is_commit_hash(value: str | None) -> bool:
+    return bool(re.fullmatch(r"[0-9a-fA-F]{40}", str(value or "")))

@@ -97,6 +97,7 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 有副作用命令：
 
 - `doc scan`
+- `doc import`
 - `doc change register`
 - `doc change mark-implemented`
 - `project create`
@@ -131,6 +132,7 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 ### 3.2 文档与变更
 
 - `doc scan`
+- `doc import`
 - `doc change register`
 - `doc change show`
 - `doc change mark-implemented`
@@ -167,6 +169,27 @@ MVP 对外只暴露本地 `neodev` CLI 客户端能力。CLI 客户端是远程 
 - `cli version-check`
 
 ## 4. 核心命令契约
+
+### 4.0 `doc import`
+
+输入：
+
+- `doc_binding_id`
+- 可选 `force`
+
+输出：
+
+- `documents[].last_seen_commit`
+- `documents[].content_hash`
+- `documents[].relative_path`
+
+规则：
+
+- 文档仓库必须是 Git checkout。
+- 导入前同步 `doc_bindings.default_branch`。
+- 每篇导入文档必须写入该文件最近一次提交的 40 位 Git commit hash 到 `last_seen_commit`。
+- 如果文档文件未提交、存在未提交变更，或无法取得 commit hash，则该文档导入失败，不生成不可靠版本事实。
+- `doc change register` 未显式传入 `doc_change_id` 或 `source_commit` 时，默认使用目标文档的 `last_seen_commit`，因此 DocChange-ID 直接等于文档 commit hash。
 
 ### 4.1 `graph impact`
 

@@ -14,6 +14,6 @@ Hard boundaries:
 
 Workflow expectations:
 
-- Validate MVP documents before `doc scan` or `doc change register`.
-- Require exactly one valid `DocChange-ID` trailer before commit verification.
+- Validate MVP documents before `doc import` or `doc change register`.
+- Require exactly one valid `DocChange-ID` trailer before commit verification; the value must be the imported document's 40-character Git commit hash.
 - Use NeoSuperpower workflows when applicable: requirements-or-design before requirements or design, implementation before code changes, failure-investigation for failures, and verification-before-completion before completion, commit, or push.

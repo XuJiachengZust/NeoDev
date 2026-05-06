@@ -40,11 +40,11 @@
         ]
       },
       {
-        "matcher": "Bash(neodev doc scan*)",
+        "matcher": "Bash(neodev doc import*)",
         "hooks": [
           {
             "type": "command",
-            "command": "python plugins/neodev-rd-knowledge/validate_mvp_docs.py prd prototype tech-design # before neodev doc scan"
+            "command": "python plugins/neodev-rd-knowledge/validate_mvp_docs.py prd prototype tech-design # before neodev doc import"
           }
         ]
       }

@@ -25,9 +25,9 @@ Allowed `doc_type` values are `prd`, `prototype`, and `tech-design`.
 
 Allowed `status` values are `draft`, `active`, and `deprecated`.
 
-`relations.target` must be a non-empty list of non-empty strings. Extra fields are allowed, but missing required fields block `doc scan` and `doc change register`.
+`relations.target` must be a non-empty list of non-empty strings. Extra fields are allowed, but missing required fields block `doc import` and `doc change register`.
 
-Validate before scan or registration:
+Validate before import or registration:
 
 ```bash
 python plugins/neodev-rd-knowledge/validate_mvp_docs.py prd prototype tech-design

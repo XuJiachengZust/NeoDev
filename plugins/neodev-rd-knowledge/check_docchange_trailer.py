@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-DOC_CHANGE_ID_PATTERN = re.compile(r"^DC-[A-Z0-9][A-Z0-9._-]*$")
+DOC_CHANGE_ID_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 def validate_message(message: str) -> dict[str, Any]:
@@ -37,7 +37,7 @@ def validate_message(message: str) -> dict[str, Any]:
             errors.append(
                 {
                     "field": "DocChange-ID",
-                    "message": "DocChange-ID must match DC-<UPPERCASE-ID>",
+                    "message": "DocChange-ID must be a 40-character document commit hash",
                     "line": matches[0]["line"],
                 }
             )
