@@ -21,6 +21,52 @@ neodev cli version-check --json
 neodev config set-server http://10.50.3.149
 ```
 
+## 与 Codex Skill 和插件协同使用
+
+NeoDev SP 的推荐入口不是单独记忆 CLI 参数，而是和 `NeoDev 研发知识插件`、`neodev-rd-knowledge` skill 一起使用。
+
+协同边界：
+
+- 插件和 skill 负责引导流程、校验文档规范、补齐命令顺序和解释结果。
+- 状态读取和写入统一通过已配置远程服务的 `neodev` CLI 完成。
+- 不要绕过 CLI 直接写 PostgreSQL 或 Neo4j；直连数据库只用于排障定位。
+
+每次执行会写远程状态的流程前，先检查本地客户端和远程服务：
+
+```powershell
+neodev config show
+neodev cli version-check --json
+```
+
+研发知识图谱的常用流程：
+
+```powershell
+neodev project create --name <project_name> --repo-url <repo_url> --json
+neodev product version bind-branch --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json
+neodev doc binding list --product-code <product_code> --json
+neodev doc binding create --product-code <product_code> --project-id <doc_project_id> --branch <branch> --json
+neodev doc import --doc-binding-id <doc_binding_id> --json
+neodev doc change register --document-id <document_id> --json
+neodev graph impact --doc-change-id <doc_change_id> --json
+neodev project refresh-graph --project-id <project_id> --branch <branch> --json
+```
+
+文档导入说明：
+
+- 日常导入使用 `neodev doc import --doc-binding-id <id> --json`。
+- 只有确认需要重建已有 chunk embedding 时才加 `--force`。
+- `doc import` 返回轻量文档摘要，并写入每个文档的 `last_seen_commit`。
+- 文档图谱会由服务投影 `Project -[:HAS_DOCUMENT]-> Document` 归属关系。
+
+维护受控文档时，先按插件目录规范放在同一个 docs root 下，再执行：
+
+```powershell
+python plugins/neodev-rd-knowledge/validate_mvp_docs.py <docs_path>
+python plugins/neodev-rd-knowledge/validate_obsidian_docs.py <docs_path>
+```
+
+需要在 Codex 中调用时，优先使用 `neodev-rd-knowledge` 或插件提供的 `neosuperpower` 工作流，让 skill 读取 `plugins/neodev-rd-knowledge/workflows/core-workflows.json` 后再执行命令。
+
 ## 核心结论
 
 NeoDev SP 的产品意义，是为 AI 时代的一人团队提供一套以文档和规范为中心的研发秩序。
