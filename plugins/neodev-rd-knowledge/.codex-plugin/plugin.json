@@ -13,6 +13,7 @@
   "keywords": [
     "neodev",
     "rd-knowledge",
+    "neosuperpower",
     "docchange",
     "graph",
     "git"
@@ -26,10 +27,12 @@
     "category": "开发者工具",
     "capabilities": [
       "工作流编排",
+      "NeoSuperpower 工作流",
       "CLI 调用引导"
     ],
     "defaultPrompt": [
       "用 NeoDev 分析这个 DocChange。",
+      "用 NeoSuperpower 闭环这个文档关系和验证流程。",
       "查询这个版本的 NeoDev 图谱上下文。",
       "推送前用 NeoDev 检查我的提交。"
     ],
@@ -39,6 +42,8 @@
     "hooks": "./hooks/hooks.json",
     "shared_scripts": [
       "./validate_mvp_docs.py",
+      "./validate_obsidian_docs.py",
+      "./sync_obsidian_links.py",
       "./generate_mvp_doc.py",
       "./check_docchange_trailer.py",
       "./check_neodev_environment.py"

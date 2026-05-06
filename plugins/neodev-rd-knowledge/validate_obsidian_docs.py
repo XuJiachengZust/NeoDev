@@ -51,10 +51,10 @@ def validate_paths(paths: list[Path]) -> dict[str, Any]:
         errors.extend(_validate_front_matter(path, front_matter))
 
     doc_ids = _doc_id_index(docs)
-    note_names = {doc.path.stem for doc in docs}
+    wiki_targets = _wiki_target_index(docs, paths)
     for doc in docs:
         errors.extend(_validate_relation_targets(doc, doc_ids))
-        errors.extend(_validate_related_links(doc, note_names))
+        errors.extend(_validate_related_links(doc, wiki_targets))
 
     return {"ok": not errors, "checked_count": len(docs) + _front_matter_error_count(errors), "errors": errors}
 
@@ -79,7 +79,7 @@ def _iter_markdown_files(paths: list[Path]):
 def _read_front_matter(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
-    if not lines or lines[0] != "---":
+    if not lines or lines[0].lstrip("\ufeff") != "---":
         raise ValueError("document must start with YAML front matter")
     try:
         end = lines.index("---", 1)
@@ -170,18 +170,44 @@ def _doc_id_index(docs: list[ParsedDoc]) -> dict[str, Path]:
     }
 
 
+def _wiki_target_index(docs: list[ParsedDoc], paths: list[Path]) -> set[str]:
+    roots = _wiki_roots(paths)
+    targets: set[str] = set()
+    for doc in docs:
+        targets.add(doc.path.stem)
+        for root in roots:
+            try:
+                relative = doc.path.resolve().relative_to(root.resolve()).as_posix()
+            except ValueError:
+                continue
+            if relative.endswith(".md"):
+                targets.add(relative[:-3])
+    return targets
+
+
+def _wiki_roots(paths: list[Path]) -> list[Path]:
+    roots = paths or [Path("docs")]
+    result: list[Path] = []
+    for root in roots:
+        if root.is_file():
+            result.append(root.parent)
+        else:
+            result.append(root)
+    return result
+
+
 def _validate_relation_targets(doc: ParsedDoc, doc_ids: dict[str, Path]) -> list[dict[str, str]]:
     relations = doc.front_matter.get("relations")
     if not isinstance(relations, dict) or not isinstance(relations.get("target"), list):
         return []
     errors: list[dict[str, str]] = []
     for target in relations["target"]:
-        if isinstance(target, str) and target.startswith("NEODEV-DOC-") and target not in doc_ids:
+        if isinstance(target, str) and target not in doc_ids:
             errors.append(_error(doc.path, "relations.target", f"unknown doc_id: {target}"))
     return errors
 
 
-def _validate_related_links(doc: ParsedDoc, note_names: set[str]) -> list[dict[str, str]]:
+def _validate_related_links(doc: ParsedDoc, wiki_targets: set[str]) -> list[dict[str, str]]:
     related = doc.front_matter.get("related")
     if not isinstance(related, list):
         return []
@@ -194,7 +220,7 @@ def _validate_related_links(doc: ParsedDoc, note_names: set[str]) -> list[dict[s
             errors.append(_error(doc.path, "related", f"related entry must use wiki link syntax: {item}"))
             continue
         for note_name in matches:
-            if note_name not in note_names:
+            if note_name not in wiki_targets:
                 errors.append(_error(doc.path, "related", f"unknown wiki link: [[{note_name}]]"))
     return errors
 

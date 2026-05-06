@@ -16,4 +16,4 @@ Workflow expectations:
 
 - Validate MVP documents before `doc scan` or `doc change register`.
 - Require exactly one valid `DocChange-ID` trailer before commit verification.
-- Use Superpowers workflows when applicable: brainstorming for requirements or design, test-driven-development before implementation, systematic-debugging for failures, and verification-before-completion before completion, commit, or push.
+- Use NeoSuperpower workflows when applicable: requirements-or-design before requirements or design, implementation before code changes, failure-investigation for failures, and verification-before-completion before completion, commit, or push.

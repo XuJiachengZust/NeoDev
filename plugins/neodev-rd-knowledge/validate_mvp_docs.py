@@ -35,9 +35,20 @@ DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
 def validate_paths(paths: list[Path]) -> dict[str, Any]:
     errors: list[dict[str, Any]] = []
     checked_count = 0
+    valid_documents: list[tuple[Path, dict[str, Any]]] = []
     for path in _iter_markdown_files(paths):
         checked_count += 1
-        errors.extend(_validate_file(path))
+        file_errors, front_matter = _validate_file(path)
+        errors.extend(file_errors)
+        if isinstance(front_matter, dict):
+            valid_documents.append((path, front_matter))
+    doc_ids = {
+        str(front_matter["doc_id"])
+        for _, front_matter in valid_documents
+        if isinstance(front_matter.get("doc_id"), str)
+    }
+    for path, front_matter in valid_documents:
+        errors.extend(_validate_relation_targets(path, front_matter, doc_ids))
     return {"ok": not errors, "checked_count": checked_count, "errors": errors}
 
 
@@ -64,15 +75,15 @@ def _is_controlled_document(path: Path) -> bool:
     return any(part in CONTROLLED_DIRECTORIES for part in path.parts)
 
 
-def _validate_file(path: Path) -> list[dict[str, Any]]:
+def _validate_file(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     try:
         front_matter = _read_front_matter(path)
     except ValueError as exc:
-        return [_error(path, "front_matter", str(exc))]
+        return [_error(path, "front_matter", str(exc))], None
 
     errors: list[dict[str, Any]] = []
     if not isinstance(front_matter, dict):
-        return [_error(path, "front_matter", "front matter must be a mapping")]
+        return [_error(path, "front_matter", "front matter must be a mapping")], None
 
     for field in sorted(REQUIRED_FIELDS):
         if not front_matter.get(field):
@@ -145,13 +156,28 @@ def _validate_file(path: Path) -> list[dict[str, Any]]:
                     )
                 )
 
+    return errors, front_matter
+
+
+def _validate_relation_targets(
+    path: Path,
+    front_matter: dict[str, Any],
+    doc_ids: set[str],
+) -> list[dict[str, str]]:
+    relations = front_matter.get("relations")
+    if not isinstance(relations, dict) or not isinstance(relations.get("target"), list):
+        return []
+    errors: list[dict[str, str]] = []
+    for target in relations["target"]:
+        if isinstance(target, str) and target not in doc_ids:
+            errors.append(_error(path, "relations.target", f"unknown doc_id: {target}"))
     return errors
 
 
 def _read_front_matter(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
-    if not lines or lines[0] != "---":
+    if not lines or lines[0].lstrip("\ufeff") != "---":
         raise ValueError("document must start with YAML front matter")
     try:
         end = lines.index("---", 1)

@@ -24,14 +24,14 @@
       "active",
       "deprecated"
     ],
-    "relations_target": "relations.target must be a non-empty list of non-empty strings",
-    "obsidian_properties": "aliases/tags/related must be non-empty lists, created/updated must use YYYY-MM-DD, and related should use Obsidian wiki links"
+    "relations_target": "relations.target must be a non-empty list of real doc_id values that exist in the same docs root",
+    "obsidian_properties": "aliases/tags/related must be non-empty lists, created/updated must use YYYY-MM-DD, related must use Obsidian wiki links to real files, and NeoDev workflow docs must use neosuperpower paths/tags"
   },
-  "superpowers": {
-    "requirements_or_design": "superpowers:brainstorming",
-    "implementation": "superpowers:test-driven-development",
-    "failure_investigation": "superpowers:systematic-debugging",
-    "completion_commit_push": "superpowers:verification-before-completion"
+  "neosuperpower": {
+    "requirements_or_design": "neosuperpower:requirements-or-design",
+    "implementation": "neosuperpower:implementation",
+    "failure_investigation": "neosuperpower:failure-investigation",
+    "completion_commit_push": "neosuperpower:verification-before-completion"
   },
   "contract": "NeoDev CLI 是本地客户端调用统一远程服务的唯一执行边界和状态变更边界。插件与内置 skill 只负责引导命令顺序、参数补全、风险提示和结果解释；事实读取与状态写入都必须通过已配置远程服务的 neodev 命令完成。",
   "workflows": {
