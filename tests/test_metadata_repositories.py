@@ -9,6 +9,7 @@ import service.repositories.code_change_link_repository as code_change_link_repo
 import service.repositories.dangerous_commit_repository as dangerous_commit_repository
 import service.repositories.doc_binding_repository as doc_binding_repository
 import service.repositories.doc_change_repository as doc_change_repository
+import service.repositories.document_chunk_repository as document_chunk_repository
 import service.repositories.document_repository as document_repository
 
 
@@ -187,6 +188,49 @@ def test_document_create_persists_last_scanned_at_and_json(metadata_db_case):
     assert found["last_scanned_at"] == scan_time
     assert found["front_matter_json"] == front_matter
     assert found["relations_json"] == relations
+
+
+def test_replace_document_chunks_preserves_embedding_for_unchanged_content(metadata_db_case):
+    product_id = _create_product(metadata_db_case)
+    binding = doc_binding_repository.create(
+        metadata_db_case, product_id=product_id, repo_path="/docs"
+    )
+    document = document_repository.create(
+        metadata_db_case,
+        doc_binding_id=binding["id"],
+        doc_id=f"DOC-{uuid.uuid4().hex[:10]}",
+        relative_path="metadata/chunk.md",
+    )
+    chunk = {
+        "chunk_index": 0,
+        "heading_path": "Intro",
+        "text": "unchanged text",
+        "token_count": 2,
+        "content_hash": "hash-same",
+        "split_strategy": "structural",
+    }
+
+    first_rows = document_chunk_repository.replace_document_chunks(
+        metadata_db_case,
+        document["id"],
+        [chunk],
+    )
+    document_chunk_repository.upsert_embedding(
+        metadata_db_case,
+        first_rows[0]["id"],
+        embedding=[0.1, 0.2, 0.3],
+        embedding_model="test-embedding",
+    )
+
+    second_rows = document_chunk_repository.replace_document_chunks(
+        metadata_db_case,
+        document["id"],
+        [chunk],
+    )
+
+    assert second_rows[0]["embedding"] is not None
+    assert second_rows[0]["embedding_model"] == "test-embedding"
+    assert second_rows[0]["embedding_dim"] == 3
 
 
 def test_dangerous_commit_resolve_is_idempotent_for_audit_fields(metadata_db_case):

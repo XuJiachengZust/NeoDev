@@ -123,7 +123,7 @@
         {
           "id": "import_controlled_docs",
           "type": "cli",
-          "command": "neodev doc import --doc-binding-id <doc_binding_id> --force --json",
+          "command": "neodev doc import --doc-binding-id <doc_binding_id> --json",
           "expects": [
             "data.documents[].last_seen_commit"
           ]

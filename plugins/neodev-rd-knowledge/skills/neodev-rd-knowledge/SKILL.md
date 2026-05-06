@@ -76,7 +76,7 @@ python plugins/neodev-rd-knowledge/validate_obsidian_docs.py <docs_path>
 2. 绑定产品版本分支：`neodev product version bind-branch --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json`
 3. 创建文档仓库绑定：`neodev doc binding create --product-code <product_code> --project-id <doc_project_id> --branch <branch> --json`
 4. 查询文档仓库绑定：`neodev doc binding list --product-code <product_code> --json`
-5. 导入文档：`neodev doc import --doc-binding-id <id> --force --json`
+5. 导入文档：`neodev doc import --doc-binding-id <id> --json`
 6. 登记文档变更：`neodev doc change register --document-id <document_id> --json`
 7. 查询文档影响：`neodev graph impact --doc-change-id <doc_change_id> --json`
 8. 重建代码分支图谱：`neodev project refresh-graph --project-id <project_id> --branch <branch> --json`
@@ -85,6 +85,7 @@ python plugins/neodev-rd-knowledge/validate_obsidian_docs.py <docs_path>
 
 - 文档关系写入先维护源文件，再通过 CLI import 验证并写入文档 Git commit。
 - `doc import` 返回轻量文档摘要，并由服务投影 `Project -[:HAS_DOCUMENT]-> Document` 归属关系。
+- 日常导入不要使用 `--force`；只有确认需要重建已有 chunk embedding 时才加 `--force`。
 - 导入文档前先通过 `doc binding list` 获取 `doc_binding_id`；若产品没有 active 文档绑定，使用 `doc binding create` 创建，不要直接写数据库。
 - DocChange-ID 默认使用文档 Git commit hash；提交代码时 `DocChange-ID` trailer 也应填写该 40 位 commit hash。
 - 代码图谱刷新只使用 `project refresh-graph --branch`。
