@@ -18,6 +18,11 @@ NeoSuperpower is the NeoDev plugin-owned workflow layer. Use it in NeoDev docume
 
 For controlled docs, NeoDev and Obsidian must both close:
 
+- All generated controlled docs live under one `<docs_root>`.
+- Open `<docs_root>` as the Obsidian vault when graph visibility matters; do not use nested vault roots as the source of truth.
+- Use these standard top-level directories: `prd/`, `prototype/`, `tech-design/`, `neosuperpower/`, or a product-domain directory such as `<domain>/`.
+- NeoSuperpower-generated workflow docs live under `neosuperpower/plans/`, `neosuperpower/specs/`, `neosuperpower/skills/<skill_name>/`, `neosuperpower/reports/`, or `neosuperpower/templates/`.
+- Do not create `docs/superpowers/` or generate controlled docs outside `<docs_root>`.
 - Every generated document starts with YAML front matter.
 - Required fields are `doc_id`, `title`, `aliases`, `tags`, `created`, `updated`, `related`, `doc_type`, `product_key`, `status`, and `relations.target`.
 - `doc_type` is one of `prd`, `prototype`, or `tech-design`; `status` is one of `draft`, `active`, or `deprecated`.

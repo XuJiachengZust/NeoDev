@@ -30,6 +30,7 @@ VALID_DOC_TYPES = {"prd", "prototype", "tech-design"}
 VALID_STATUSES = {"draft", "active", "deprecated"}
 DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
 WIKI_LINK_PATTERN = re.compile(r"\[\[([^\]|#]+)")
+NEOSUPERPOWER_CHILDREN = {"plans", "specs", "skills", "reports", "templates"}
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,7 @@ def validate_paths(paths: list[Path]) -> dict[str, Any]:
             errors.append(_error(path, "front_matter", str(exc)))
             continue
         docs.append(ParsedDoc(path=path, front_matter=front_matter))
+        errors.extend(_validate_directory_structure(path))
         errors.extend(_validate_front_matter(path, front_matter))
 
     doc_ids = _doc_id_index(docs)
@@ -132,6 +134,25 @@ def _validate_front_matter(path: Path, front_matter: dict[str, Any]) -> list[dic
             errors.append(_error(path, "relations.target", "relations.target must contain non-empty strings"))
 
     return errors
+
+
+def _validate_directory_structure(path: Path) -> list[dict[str, str]]:
+    parts = path.parts
+    if "superpowers" in parts:
+        return [_error(path, "path", "use neosuperpower/, not superpowers/")]
+    if ".obsidian" in parts:
+        return [_error(path, "path", "controlled docs must not live inside .obsidian")]
+    if "neosuperpower" in parts:
+        index = parts.index("neosuperpower")
+        if len(parts) <= index + 2 or parts[index + 1] not in NEOSUPERPOWER_CHILDREN:
+            return [
+                _error(
+                    path,
+                    "path",
+                    "neosuperpower docs must be under plans/, specs/, skills/<skill_name>/, reports/, or templates/",
+                )
+            ]
+    return []
 
 
 def _validate_string_list(

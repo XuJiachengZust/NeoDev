@@ -1,6 +1,28 @@
 {
   "version": "0.1.0",
   "mvp_doc_contract": {
+    "directory_structure": {
+      "docs_root": "All controlled Markdown documents live under one docs root. Open this root, not a nested subdirectory, as the Obsidian vault when graph visibility is required.",
+      "top_level": {
+        "prd/": "Product PRD documents.",
+        "prototype/": "Prototype and interaction alignment documents.",
+        "tech-design/": "Technical design documents.",
+        "neosuperpower/": "NeoDev-owned workflow, planning, validation, and skill documents.",
+        "<domain>/": "Product-domain evidence, reports, extracted source documents, and topic-specific notes."
+      },
+      "neosuperpower_children": {
+        "plans/": "Execution plans and task plans.",
+        "specs/": "Design specs and decision records.",
+        "skills/<skill_name>/": "Skill instructions, templates, and skill-local guidance.",
+        "reports/": "Verification reports and run summaries.",
+        "templates/": "Reusable document templates."
+      },
+      "forbidden": [
+        "docs/superpowers/",
+        "nested Obsidian vault roots as the source of truth",
+        "generated controlled docs outside docs_root"
+      ]
+    },
     "required_fields": [
       "aliases",
       "created",

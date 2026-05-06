@@ -30,6 +30,7 @@ REQUIRED_FIELDS = {
 VALID_DOC_TYPES = {"prd", "prototype", "tech-design"}
 VALID_STATUSES = {"draft", "active", "deprecated"}
 DATE_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}")
+NEOSUPERPOWER_CHILDREN = {"plans", "specs", "skills", "reports", "templates"}
 
 
 def validate_paths(paths: list[Path]) -> dict[str, Any]:
@@ -82,6 +83,7 @@ def _validate_file(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any] | N
         return [_error(path, "front_matter", str(exc))], None
 
     errors: list[dict[str, Any]] = []
+    errors.extend(_validate_directory_structure(path))
     if not isinstance(front_matter, dict):
         return [_error(path, "front_matter", "front matter must be a mapping")], None
 
@@ -157,6 +159,25 @@ def _validate_file(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any] | N
                 )
 
     return errors, front_matter
+
+
+def _validate_directory_structure(path: Path) -> list[dict[str, str]]:
+    parts = path.parts
+    if "superpowers" in parts:
+        return [_error(path, "path", "use neosuperpower/, not superpowers/")]
+    if ".obsidian" in parts:
+        return [_error(path, "path", "controlled docs must not live inside .obsidian")]
+    if "neosuperpower" in parts:
+        index = parts.index("neosuperpower")
+        if len(parts) <= index + 2 or parts[index + 1] not in NEOSUPERPOWER_CHILDREN:
+            return [
+                _error(
+                    path,
+                    "path",
+                    "neosuperpower docs must be under plans/, specs/, skills/<skill_name>/, reports/, or templates/",
+                )
+            ]
+    return []
 
 
 def _validate_relation_targets(

@@ -1,6 +1,6 @@
 ---
 name: neodev-rd-knowledge
-description: 使用 NeoDev 远程服务管理研发知识图谱、文档导入、文档关系、Obsidian 可视化链接、DocChange 和代码分支图谱。
+description: 使用 NeoDev 远程服务管理研发知识图谱、文档导入、文档关系、Obsidian 可视化链接、DocChange、NeoSuperpower 工作流和代码分支图谱。
 ---
 
 # NeoDev 研发知识图谱
@@ -17,11 +17,31 @@ neodev config show --json
 neodev cli version-check --json
 ```
 
-Windows 客户端安装示例：
+## 文档目录结构
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/XuJiachengZust/NeoDev/neodev-sp/scripts/install-neodev-client.ps1 -OutFile $env:TEMP\install-neodev-client.ps1; & $env:TEMP\install-neodev-client.ps1 -Server http://10.50.3.149"
-```
+所有受控 Markdown 文档必须位于同一个 `<docs_root>` 下。需要 Obsidian 图谱时，打开 `<docs_root>` 作为 vault，不要打开它的子目录。
+
+标准目录：
+
+- `<docs_root>/prd/`: 产品 PRD。
+- `<docs_root>/prototype/`: 原型和交互对齐文档。
+- `<docs_root>/tech-design/`: 技术设计文档。
+- `<docs_root>/neosuperpower/`: NeoDev 工作流、计划、校验和 skill 文档。
+- `<docs_root>/<domain>/`: 产品域证据、报告、抽取源文档和专题笔记。
+
+`neosuperpower` 子目录：
+
+- `neosuperpower/plans/`: 执行计划和任务计划。
+- `neosuperpower/specs/`: 设计规格和决策记录。
+- `neosuperpower/skills/<skill_name>/`: skill 指令、模板和局部指南。
+- `neosuperpower/reports/`: 验证报告和运行摘要。
+- `neosuperpower/templates/`: 可复用文档模板。
+
+禁止：
+
+- 新增 `docs/superpowers/`。
+- 把嵌套 Obsidian vault 当成源目录。
+- 在 `<docs_root>` 外生成受控文档。
 
 ## 文档关系规则
 

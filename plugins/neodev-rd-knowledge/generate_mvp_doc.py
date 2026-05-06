@@ -15,6 +15,7 @@ from validate_obsidian_docs import validate_paths as validate_obsidian_paths
 
 
 TEMPLATE_PATH = Path(__file__).resolve().parent / "assets" / "templates" / "mvp-doc.md"
+NEOSUPERPOWER_CHILDREN = {"plans", "specs", "skills", "reports", "templates"}
 
 
 def main() -> int:
@@ -32,6 +33,17 @@ def main() -> int:
 
     docs_root = (args.docs_root or _infer_docs_root(args.output)).resolve()
     output = args.output.resolve()
+    structure_errors = _validate_output_location(docs_root, output)
+    if structure_errors:
+        payload = {
+            "ok": False,
+            "checked_count": 0,
+            "output": output.as_posix(),
+            "docs_root": docs_root.as_posix(),
+            "errors": structure_errors,
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+        return 1
     index = _load_doc_index(docs_root)
     index[args.doc_id] = {
         "path": output,
@@ -87,6 +99,34 @@ def _infer_docs_root(output: Path) -> Path:
         if candidate.name == "docs":
             return candidate
     return resolved.parent
+
+
+def _validate_output_location(docs_root: Path, output: Path) -> list[dict[str, str]]:
+    try:
+        relative = output.relative_to(docs_root)
+    except ValueError:
+        return [
+            {
+                "field": "output",
+                "message": "generated controlled docs must be inside docs_root",
+            }
+        ]
+    parts = relative.parts
+    if not parts:
+        return [{"field": "output", "message": "output must be a file path under docs_root"}]
+    if any(part == "superpowers" for part in parts):
+        return [{"field": "output", "message": "use neosuperpower/, not superpowers/"}]
+    if ".obsidian" in parts:
+        return [{"field": "output", "message": "do not generate controlled docs inside .obsidian"}]
+    if parts[0] == "neosuperpower":
+        if len(parts) < 3 or parts[1] not in NEOSUPERPOWER_CHILDREN:
+            return [
+                {
+                    "field": "output",
+                    "message": "neosuperpower docs must be under plans/, specs/, skills/<skill_name>/, reports/, or templates/",
+                }
+            ]
+    return []
 
 
 def _load_doc_index(docs_root: Path) -> dict[str, dict[str, str | Path]]:
