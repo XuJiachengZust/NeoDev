@@ -98,6 +98,8 @@ The import service chunks documents.
     assert result["chunk_count"] >= 1
     assert embedded
     assert result["documents"][0]["relative_path"] == "neosuperpower/plans/guide.md"
+    assert "body_text" not in result["documents"][0]
+    assert "front_matter_json" not in result["documents"][0]
 
 
 def test_import_binding_persists_last_document_commit(monkeypatch):

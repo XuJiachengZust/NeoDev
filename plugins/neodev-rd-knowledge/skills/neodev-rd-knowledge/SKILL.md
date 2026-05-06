@@ -84,6 +84,7 @@ python plugins/neodev-rd-knowledge/validate_obsidian_docs.py <docs_path>
 ## 边界
 
 - 文档关系写入先维护源文件，再通过 CLI import 验证并写入文档 Git commit。
+- `doc import` 返回轻量文档摘要，并由服务投影 `Project -[:HAS_DOCUMENT]-> Document` 归属关系。
 - 导入文档前先通过 `doc binding list` 获取 `doc_binding_id`；若产品没有 active 文档绑定，使用 `doc binding create` 创建，不要直接写数据库。
 - DocChange-ID 默认使用文档 Git commit hash；提交代码时 `DocChange-ID` trailer 也应填写该 40 位 commit hash。
 - 代码图谱刷新只使用 `project refresh-graph --branch`。

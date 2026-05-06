@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
+
+from service.repositories import project_repository
 
 
 def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, Any]:
     config, database = _load_config()
     if not config or not config.get("neo4j_uri"):
         return {"status": "not_configured"}
+    project = resolve_document_project(conn, binding)
     driver = _create_driver(config)
     try:
         with driver.session(database=database) as session:
@@ -36,6 +40,39 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                 content_hash=document.get("content_hash") or "",
                 updated_at=datetime.now(timezone.utc).isoformat(),
             )
+            if project:
+                session.run(
+                    """
+                    MATCH (d:Document {doc_id: $doc_id, product_id: $product_id})
+                    MERGE (p:Project {project_id: $project_id})
+                    SET p.id = coalesce(p.id, $project_node_id),
+                        p.name = coalesce(p.name, $project_name, $project_node_id),
+                        p.repo_path = coalesce(p.repo_path, $project_repo_path),
+                        p.repo_url = coalesce(p.repo_url, $project_repo_url),
+                        p.product_id = coalesce(p.product_id, $product_id),
+                        d.project_id = $project_id
+                    MERGE (p)-[r:HAS_DOCUMENT {
+                        doc_binding_id: $doc_binding_id,
+                        doc_id: $doc_id
+                    }]->(d)
+                    SET r.product_id = $product_id,
+                        r.project_id = $project_id,
+                        r.document_id = $document_id,
+                        r.relative_path = $relative_path,
+                        r.updated_at = $updated_at
+                    """,
+                    project_id=project["id"],
+                    project_node_id=f"project:{project['id']}",
+                    project_name=project.get("name") or f"project:{project['id']}",
+                    project_repo_path=project.get("repo_path") or "",
+                    project_repo_url=project.get("repo_url") or "",
+                    document_id=document["id"],
+                    doc_binding_id=binding["id"],
+                    product_id=binding["product_id"],
+                    doc_id=document["doc_id"],
+                    relative_path=document.get("relative_path") or "",
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
             targets = ((document.get("relations_json") or {}).get("target") or [])
             for target in targets:
                 session.run(
@@ -50,7 +87,41 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                 )
     finally:
         driver.close()
-    return {"status": "updated"}
+    return {"status": "updated", "project_id": project["id"] if project else None}
+
+
+def resolve_document_project(conn, binding: dict) -> dict | None:
+    binding_product_id = binding.get("product_id")
+    binding_repo_url = _normalized_text(binding.get("repo_url"))
+    binding_repo_path = _normalized_text(binding.get("repo_path"))
+    binding_repo_name = _repo_name(binding_repo_path)
+    candidates = project_repository.list_all(conn)
+    for project in candidates:
+        if binding_product_id is not None and project.get("product_id") != binding_product_id:
+            continue
+        project_repo_url = _normalized_text(project.get("repo_url"))
+        project_repo_path = _normalized_text(project.get("repo_path"))
+        if binding_repo_url and binding_repo_url in {project_repo_url, project_repo_path}:
+            return project
+        if binding_repo_path and binding_repo_path in {project_repo_url, project_repo_path}:
+            return project
+        if binding_repo_name and _normalized_text(project.get("name")) == binding_repo_name:
+            return project
+    return None
+
+
+def _normalized_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _repo_name(path_or_url: str) -> str:
+    text = _normalized_text(path_or_url).rstrip("/\\")
+    if not text:
+        return ""
+    text = text[:-4] if text.endswith(".git") else text
+    posix_name = PurePosixPath(text.replace("\\", "/")).name
+    windows_name = PureWindowsPath(text).name
+    return (posix_name or windows_name).strip()
 
 
 def _load_config() -> tuple[dict | None, str | None]:

@@ -94,7 +94,7 @@ def import_binding(conn, doc_binding_id: int, *, force: bool = False) -> dict[st
             chunk_count += len(persisted_chunks)
             embedded_count += int(vector_stats.get("embedded_count") or 0)
             reused_count += int(vector_stats.get("reused_count") or 0)
-            imported.append({**document, "chunk_count": len(persisted_chunks)})
+            imported.append(_document_import_summary(document, len(persisted_chunks)))
         except DocumentValidationError as exc:
             errors.append(_record_error(conn, binding["id"], relative_path, exc.message, exc.details))
         except Exception as exc:  # noqa: BLE001
@@ -205,6 +205,23 @@ def _read_markdown_document(path: Path) -> dict[str, Any]:
 def _content_hash(front_matter: dict, body_text: str) -> str:
     raw = yaml.safe_dump(front_matter, sort_keys=True, allow_unicode=True) + "\0" + body_text
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _document_import_summary(document: dict, chunk_count: int) -> dict[str, Any]:
+    return {
+        "id": document.get("id"),
+        "doc_binding_id": document.get("doc_binding_id"),
+        "doc_id": document.get("doc_id"),
+        "relative_path": document.get("relative_path"),
+        "doc_type": document.get("doc_type"),
+        "title": document.get("title"),
+        "status": document.get("status"),
+        "last_seen_commit": document.get("last_seen_commit"),
+        "content_hash": document.get("content_hash"),
+        "graph_status": document.get("graph_status"),
+        "chunk_status": document.get("chunk_status"),
+        "chunk_count": chunk_count,
+    }
 
 
 def _record_error(conn, binding_id: int, relative_path: str, message: str, details: dict) -> dict:
