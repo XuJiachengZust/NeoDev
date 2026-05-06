@@ -1,0 +1,3 @@
+FROM neodev-postgres-base:latest
+
+COPY docker/init.sql /docker-entrypoint-initdb.d/001_init.sql
