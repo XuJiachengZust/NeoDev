@@ -444,3 +444,13 @@ def test_github_powershell_installer_supports_one_line_remote_install():
     assert "config set-server" in text
     assert "neodev.cmd" in text
     assert "_render_payload" in text
+
+
+def test_windows_cmd_installer_bypasses_powershell_execution_policy():
+    script = ROOT / "scripts" / "install-neodev-client.cmd"
+    text = script.read_text(encoding="utf-8")
+
+    assert "powershell.exe" in text
+    assert "-NoProfile" in text
+    assert "-ExecutionPolicy Bypass" in text
+    assert "install-neodev-client.ps1" in text

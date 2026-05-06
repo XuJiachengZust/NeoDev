@@ -129,7 +129,7 @@ def test_doc_scan_cli_missing_binding_returns_not_found(pg_conn):
 def test_doc_change_register_cli_creates_pending_change(pg_conn):
     token = uuid.uuid4().hex[:8]
     _, document = _create_doc_binding_and_document(pg_conn, f"CHGREG-{token}")
-    doc_change_id = f"DC-CLI-{token}"
+    doc_change_id = "a" * 40
 
     proc = _run_cli(
         "doc",
@@ -164,7 +164,7 @@ def test_doc_change_register_cli_creates_pending_change(pg_conn):
 def test_doc_change_show_cli_returns_change_and_document(pg_conn):
     token = uuid.uuid4().hex[:8]
     _, document = _create_doc_binding_and_document(pg_conn, f"CHGSHOW-{token}")
-    doc_change_id = f"DC-SHOW-{token}"
+    doc_change_id = "b" * 40
     register = _run_cli(
         "doc",
         "change",
@@ -190,7 +190,7 @@ def test_doc_change_show_cli_returns_change_and_document(pg_conn):
 def test_doc_change_mark_implemented_cli_is_idempotent(pg_conn):
     token = uuid.uuid4().hex[:8]
     _, document = _create_doc_binding_and_document(pg_conn, f"CHGIMPL-{token}")
-    doc_change_id = f"DC-IMPL-{token}"
+    doc_change_id = "c" * 40
     register = _run_cli(
         "doc",
         "change",
@@ -238,7 +238,7 @@ def test_doc_change_register_cli_missing_document_returns_not_found(pg_conn):
         "--document-id",
         "99999999",
         "--doc-change-id",
-        f"DC-MISSING-{uuid.uuid4().hex[:8]}",
+        "d" * 40,
         "--json",
     )
 

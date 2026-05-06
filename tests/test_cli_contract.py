@@ -280,6 +280,13 @@ def test_product_version_code_fact_commands_are_registered():
     assert "--relation-type" in link.stdout
     assert "--code-project-id" in link.stdout
 
+    unbind = _run("neodev.py", "product", "version", "unbind-branch", "--help")
+    assert unbind.returncode == 0
+    assert "--project-id" in unbind.stdout
+    assert "--project-name" in unbind.stdout
+    assert "--branch" not in unbind.stdout
+    assert "--json" in unbind.stdout
+
     facts = _run("neodev.py", "product", "version", "code-facts", "--help")
     assert facts.returncode == 0
     assert "--doc-id" in facts.stdout

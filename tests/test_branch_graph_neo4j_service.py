@@ -8,6 +8,9 @@ class FakeResult:
     def single(self):
         return self._row
 
+    def __iter__(self):
+        return iter([])
+
 
 class FakeTx:
     def __init__(self, session):
@@ -210,3 +213,113 @@ def test_rebuild_doc_code_links_targets_real_nodes(monkeypatch):
     assert "MATCH (code:CodeNode {id: link.scoped_code_node_id})" in link_call[0]
     assert link_call[1]["links"][0]["code_label"] == "Function"
     assert "GraphNode" not in link_call[0]
+
+
+def test_upsert_doc_code_link_writes_single_link_when_code_node_exists(monkeypatch):
+    from service.services import branch_graph_neo4j_service
+
+    class LinkTx(FakeTx):
+        def run(self, query, **kwargs):
+            self.session.calls.append((query, kwargs))
+            if "RETURN count(code) AS count" in query:
+                return FakeResult({"count": 1})
+            if "RETURN count(r) AS written" in query:
+                return FakeResult({"written": 1})
+            return FakeResult()
+
+    class LinkSession(FakeSession):
+        def execute_write(self, fn, **kwargs):
+            return fn(LinkTx(self), **kwargs)
+
+    class LinkDriver(FakeDriver):
+        def session(self, database=None):
+            session = LinkSession()
+            self.sessions.append(session)
+            return session
+
+    driver = LinkDriver()
+    monkeypatch.setattr(branch_graph_neo4j_service, "_create_driver", lambda config: driver)
+
+    result = branch_graph_neo4j_service.upsert_doc_code_link(
+        config={"neo4j_uri": "bolt://neo4j:7687"},
+        database=None,
+        project_id=3,
+        branch_name="release/V1",
+        graph_id=9,
+        link={
+            "id": 7,
+            "doc_id": "doc-1",
+            "doc_node_id": "section-1",
+            "relation_type": "IMPLEMENTS",
+            "code_locator_json": {"code_node_id": "Function:src/app.py:main"},
+            "source": "manual",
+            "confidence": 0.9,
+        },
+    )
+
+    all_calls = [call for session in driver.sessions for call in session.calls]
+    assert result == {
+        "status": "linked",
+        "written": 1,
+        "code_node_id": "Function:src/app.py:main",
+        "scoped_code_node_id": "project:3:branch:release/V1:node:Function:src/app.py:main",
+    }
+    assert any("MATCH (code:CodeNode {id: $scoped_code_node_id})" in call[0] for call in all_calls)
+    assert any("MERGE (doc)-[r:LINKS_TO_CODE {id: link.id}]->(code)" in call[0] for call in all_calls)
+
+
+def test_upsert_doc_code_link_reports_missing_code_node(monkeypatch):
+    from service.services import branch_graph_neo4j_service
+
+    driver = FakeDriver()
+    monkeypatch.setattr(branch_graph_neo4j_service, "_create_driver", lambda config: driver)
+
+    result = branch_graph_neo4j_service.upsert_doc_code_link(
+        config={"neo4j_uri": "bolt://neo4j:7687"},
+        database=None,
+        project_id=3,
+        branch_name="release/V1",
+        graph_id=9,
+        link={
+            "id": 7,
+            "doc_id": "doc-1",
+            "code_locator_json": {"code_node_id": "Function:missing"},
+        },
+    )
+
+    assert result["status"] == "code_node_not_found"
+    assert result["written"] == 0
+
+
+def test_delete_doc_code_link_removes_relationship(monkeypatch):
+    from service.services import branch_graph_neo4j_service
+
+    class DeleteTx(FakeTx):
+        def run(self, query, **kwargs):
+            self.session.calls.append((query, kwargs))
+            if "RETURN count(r) AS deleted" in query:
+                return FakeResult({"deleted": 1})
+            return FakeResult()
+
+    class DeleteSession(FakeSession):
+        def execute_write(self, fn, **kwargs):
+            return fn(DeleteTx(self), **kwargs)
+
+    class DeleteDriver(FakeDriver):
+        def session(self, database=None):
+            session = DeleteSession()
+            self.sessions.append(session)
+            return session
+
+    driver = DeleteDriver()
+    monkeypatch.setattr(branch_graph_neo4j_service, "_create_driver", lambda config: driver)
+
+    result = branch_graph_neo4j_service.delete_doc_code_link(
+        config={"neo4j_uri": "bolt://neo4j:7687"},
+        database=None,
+        link_id=7,
+    )
+
+    all_calls = [call for session in driver.sessions for call in session.calls]
+    assert result == {"status": "deleted", "deleted": 1}
+    assert any("MATCH (:Document)-[r:LINKS_TO_CODE {id: $relationship_id}]->()" in call[0] for call in all_calls)

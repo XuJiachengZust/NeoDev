@@ -33,8 +33,7 @@
     "defaultPrompt": [
       "用 NeoDev 分析这个 DocChange。",
       "用 NeoSuperpower 闭环这个文档关系和验证流程。",
-      "查询这个版本的 NeoDev 图谱上下文。",
-      "推送前用 NeoDev 检查我的提交。"
+      "查询这个版本的 NeoDev 图谱上下文。"
     ],
     "brandColor": "#2563EB"
   },

@@ -2,8 +2,31 @@ from service.cli.errors import CliError
 from service.services import doc_change_service
 
 
-def test_register_doc_change_generates_id_when_missing(monkeypatch):
+def test_register_doc_change_requires_document_commit_when_id_missing(monkeypatch):
     document = {"id": 17, "doc_id": "REQ-17"}
+
+    monkeypatch.setattr(
+        doc_change_service.document_repository,
+        "find_by_id",
+        lambda conn, document_id: document if document_id == 17 else None,
+    )
+
+    try:
+        doc_change_service.register_doc_change(
+            object(),
+            document_id=17,
+            doc_change_id=None,
+        )
+    except CliError as exc:
+        assert exc.category == "invalid_scope"
+        assert exc.message == "document commit is required for DocChange-ID"
+    else:
+        raise AssertionError("expected CliError")
+
+
+def test_register_doc_change_defaults_to_document_commit(monkeypatch):
+    commit_hash = "b" * 40
+    document = {"id": 17, "doc_id": "REQ-17", "last_seen_commit": commit_hash}
     created_rows = []
 
     monkeypatch.setattr(
@@ -22,11 +45,35 @@ def test_register_doc_change_generates_id_when_missing(monkeypatch):
         object(),
         document_id=17,
         doc_change_id=None,
+        source_commit=None,
     )
 
-    assert result["doc_change"]["document_id"] == 17
-    assert result["doc_change"]["doc_change_id"].startswith("DC-REQ-17-")
-    assert created_rows[0]["status"] == "pending_implementation"
+    assert result["doc_change"]["doc_change_id"] == commit_hash
+    assert result["doc_change"]["source_commit"] == commit_hash
+    assert created_rows[0]["doc_change_id"] == commit_hash
+    assert created_rows[0]["source_commit"] == commit_hash
+
+
+def test_register_doc_change_rejects_non_commit_doc_change_id(monkeypatch):
+    document = {"id": 17, "doc_id": "REQ-17", "last_seen_commit": "b" * 40}
+
+    monkeypatch.setattr(
+        doc_change_service.document_repository,
+        "find_by_id",
+        lambda conn, document_id: document if document_id == 17 else None,
+    )
+
+    try:
+        doc_change_service.register_doc_change(
+            object(),
+            document_id=17,
+            doc_change_id="DC-REQ-17",
+        )
+    except CliError as exc:
+        assert exc.category == "invalid_argument"
+        assert exc.message == "DocChange-ID must be a 40-character document commit hash"
+    else:
+        raise AssertionError("expected CliError")
 
 
 def test_show_doc_change_returns_document(monkeypatch):

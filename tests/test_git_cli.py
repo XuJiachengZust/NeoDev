@@ -79,6 +79,7 @@ def _make_product(conn, code: str) -> int:
 
 def test_git_verify_doc_change_creates_link_and_updates_status(pg_conn):
     token = uuid.uuid4().hex[:8]
+    doc_commit = "d" * 40
     with closing(_connect_fresh()) as conn:
         project_id = _make_project(conn, f"git-verify-project-{token}")
         product_id = _make_product(conn, f"GITVERIFY-{token}")
@@ -96,11 +97,12 @@ def test_git_verify_doc_change_creates_link_and_updates_status(pg_conn):
         change = doc_change_repository.create(
             conn,
             document_id=document["id"],
-            doc_change_id=f"DC-GIT-{token}",
+            doc_change_id=doc_commit,
+            source_commit=doc_commit,
         )
         conn.commit()
 
-    commit_message = f"feat: implement git verification\n\nDocChange-ID: DC-GIT-{token}\n"
+    commit_message = f"feat: implement git verification\n\nDocChange-ID: {doc_commit}\n"
     commit_sha = "a" * 40
     proc = _run_cli(
         "git",
@@ -121,7 +123,7 @@ def test_git_verify_doc_change_creates_link_and_updates_status(pg_conn):
     assert payload["ok"] is True
     assert payload["command"] == "git verify-doc-change"
     data = payload["data"]
-    assert data["doc_change_id"] == f"DC-GIT-{token}"
+    assert data["doc_change_id"] == doc_commit
     assert data["verification_status"] == "verified"
     assert data["doc_change_status"] == "in_implementation"
     assert data["next_status"] == "in_implementation"

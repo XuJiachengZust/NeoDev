@@ -33,10 +33,36 @@ def _patch_valid_scope(monkeypatch):
     )
 
 
-def test_entity_context_returns_storage_removed_degraded_result(monkeypatch):
+def test_entity_context_reads_current_branch_graph_from_neo4j(monkeypatch):
     from service.services import graph_query_service
 
     _patch_valid_scope(monkeypatch)
+    monkeypatch.setattr(
+        graph_query_service.branch_graph_repository,
+        "get_by_project_branch",
+        lambda conn, project_id, branch: {
+            "id": 91,
+            "status": "ready",
+            "head_commit": "abc",
+            "node_count": 3,
+            "edge_count": 2,
+        },
+    )
+    monkeypatch.setattr(
+        graph_query_service.neo4j_config_service,
+        "load_neo4j_config",
+        lambda project: ({"neo4j_uri": "bolt://neo4j:7687"}, None),
+    )
+    monkeypatch.setattr(
+        graph_query_service.branch_graph_neo4j_service,
+        "entity_context",
+        lambda **kwargs: {
+            "entity": {"id": "project:11:branch:release/V1.0:node:Function:auth:login", "node_id": "Function:auth:login"},
+            "neighbors": [{"id": "project:11:branch:release/V1.0:node:File:auth.py", "node_id": "File:auth.py"}],
+            "edges": [{"type": "CONTAINS"}],
+            "context_summary": ["Function:auth:login"],
+        },
+    )
 
     result = graph_query_service.entity_context(
         object(),
@@ -47,22 +73,42 @@ def test_entity_context_returns_storage_removed_degraded_result(monkeypatch):
         depth=1,
     )
 
-    assert result["entity"] is None
-    assert result["neighbors"] == []
-    assert result["edges"] == []
-    assert result["degraded_reasons"] == [
-        {
-            "project_id": 11,
-            "branch": "release/V1.0",
-            "reason": "code_node_storage_removed",
-        }
-    ]
+    assert result["entity"]["node_id"] == "Function:auth:login"
+    assert result["neighbors"][0]["node_id"] == "File:auth.py"
+    assert result["edges"] == [{"type": "CONTAINS"}]
+    assert result["degraded_reasons"] == []
 
 
-def test_get_chain_returns_storage_removed_empty_chain(monkeypatch):
+def test_get_chain_reads_current_branch_graph_from_neo4j(monkeypatch):
     from service.services import graph_query_service
 
     _patch_valid_scope(monkeypatch)
+    monkeypatch.setattr(
+        graph_query_service.branch_graph_repository,
+        "get_by_project_branch",
+        lambda conn, project_id, branch: {
+            "id": 91,
+            "status": "ready",
+            "head_commit": "abc",
+            "node_count": 3,
+            "edge_count": 2,
+        },
+    )
+    monkeypatch.setattr(
+        graph_query_service.neo4j_config_service,
+        "load_neo4j_config",
+        lambda project: ({"neo4j_uri": "bolt://neo4j:7687"}, None),
+    )
+    monkeypatch.setattr(
+        graph_query_service.branch_graph_neo4j_service,
+        "get_chain",
+        lambda **kwargs: {
+            "start_node": {"id": "project:11:branch:release/V1.0:node:Function:auth:login", "node_id": "Function:auth:login"},
+            "nodes": [{"node_id": "Function:auth:login"}],
+            "edges": [{"type": "CALLS"}],
+            "path_summary": ["Function:auth:login"],
+        },
+    )
 
     result = graph_query_service.get_chain(
         object(),
@@ -73,12 +119,12 @@ def test_get_chain_returns_storage_removed_empty_chain(monkeypatch):
         depth=2,
     )
 
-    assert result["start_node"] is None
-    assert result["snapshot_id"] is None
-    assert result["head_commit"] is None
-    assert result["nodes"] == []
-    assert result["edges"] == []
-    assert result["degraded_reasons"][0]["reason"] == "code_node_storage_removed"
+    assert result["start_node"]["node_id"] == "Function:auth:login"
+    assert result["snapshot_id"] == 91
+    assert result["head_commit"] == "abc"
+    assert result["nodes"] == [{"node_id": "Function:auth:login"}]
+    assert result["edges"] == [{"type": "CALLS"}]
+    assert result["degraded_reasons"] == []
 
 
 def test_get_chain_requires_exactly_one_start_locator(monkeypatch):

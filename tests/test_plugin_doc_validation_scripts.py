@@ -37,6 +37,29 @@ related:
 """.strip()
 
 
+def _write_related_pair(
+    root: Path,
+    *,
+    source_id: str = "DOC-001",
+    target_id: str = "TECH-001",
+    source_link: str = "[[prd/valid|Valid Document]]",
+) -> None:
+    _write_doc(
+        root / "tech-design" / "target.md",
+        f"""
+doc_id: {target_id}
+title: Target Document
+{_obsidian_properties("Target Document").replace("[[TECH-001]]", source_link)}
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+    - {source_id}
+""".strip(),
+    )
+
+
 def _run_script(script: Path, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, str(script), *args],
@@ -60,6 +83,7 @@ def test_validate_mvp_docs_accepts_valid_controlled_documents():
 
 
 def _assert_validate_mvp_docs_accepts_valid_controlled_documents(tmp_path: Path):
+    _write_related_pair(tmp_path)
     _write_doc(
         tmp_path / "prd" / "valid.md",
         f"""
@@ -79,7 +103,7 @@ relations:
 
     payload = _json_stdout(result)
     assert result.returncode == 0
-    assert payload == {"ok": True, "checked_count": 1, "errors": []}
+    assert payload == {"ok": True, "checked_count": 2, "errors": []}
 
 
 def test_validate_mvp_docs_rejects_missing_required_fields():
@@ -272,6 +296,12 @@ def test_generate_mvp_doc_writes_and_validates_output():
 
 def _assert_generate_mvp_doc_writes_and_validates_output(tmp_path: Path):
     output = tmp_path / "prd" / "generated.md"
+    _write_related_pair(
+        tmp_path / "prd",
+        source_id="DOC-GEN-001",
+        target_id="TECH-001",
+        source_link="[[generated|Generated PRD]]",
+    )
 
     result = _run_script(
         GENERATOR,
@@ -285,6 +315,8 @@ def _assert_generate_mvp_doc_writes_and_validates_output(tmp_path: Path):
         "NEODEV",
         "--target",
         "TECH-001",
+        "--docs-root",
+        str(tmp_path / "prd"),
         "--output",
         str(output),
     )
@@ -292,7 +324,7 @@ def _assert_generate_mvp_doc_writes_and_validates_output(tmp_path: Path):
     payload = _json_stdout(result)
     assert result.returncode == 0
     assert payload["ok"] is True
-    assert payload["checked_count"] == 1
+    assert payload["mvp"]["checked_count"] == 2
     generated = output.read_text(encoding="utf-8")
     assert "doc_id: DOC-GEN-001" in generated
     assert "aliases:" in generated
@@ -303,22 +335,23 @@ def _assert_generate_mvp_doc_writes_and_validates_output(tmp_path: Path):
 
 
 def test_check_docchange_trailer_accepts_single_valid_trailer():
+    commit_hash = "d" * 40
     result = _run_script(
         TRAILER_CHECKER,
         "--message",
-        "feat: implement\n\nDocChange-ID: DC-NEODEV-001",
+        f"feat: implement\n\nDocChange-ID: {commit_hash}",
     )
 
     payload = _json_stdout(result)
     assert result.returncode == 0
     assert payload["ok"] is True
-    assert payload["doc_change_id"] == "DC-NEODEV-001"
+    assert payload["doc_change_id"] == commit_hash
 
 
 def test_check_docchange_trailer_rejects_missing_duplicate_and_malformed():
     messages = [
         "feat: missing",
-        "fix: dup\n\nDocChange-ID: DC-ONE\nDocChange-ID: DC-TWO",
+        f"fix: dup\n\nDocChange-ID: {'a' * 40}\nDocChange-ID: {'b' * 40}",
         "fix: malformed\n\nDocChange-ID: NOT-A-DC",
     ]
 

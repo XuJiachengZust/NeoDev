@@ -1,6 +1,9 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from service.repositories import branch_graph_repository
+from service.services import branch_graph_neo4j_service
+from service.services import neo4j_config_service
 from service.services import product_service
 from service.services import product_version_service
 from service.services import project_service
@@ -30,17 +33,29 @@ def entity_context(
         raise GraphQueryError(category="invalid_argument", message="entity_id is required")
     depth = _validate_depth(depth, max_depth=3)
     context = _validate_scope(conn, product_version_id, project_id, branch)
+    graph = _require_ready_graph(conn, project_id, context["branch"])
+    neo4j_config, neo4j_database = _load_neo4j_config(context["project"])
+    neo4j_result = branch_graph_neo4j_service.entity_context(
+        config=neo4j_config,
+        database=neo4j_database,
+        project_id=project_id,
+        branch_name=context["branch"],
+        entity_id=entity_id,
+        depth=depth,
+    )
     return {
         "product_version_id": product_version_id,
         "project_id": project_id,
         "project_name": context["project"].get("name"),
         "branch": context["branch"],
+        "snapshot_id": graph["id"],
+        "head_commit": graph.get("head_commit"),
         "depth": depth,
-        "entity": None,
-        "neighbors": [],
-        "edges": [],
-        "context_summary": [],
-        "degraded_reasons": [_code_storage_removed_reason(project_id, context["branch"])],
+        "entity": neo4j_result.get("entity"),
+        "neighbors": neo4j_result.get("neighbors") or [],
+        "edges": neo4j_result.get("edges") or [],
+        "context_summary": neo4j_result.get("context_summary") or [],
+        "degraded_reasons": [],
     }
 
 
@@ -64,13 +79,28 @@ def get_chain(
         commit_sha=commit_sha,
     )
     context = _validate_scope(conn, product_version_id, project_id, branch)
-    return _empty_chain(
-        branch=context["branch"],
+    graph = _require_ready_graph(conn, project_id, context["branch"])
+    neo4j_config, neo4j_database = _load_neo4j_config(context["project"])
+    neo4j_result = branch_graph_neo4j_service.get_chain(
+        config=neo4j_config,
+        database=neo4j_database,
+        project_id=project_id,
+        branch_name=context["branch"],
+        locator=locator,
         depth=depth,
-        snapshot_id=None,
-        head_commit=None,
-        degraded_reason=_code_storage_removed_reason(project_id, context["branch"]),
     )
+    return {
+        "start_node": neo4j_result.get("start_node"),
+        "snapshot_id": graph["id"],
+        "branch": context["branch"],
+        "head_commit": graph.get("head_commit"),
+        "depth": depth,
+        "nodes": neo4j_result.get("nodes") or [],
+        "edges": neo4j_result.get("edges") or [],
+        "path_summary": neo4j_result.get("path_summary") or [],
+        "affected_commits": [],
+        "degraded_reasons": [],
+    }
 
 
 def _validate_scope(conn, product_version_id: int, project_id: int, branch: str) -> dict[str, Any]:
@@ -172,31 +202,29 @@ def _validate_chain_locator(
     return {"type": key, "value": value}
 
 
-def _code_storage_removed_reason(project_id: int, branch: str) -> dict[str, Any]:
-    return {
-        "project_id": project_id,
-        "branch": branch,
-        "reason": "code_node_storage_removed",
-    }
+def _require_ready_graph(conn, project_id: int, branch: str) -> dict[str, Any]:
+    graph = branch_graph_repository.get_by_project_branch(conn, project_id, branch)
+    if not graph:
+        raise GraphQueryError(
+            category="not_found",
+            message="branch graph not found",
+            details={"project_id": project_id, "branch": branch},
+        )
+    if graph.get("status") != "ready":
+        raise GraphQueryError(
+            category="not_ready",
+            message="branch graph is not ready",
+            details={"project_id": project_id, "branch": branch, "status": graph.get("status")},
+        )
+    return graph
 
 
-def _empty_chain(
-    *,
-    branch: str,
-    depth: int,
-    snapshot_id: int | None,
-    head_commit: str | None,
-    degraded_reason: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        "start_node": None,
-        "snapshot_id": snapshot_id,
-        "branch": branch,
-        "head_commit": head_commit,
-        "depth": depth,
-        "nodes": [],
-        "edges": [],
-        "path_summary": [],
-        "affected_commits": [],
-        "degraded_reasons": [degraded_reason],
-    }
+def _load_neo4j_config(project: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+    neo4j_config, neo4j_database = neo4j_config_service.load_neo4j_config(project)
+    if not neo4j_config:
+        raise GraphQueryError(
+            category="invalid_config",
+            message="Neo4j is not configured",
+            details={"project_id": project.get("id")},
+        )
+    return neo4j_config, neo4j_database

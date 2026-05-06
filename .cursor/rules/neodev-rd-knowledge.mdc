@@ -16,9 +16,9 @@ Do not write PostgreSQL directly. Do not write Neo4j directly. Do not replace th
 
 Use `neodev ... --json` and reason from structured payloads returned by the remote service.
 
-Superpowers expectations:
+NeoSuperpower expectations:
 
-- Use `superpowers:brainstorming` before requirements or design work.
-- Use `superpowers:test-driven-development` before implementation changes.
-- Use `superpowers:systematic-debugging` for failures or unexpected behavior.
-- Use `superpowers:verification-before-completion` before completion, commit, or push.
+- Use `neosuperpower:requirements-or-design` before requirements or design work.
+- Use `neosuperpower:implementation` before implementation changes.
+- Use `neosuperpower:failure-investigation` for failures or unexpected behavior.
+- Use `neosuperpower:verification-before-completion` before completion, commit, or push.

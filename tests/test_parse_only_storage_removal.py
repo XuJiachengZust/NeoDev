@@ -152,10 +152,13 @@ def test_product_cli_code_storage_commands_are_noops(monkeypatch):
 
     version = {"id": 23, "product_id": 5, "version_name": "V1"}
     product = {"id": 5, "name": "Product"}
-    project = {"id": 7, "name": "Code Project"}
+    project = {"id": 7, "name": "Code Project", "neo4j_database": None}
+    graph = {"id": 91, "status": "ready", "branch_name": "release/V2.0"}
+    neo4j_actions = []
 
     monkeypatch.setattr(product_command, "_resolve_version", lambda conn, args: version)
     monkeypatch.setattr(product_command.product_service, "get_product", lambda conn, product_id: product)
+    monkeypatch.setattr(product_command.project_service, "get_project", lambda conn, project_id: project)
     monkeypatch.setattr(product_command, "_resolve_project", lambda conn, args: project)
     monkeypatch.setattr(product_command, "_with_db", lambda callback: callback(object()))
 
@@ -163,17 +166,86 @@ def test_product_cli_code_storage_commands_are_noops(monkeypatch):
         return {"id": 31, **kwargs, "status": "active"}
 
     def fake_unbind_code_link(conn, **kwargs):
-        return {"id": kwargs["link_id"], "status": "inactive"}
+        return {
+            "id": kwargs["link_id"],
+            "project_id": 7,
+            "branch_name": "release/V2.0",
+            "status": "inactive",
+        }
 
     monkeypatch.setattr(product_command.product_version_service, "bind_code_link", fake_bind_code_link)
     monkeypatch.setattr(product_command.product_version_service, "unbind_code_link", fake_unbind_code_link)
+    monkeypatch.setattr(
+        product_command.product_version_service,
+        "get_bound_branch",
+        lambda conn, product_version_id, project_id: {
+            "product_version_id": product_version_id,
+            "project_id": project_id,
+            "branch_name": "release/V2.0",
+            "branch": "release/V2.0",
+        },
+    )
+    monkeypatch.setattr(
+        product_command.product_version_service,
+        "list_branches",
+        lambda conn, version_id: [
+            {
+                "product_version_id": version_id,
+                "project_id": 7,
+                "branch_name": "release/V2.0",
+                "branch": "release/V2.0",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        product_command.product_version_service,
+        "remove_branch",
+        lambda conn, version_id, project_id: True,
+    )
+    monkeypatch.setattr(
+        product_command.branch_graph_repo,
+        "get_by_project_branch",
+        lambda conn, project_id, branch_name: graph,
+    )
+    monkeypatch.setattr(
+        product_command.neo4j_config_service,
+        "load_neo4j_config",
+        lambda project: ({"neo4j_uri": "bolt://neo4j:7687"}, None),
+    )
+    monkeypatch.setattr(
+        product_command.branch_graph_neo4j_service,
+        "code_node_exists",
+        lambda **kwargs: kwargs["code_node_id"] == "Function:src/a.py:handle",
+    )
+    monkeypatch.setattr(
+        product_command.branch_graph_neo4j_service,
+        "upsert_doc_code_link",
+        lambda **kwargs: neo4j_actions.append(("upsert", kwargs)) or {"status": "linked", "written": 1},
+    )
+    monkeypatch.setattr(
+        product_command.branch_graph_neo4j_service,
+        "delete_doc_code_link",
+        lambda **kwargs: neo4j_actions.append(("delete", kwargs)) or {"status": "deleted", "deleted": 1},
+    )
+    monkeypatch.setattr(
+        product_command.branch_graph_neo4j_service,
+        "list_doc_code_facts",
+        lambda **kwargs: [
+            {
+                "doc_id": "DOC-1",
+                "doc_node_id": "section-1",
+                "relation_type": "IMPLEMENTS",
+                "code_node": {"node_id": "Function:src/a.py:handle"},
+            }
+        ],
+    )
 
     facts_payload = product_command.handle_version_code_facts(
         SimpleNamespace(command_name="product version code-facts", doc_id=None, node_types=["Function"])
     )
     assert facts_payload["ok"] is True
-    assert facts_payload["data"]["code_facts"] == []
-    assert facts_payload["data"]["storage_status"] == "removed"
+    assert facts_payload["data"]["code_facts"][0]["code_node"]["node_id"] == "Function:src/a.py:handle"
+    assert facts_payload["data"]["storage_status"] == "neo4j"
 
     link_payload = product_command.handle_version_link_code(
         SimpleNamespace(
@@ -194,7 +266,13 @@ def test_product_cli_code_storage_commands_are_noops(monkeypatch):
     assert link_payload["ok"] is True
     assert link_payload["data"]["link"]["id"] == 31
     assert link_payload["data"]["link_action"] == "bind"
+    assert link_payload["data"]["mutation_action"] == "bind"
+    assert link_payload["data"]["mutation_target"] == "code_link"
+    assert link_payload["data"]["mutation_status"] == "active"
+    assert link_payload["data"]["graph_status"] == "ready"
+    assert link_payload["data"]["neo4j_link"]["status"] == "linked"
     assert link_payload["data"]["code_locator"] == {"code_node_id": "Function:src/a.py:handle"}
+    assert neo4j_actions[-1][0] == "upsert"
 
     unlink_payload = product_command.handle_version_link_code(
         SimpleNamespace(
@@ -214,8 +292,30 @@ def test_product_cli_code_storage_commands_are_noops(monkeypatch):
     )
     assert unlink_payload["ok"] is True
     assert unlink_payload["data"]["link_action"] == "unlink"
+    assert unlink_payload["data"]["mutation_action"] == "unlink"
+    assert unlink_payload["data"]["mutation_target"] == "code_link"
+    assert unlink_payload["data"]["mutation_status"] == "inactive"
     assert unlink_payload["data"]["link_id"] == 12
     assert unlink_payload["data"]["link"]["status"] == "inactive"
+    assert unlink_payload["data"]["neo4j_link"]["status"] == "deleted"
+    assert neo4j_actions[-1][0] == "delete"
+
+    unbind_payload = product_command.handle_version_unbind_branch(
+        SimpleNamespace(
+            command_name="product version unbind-branch",
+            version_id=23,
+            product_id=None,
+            product_code=None,
+            version_name=None,
+            project_id=7,
+            project_name=None,
+        )
+    )
+    assert unbind_payload["ok"] is True
+    assert unbind_payload["data"]["binding_removed"] is True
+    assert unbind_payload["data"]["mutation_action"] == "unbind"
+    assert unbind_payload["data"]["mutation_target"] == "branch"
+    assert unbind_payload["data"]["mutation_status"] == "removed"
 
 
 def test_product_version_bind_branch_auto_refreshes_missing_graph(monkeypatch):

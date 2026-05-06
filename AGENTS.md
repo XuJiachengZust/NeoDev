@@ -1,5 +1,5 @@
 # Repository Guidelines
-
+遵循harness规则
 ## Project Structure & Module Organization
 Core code lives in `src/`. `src/service/` contains the FastAPI app, routers, repositories, services, storage, and workflows. `src/deepagents/` holds agent graph, middleware, and backend adapters. `src/gitnexus_parser/` contains parsing and graph-ingestion logic. Deployment assets live in `docker/`, while root files such as `.env.example`, `docker-compose.yml`, `environment.yml`, `Dockerfile`, and `pytest.ini` define runtime behavior.
 

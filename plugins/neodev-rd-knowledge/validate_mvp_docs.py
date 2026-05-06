@@ -41,7 +41,7 @@ def validate_paths(paths: list[Path]) -> dict[str, Any]:
         checked_count += 1
         file_errors, front_matter = _validate_file(path)
         errors.extend(file_errors)
-        if isinstance(front_matter, dict):
+        if not file_errors and isinstance(front_matter, dict):
             valid_documents.append((path, front_matter))
     doc_ids = {
         str(front_matter["doc_id"])

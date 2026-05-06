@@ -4,9 +4,10 @@ from service.services import git_consistency_service
 
 
 def test_verify_doc_change_creates_link_and_moves_to_in_implementation(monkeypatch):
+    doc_commit = "d" * 40
     change = {
         "id": 17,
-        "doc_change_id": "DC-AUTH-001",
+        "doc_change_id": doc_commit,
         "status": "pending_implementation",
     }
     created_links = []
@@ -15,7 +16,7 @@ def test_verify_doc_change_creates_link_and_moves_to_in_implementation(monkeypat
     monkeypatch.setattr(
         git_consistency_service.doc_change_repository,
         "find_by_doc_change_id",
-        lambda conn, doc_change_id: change if doc_change_id == "DC-AUTH-001" else None,
+        lambda conn, doc_change_id: change if doc_change_id == doc_commit else None,
     )
 
     def fake_create_link(conn, **kwargs):
@@ -43,11 +44,11 @@ def test_verify_doc_change_creates_link_and_moves_to_in_implementation(monkeypat
         project_id=11,
         branch="release/V1.0",
         commit_sha="a" * 40,
-        commit_message="feat: auth\n\nDocChange-ID: DC-AUTH-001\n",
+        commit_message=f"feat: auth\n\nDocChange-ID: {doc_commit}\n",
     )
 
     assert result["status"] == "verified"
-    assert result["doc_change_id"] == "DC-AUTH-001"
+    assert result["doc_change_id"] == doc_commit
     assert result["verification_status"] == "verified"
     assert result["doc_change_status"] == "in_implementation"
     assert result["risk_level"] == "none"
@@ -60,7 +61,7 @@ def test_verify_doc_change_creates_link_and_moves_to_in_implementation(monkeypat
             "project_id": 11,
             "branch": "release/V1.0",
             "commit_sha": "a" * 40,
-            "commit_message": "feat: auth\n\nDocChange-ID: DC-AUTH-001\n",
+            "commit_message": f"feat: auth\n\nDocChange-ID: {doc_commit}\n",
         }
     ]
     assert marked == [17]
@@ -79,7 +80,7 @@ def test_verify_doc_change_rejects_unknown_doc_change(monkeypatch):
             project_id=11,
             branch="main",
             commit_sha="b" * 40,
-            commit_message="fix: x\n\nDocChange-ID: DC-MISSING\n",
+            commit_message=f"fix: x\n\nDocChange-ID: {'f' * 40}\n",
         )
 
     assert raised.value.category == "not_found"
@@ -102,7 +103,7 @@ def test_verify_doc_change_rejects_implemented_doc_change(monkeypatch):
             project_id=11,
             branch="main",
             commit_sha="b" * 40,
-            commit_message="fix: x\n\nDocChange-ID: DC-DONE\n",
+            commit_message=f"fix: x\n\nDocChange-ID: {'e' * 40}\n",
         )
 
     assert raised.value.category == "conflict"

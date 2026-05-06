@@ -60,6 +60,222 @@ def branch_has_graph(
         driver.close()
 
 
+def code_node_exists(
+    *,
+    config: dict[str, Any],
+    database: str | None,
+    project_id: int,
+    branch_name: str,
+    code_node_id: str,
+) -> bool:
+    driver = _create_driver(config)
+    try:
+        with driver.session(database=database) as session:
+            return bool(
+                _execute_read(
+                    session,
+                    _code_node_exists,
+                    scoped_code_node_id=_scoped_id(project_id, branch_name, code_node_id),
+                )
+            )
+    finally:
+        driver.close()
+
+
+def upsert_doc_code_link(
+    *,
+    config: dict[str, Any],
+    database: str | None,
+    project_id: int,
+    branch_name: str,
+    graph_id: int,
+    link: dict[str, Any],
+) -> dict[str, Any]:
+    row = _doc_code_link_row(
+        link,
+        project_id=project_id,
+        branch_name=branch_name,
+        graph_id=graph_id,
+    )
+    if not row:
+        return {"status": "missing_code_node_id", "written": 0}
+
+    driver = _create_driver(config)
+    try:
+        with driver.session(database=database) as session:
+            exists = _execute_read(
+                session,
+                _code_node_exists,
+                scoped_code_node_id=row["scoped_code_node_id"],
+            )
+            if not exists:
+                return {
+                    "status": "code_node_not_found",
+                    "written": 0,
+                    "code_node_id": row["code_node_id"],
+                    "scoped_code_node_id": row["scoped_code_node_id"],
+                }
+            written = session.execute_write(
+                _write_doc_code_links,
+                code_label=_safe_identifier(row["code_label"], fallback="CodeElement"),
+                rows=[row],
+            )
+            return {
+                "status": "linked",
+                "written": int(written or 0),
+                "code_node_id": row["code_node_id"],
+                "scoped_code_node_id": row["scoped_code_node_id"],
+            }
+    finally:
+        driver.close()
+
+
+def delete_doc_code_link(
+    *,
+    config: dict[str, Any],
+    database: str | None,
+    link_id: int,
+) -> dict[str, Any]:
+    driver = _create_driver(config)
+    try:
+        with driver.session(database=database) as session:
+            deleted = session.execute_write(
+                _delete_doc_code_link,
+                relationship_id=f"doc_code_link:{link_id}",
+            )
+            return {"status": "deleted", "deleted": int(deleted or 0)}
+    finally:
+        driver.close()
+
+
+def list_doc_code_facts(
+    *,
+    config: dict[str, Any],
+    database: str | None,
+    project_id: int,
+    branch_name: str,
+    doc_id: str | None = None,
+    node_types: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    driver = _create_driver(config)
+    try:
+        with driver.session(database=database) as session:
+            result = session.run(
+                """
+                MATCH (doc:Document)-[r:LINKS_TO_CODE {
+                    project_id: $project_id,
+                    branch_name: $branch_name
+                }]->(code:CodeNode)
+                WHERE ($doc_id IS NULL OR doc.doc_id = $doc_id)
+                  AND ($node_types = [] OR code.label IN $node_types)
+                RETURN doc, r, code, labels(code) AS code_labels
+                ORDER BY doc.doc_id, r.id
+                """,
+                project_id=project_id,
+                branch_name=branch_name,
+                doc_id=doc_id,
+                node_types=node_types or [],
+            )
+            return [_doc_code_fact_from_record(record) for record in result]
+    finally:
+        driver.close()
+
+
+def entity_context(
+    *,
+    config: dict[str, Any],
+    database: str | None,
+    project_id: int,
+    branch_name: str,
+    entity_id: str,
+    depth: int,
+) -> dict[str, Any]:
+    driver = _create_driver(config)
+    try:
+        with driver.session(database=database) as session:
+            result = session.run(
+                f"""
+                MATCH (entity {{project_id: $project_id, branch_name: $branch_name}})
+                WHERE entity.id = $scoped_id OR entity.node_id = $entity_id
+                OPTIONAL MATCH path = (entity)-[rel*1..{int(depth)}]-(neighbor)
+                WHERE all(r IN rel WHERE r.project_id IS NULL OR (
+                    r.project_id = $project_id AND r.branch_name = $branch_name
+                ))
+                RETURN entity,
+                       labels(entity) AS entity_labels,
+                       collect(path) AS paths
+                """,
+                project_id=project_id,
+                branch_name=branch_name,
+                entity_id=entity_id,
+                scoped_id=_scoped_id(project_id, branch_name, entity_id),
+            ).single()
+            if not result:
+                return {"entity": None, "neighbors": [], "edges": [], "context_summary": []}
+            return _context_from_paths(result)
+    finally:
+        driver.close()
+
+
+def get_chain(
+    *,
+    config: dict[str, Any],
+    database: str | None,
+    project_id: int,
+    branch_name: str,
+    locator: dict[str, str],
+    depth: int,
+) -> dict[str, Any]:
+    driver = _create_driver(config)
+    try:
+        with driver.session(database=database) as session:
+            result = session.run(
+                f"""
+                MATCH (start {{project_id: $project_id, branch_name: $branch_name}})
+                WHERE
+                    ($locator_type = 'start_node' AND (start.id = $scoped_start_id OR start.node_id = $locator_value))
+                    OR ($locator_type = 'file_path' AND (
+                        start.filePath = $locator_value OR start.file_path = $locator_value OR start.path = $locator_value
+                    ))
+                    OR ($locator_type = 'symbol' AND (
+                        start.name = $locator_value OR start.qualifiedName = $locator_value
+                        OR start.qualified_name = $locator_value OR start.node_id CONTAINS $locator_value
+                    ))
+                    OR ($locator_type = 'commit_sha' AND start.head_commit = $locator_value)
+                OPTIONAL MATCH path = (start)-[rel*1..{int(depth)}]-(neighbor)
+                WHERE all(r IN rel WHERE r.project_id IS NULL OR (
+                    r.project_id = $project_id AND r.branch_name = $branch_name
+                ))
+                RETURN start,
+                       labels(start) AS start_labels,
+                       collect(path) AS paths
+                LIMIT 1
+                """,
+                project_id=project_id,
+                branch_name=branch_name,
+                locator_type=locator["type"],
+                locator_value=locator["value"],
+                scoped_start_id=_scoped_id(project_id, branch_name, locator["value"]),
+            ).single()
+            if not result:
+                return {"start_node": None, "nodes": [], "edges": [], "path_summary": []}
+            context = _context_from_paths(
+                {
+                    "entity": result["start"],
+                    "entity_labels": result["start_labels"],
+                    "paths": result["paths"],
+                }
+            )
+            return {
+                "start_node": context["entity"],
+                "nodes": [context["entity"], *context["neighbors"]] if context["entity"] else context["neighbors"],
+                "edges": context["edges"],
+                "path_summary": context["context_summary"],
+            }
+    finally:
+        driver.close()
+
+
 def replace_branch_graph(
     *,
     conn,
@@ -112,6 +328,12 @@ def _create_driver(config: dict[str, Any]):
         config["neo4j_uri"],
         auth=(config.get("neo4j_user") or "neo4j", config.get("neo4j_password") or ""),
     )
+
+
+def _execute_read(session, fn, **kwargs):
+    if hasattr(session, "execute_read"):
+        return session.execute_read(fn, **kwargs)
+    return session.execute_write(fn, **kwargs)
 
 
 def _ensure_constraints(driver, database: str | None) -> None:
@@ -410,6 +632,172 @@ def _write_doc_code_links(tx, *, code_label: str, rows: list[dict[str, Any]]) ->
     return int(row["written"] if row else 0)
 
 
+def _code_node_exists(tx, *, scoped_code_node_id: str) -> bool:
+    result = tx.run(
+        """
+        MATCH (code:CodeNode {id: $scoped_code_node_id})
+        RETURN count(code) AS count
+        """,
+        scoped_code_node_id=scoped_code_node_id,
+    )
+    row = result.single()
+    return bool(row and int(row["count"]) > 0)
+
+
+def _delete_doc_code_link(tx, *, relationship_id: str) -> int:
+    result = tx.run(
+        """
+        MATCH (:Document)-[r:LINKS_TO_CODE {id: $relationship_id}]->()
+        DELETE r
+        RETURN count(r) AS deleted
+        """,
+        relationship_id=relationship_id,
+    )
+    row = result.single()
+    return int(row["deleted"] if row else 0)
+
+
+def _doc_code_link_row(
+    link: dict[str, Any],
+    *,
+    project_id: int,
+    branch_name: str,
+    graph_id: int,
+) -> dict[str, Any] | None:
+    locator = link.get("code_locator_json") or {}
+    code_node_id = locator.get("code_node_id") or link.get("resolved_node_id")
+    if not code_node_id:
+        return None
+    return {
+        "id": f"doc_code_link:{link['id']}",
+        "doc_id": link["doc_id"],
+        "doc_node_id": link.get("doc_node_id"),
+        "code_node_id": code_node_id,
+        "scoped_code_node_id": _scoped_id(project_id, branch_name, code_node_id),
+        "code_label": _label_from_node_id(code_node_id),
+        "project_id": project_id,
+        "branch_name": branch_name,
+        "graph_id": graph_id,
+        "relation_type": link.get("relation_type") or "LINKS_TO_CODE",
+        "source": link.get("source") or "manual",
+        "confidence": link.get("confidence"),
+    }
+
+
+def _doc_code_fact_from_record(record) -> dict[str, Any]:
+    doc = _node_payload(_record_get(record, "doc"), ["Document"])
+    code = _node_payload(_record_get(record, "code"), _record_get(record, "code_labels") or ["CodeNode"])
+    rel = _relationship_payload(_record_get(record, "r"))
+    return {
+        "doc_id": doc.get("doc_id"),
+        "doc_node_id": rel.get("doc_node_id"),
+        "relation_type": rel.get("relation_type") or rel.get("type") or "LINKS_TO_CODE",
+        "link_id": rel.get("id"),
+        "code_node": code,
+        "source": rel.get("source"),
+        "confidence": rel.get("confidence"),
+    }
+
+
+def _context_from_paths(record) -> dict[str, Any]:
+    entity = _node_payload(_record_get(record, "entity"), _record_get(record, "entity_labels") or [])
+    entity_key = entity.get("id") or entity.get("node_id")
+    neighbors_by_id: dict[str, dict[str, Any]] = {}
+    edges_by_id: dict[str, dict[str, Any]] = {}
+    for path in _record_get(record, "paths", []) or []:
+        if path is None:
+            continue
+        for node in _path_nodes(path):
+            payload = _node_payload(node, getattr(node, "labels", []))
+            key = payload.get("id") or payload.get("node_id")
+            if key and key != entity_key:
+                neighbors_by_id.setdefault(str(key), payload)
+        for rel in _path_relationships(path):
+            payload = _relationship_payload(rel)
+            key = payload.get("id") or f"{payload.get('start_node_id')}->{payload.get('end_node_id')}:{payload.get('type')}"
+            edges_by_id.setdefault(str(key), payload)
+    summary = [
+        str(node.get("node_id") or node.get("id"))
+        for node in [entity, *neighbors_by_id.values()]
+        if node
+    ]
+    return {
+        "entity": entity,
+        "neighbors": list(neighbors_by_id.values()),
+        "edges": list(edges_by_id.values()),
+        "context_summary": summary,
+    }
+
+
+def _path_nodes(path) -> list[Any]:
+    if isinstance(path, dict):
+        return list(path.get("nodes") or [])
+    return list(getattr(path, "nodes", []) or [])
+
+
+def _path_relationships(path) -> list[Any]:
+    if isinstance(path, dict):
+        return list(path.get("relationships") or [])
+    return list(getattr(path, "relationships", []) or [])
+
+
+def _node_payload(node, labels) -> dict[str, Any]:
+    props = _mapping_payload(node)
+    node_labels = [str(label) for label in labels or []]
+    if node_labels:
+        props["labels"] = node_labels
+    props.setdefault("id", props.get("id"))
+    props.setdefault("node_id", props.get("node_id"))
+    props.setdefault("label", props.get("label") or _primary_label(node_labels))
+    return props
+
+
+def _relationship_payload(rel) -> dict[str, Any]:
+    props = _mapping_payload(rel)
+    rel_type = getattr(rel, "type", None) or props.get("type")
+    if rel_type:
+        props["type"] = str(rel_type)
+    start_node = getattr(rel, "start_node", None)
+    end_node = getattr(rel, "end_node", None)
+    if start_node is not None:
+        props["start_node_id"] = _mapping_payload(start_node).get("id")
+    if end_node is not None:
+        props["end_node_id"] = _mapping_payload(end_node).get("id")
+    return props
+
+
+def _mapping_payload(value) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    try:
+        return dict(value)
+    except Exception:
+        pass
+    items = getattr(value, "items", None)
+    if callable(items):
+        return dict(items())
+    return {}
+
+
+def _record_get(record, key: str, default=None):
+    if isinstance(record, dict):
+        return record.get(key, default)
+    try:
+        value = record[key]
+    except Exception:
+        return default
+    return value
+
+
+def _primary_label(labels: list[str]) -> str:
+    for label in labels:
+        if label != "CodeNode":
+            return label
+    return labels[0] if labels else ""
+
+
 def _node_row(
     node: dict[str, Any],
     *,
@@ -568,4 +956,6 @@ def _safe_identifier(value: str, *, fallback: str) -> str:
 
 
 def _scoped_id(project_id: int, branch_name: str, item_id: str) -> str:
+    if str(item_id).startswith("project:"):
+        return str(item_id)
     return f"project:{project_id}:branch:{branch_name}:node:{item_id}"

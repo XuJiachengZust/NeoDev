@@ -27,6 +27,8 @@ def test_codex_plugin_manifest_references_shared_hooks_and_scripts():
     assert neodev["hooks"] == "./hooks/hooks.json"
     assert set(neodev["shared_scripts"]) == {
         "./validate_mvp_docs.py",
+        "./validate_obsidian_docs.py",
+        "./sync_obsidian_links.py",
         "./generate_mvp_doc.py",
         "./check_docchange_trailer.py",
         "./check_neodev_environment.py",
@@ -76,7 +78,7 @@ def test_claude_plugin_contains_commands_agent_and_hook_schema():
     assert "check_docchange_trailer.py" in all_commands
     assert "project refresh-graph" in all_commands
     assert "project refresh-commit-graph" not in all_commands
-    assert "neodev doc scan" in all_commands
+    assert "neodev doc import" in all_commands
 
 
 def test_cursor_rules_exist_at_project_root_and_plugin_distribution_copy():

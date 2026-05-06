@@ -11,6 +11,14 @@ from service.repositories import doc_code_link_repository
 from service.repositories import product_version_repository as repo
 
 
+class ProductVersionError(Exception):
+    def __init__(self, category: str, message: str, details: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.category = category
+        self.message = message
+        self.details = details or {}
+
+
 def list_versions(conn, product_id: int, status: str | None = None) -> list[dict]:
     return repo.list_by_product(conn, product_id, status=status)
 
@@ -61,6 +69,10 @@ def remove_branch(conn, version_id: int, project_id: int) -> bool:
     return repo.remove_branch(conn, version_id, project_id)
 
 
+def get_bound_branch(conn, product_version_id: int, project_id: int) -> dict:
+    return _require_bound_branch(conn, product_version_id, project_id)
+
+
 def bind_code_link(
     conn,
     *,
@@ -85,7 +97,7 @@ def bind_code_link(
         branch_name=branch["branch_name"],
         doc_id=doc_id,
         doc_node_id=doc_node_id,
-        relation_type=relation_type,
+        relation_type=relation_type or "LINKS_TO_CODE",
         code_locator_json=code_locator,
         code_locator_hash=locator_hash,
         resolved_graph_id=(graph or {}).get("id"),
@@ -96,8 +108,12 @@ def bind_code_link(
     )
 
 
-def unbind_code_link(conn, *, link_id: int) -> dict | None:
-    return doc_code_link_repository.mark_inactive(conn, link_id=link_id)
+def unbind_code_link(conn, *, link_id: int, product_version_id: int | None = None) -> dict | None:
+    return doc_code_link_repository.mark_inactive(
+        conn,
+        link_id=link_id,
+        product_version_id=product_version_id,
+    )
 
 
 def _require_bound_branch(conn, product_version_id: int, project_id: int) -> dict:
@@ -105,7 +121,11 @@ def _require_bound_branch(conn, product_version_id: int, project_id: int) -> dic
     for branch in branches:
         if int(branch["project_id"]) == int(project_id):
             return branch
-    raise ValueError("project branch is not bound to product version")
+    raise ProductVersionError(
+        category="invalid_scope",
+        message="project branch is not bound to product version",
+        details={"product_version_id": product_version_id, "project_id": project_id},
+    )
 
 
 def _locator_hash(locator: dict[str, Any]) -> str:

@@ -14,6 +14,9 @@ NeoDev 插件内的流程纪律统一称为 `neosuperpower`。新建或维护 Ne
 ## 启动检查
 
 ```bash
+scripts/install-neodev-client.cmd -Server <remote_api_url>
+# 或在允许当前进程绕过执行策略时：
+pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/install-neodev-client.ps1 -Server <remote_api_url>
 neodev config set-server <remote_api_url>
 neodev config show --json
 neodev cli version-check --json

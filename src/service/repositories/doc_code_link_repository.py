@@ -75,8 +75,12 @@ def upsert_active(
         return dict(cur.fetchone())
 
 
-def mark_inactive(conn, *, link_id: int) -> dict[str, Any] | None:
+def mark_inactive(conn, *, link_id: int, product_version_id: int | None = None) -> dict[str, Any] | None:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        version_filter = "AND product_version_id = %s" if product_version_id is not None else ""
+        params = [link_id]
+        if product_version_id is not None:
+            params.append(product_version_id)
         cur.execute(
             f"""
             UPDATE doc_code_links
@@ -84,9 +88,10 @@ def mark_inactive(conn, *, link_id: int) -> dict[str, Any] | None:
                 deleted_at = COALESCE(deleted_at, now()),
                 updated_at = now()
             WHERE id = %s AND status = 'active'
+              {version_filter}
             RETURNING {_COLUMNS}
             """,
-            (link_id,),
+            params,
         )
         row = cur.fetchone()
         return dict(row) if row else None

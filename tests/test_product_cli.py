@@ -117,10 +117,32 @@ def test_product_cli_show_and_version_bind_support_numeric_ids(pg_conn):
         "--json",
     )
     assert bind_proc.returncode == 0, bind_proc.stderr
-    binding = _payload(bind_proc)["data"]["binding"]
+    bind_data = _payload(bind_proc)["data"]
+    binding = bind_data["binding"]
     assert binding["product_version_id"] == version_id
     assert binding["project_id"] == project_id
     assert binding["branch"] == "release/V2.0"
+    assert bind_data["mutation_action"] == "bind"
+    assert bind_data["mutation_target"] == "branch"
+    assert bind_data["mutation_status"] in {"ready", "missing"}
+
+    unbind_proc = _run_cli(
+        "product",
+        "version",
+        "unbind-branch",
+        "--version-id",
+        str(version_id),
+        "--project-id",
+        str(project_id),
+        "--json",
+    )
+    assert unbind_proc.returncode == 0, unbind_proc.stderr
+    unbound = _payload(unbind_proc)["data"]
+    assert unbound["binding_removed"] is True
+    assert unbound["binding"]["branch"] == "release/V2.0"
+    assert unbound["mutation_action"] == "unbind"
+    assert unbound["mutation_target"] == "branch"
+    assert unbound["mutation_status"] == "removed"
 
 
 def test_product_version_cli_supports_business_keys_for_create_show_and_bind(pg_conn):
@@ -176,6 +198,9 @@ def test_product_version_cli_supports_business_keys_for_create_show_and_bind(pg_
     assert binding["command"] == "product version bind-branch"
     assert binding["data"]["binding"]["product_version_id"] == version_id
     assert binding["data"]["binding"]["branch"] == "release/V1.0"
+    assert binding["data"]["mutation_action"] == "bind"
+    assert binding["data"]["mutation_target"] == "branch"
+    assert binding["data"]["mutation_status"] in {"ready", "missing"}
 
     show_proc = _run_cli(
         "product",

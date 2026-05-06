@@ -9,6 +9,8 @@ from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
 from service.repositories import branch_graph_repository as branch_graph_repo
 from service.services import branch_analysis_service
+from service.services import branch_graph_neo4j_service
+from service.services import neo4j_config_service
 from service.services import product_service
 from service.services import product_version_service
 from service.services import project_service
@@ -45,7 +47,7 @@ def register(subparsers) -> None:
     version_subparsers = version_parser.add_subparsers(
         dest="version_command",
         required=True,
-        metavar="{create,show,bind-branch,link-code,code-facts}",
+        metavar="{create,show,bind-branch,unbind-branch,link-code,code-facts}",
     )
 
     version_create_parser = version_subparsers.add_parser("create")
@@ -76,6 +78,15 @@ def register(subparsers) -> None:
     bind_parser.set_defaults(
         handler=handle_version_bind_branch,
         command_name="product version bind-branch",
+    )
+
+    unbind_parser = version_subparsers.add_parser("unbind-branch")
+    _add_version_locator(unbind_parser)
+    _add_project_locator(unbind_parser)
+    unbind_parser.add_argument("--json", action="store_true", dest="json_output")
+    unbind_parser.set_defaults(
+        handler=handle_version_unbind_branch,
+        command_name="product version unbind-branch",
     )
 
     link_code_parser = version_subparsers.add_parser("link-code")
@@ -174,6 +185,12 @@ def _with_db(callback):
     except CliError:
         raise
     except branch_analysis_service.BranchAnalysisError as exc:
+        raise CliError(
+            category=exc.category,
+            message=exc.message,
+            details=exc.details,
+        ) from exc
+    except product_version_service.ProductVersionError as exc:
         raise CliError(
             category=exc.category,
             message=exc.message,
@@ -308,9 +325,54 @@ def handle_version_bind_branch(args) -> dict:
                 "version": version,
                 "project": project,
                 "binding": binding,
+                "mutation_action": "bind",
+                "mutation_target": "branch",
+                "mutation_status": graph_status,
                 "graph_status": graph_status,
                 "graph_action": graph_action,
                 "graph": graph_payload,
+            },
+        )
+
+    return _with_db(run)
+
+
+def handle_version_unbind_branch(args) -> dict:
+    def run(conn):
+        version = _resolve_version(conn, args)
+        product = product_service.get_product(conn, version["product_id"])
+        project = _resolve_project(conn, args)
+        branches = product_version_service.list_branches(conn, version["id"])
+        binding = next((row for row in branches if int(row["project_id"]) == int(project["id"])), None)
+        if not binding:
+            raise CliError(
+                category="not_found",
+                message="branch mapping not found",
+                details={"product_version_id": version["id"], "project_id": project["id"]},
+            )
+        removed = product_version_service.remove_branch(conn, version["id"], project["id"])
+        if not removed:
+            raise CliError(
+                category="not_found",
+                message="branch mapping not found",
+                details={"product_version_id": version["id"], "project_id": project["id"]},
+            )
+        graph = branch_graph_repo.get_by_project_branch(conn, project["id"], binding["branch_name"])
+        graph_status = "ready" if graph and graph.get("status") == "ready" else "missing"
+        return build_success_payload(
+            args.command_name,
+            {
+                "product": product,
+                "version": version,
+                "project": project,
+                "binding": binding,
+                "binding_removed": True,
+                "mutation_action": "unbind",
+                "mutation_target": "branch",
+                "mutation_status": "removed",
+                "graph_status": graph_status,
+                "graph_action": None,
+                "graph": graph,
             },
         )
 
@@ -321,38 +383,119 @@ def handle_version_link_code(args) -> dict:
     def run(conn):
         version = _resolve_version(conn, args)
         product = product_service.get_product(conn, version["product_id"])
-        project = _resolve_project(
-            conn,
-            SimpleArgs(
-                project_id=getattr(args, "code_project_id", None),
-                project_name=getattr(args, "code_project_name", None),
-            ),
-        )
         link_action = "unlink" if getattr(args, "unlink", False) else "bind"
         if link_action == "unlink":
-            link = product_version_service.unbind_code_link(conn, link_id=args.link_id)
+            if not getattr(args, "link_id", None):
+                raise CliError(category="invalid_argument", message="--link-id is required for unlink")
+            link = product_version_service.unbind_code_link(
+                conn,
+                link_id=args.link_id,
+                product_version_id=version["id"],
+            )
+            if not link:
+                raise CliError(
+                    category="not_found",
+                    message="active code link not found",
+                    details={"link_id": args.link_id, "product_version_id": version["id"]},
+                )
+            project = project_service.get_project(conn, link["project_id"])
+            if not project:
+                raise CliError(category="not_found", message="project not found")
+            neo4j_link = _delete_neo4j_doc_code_link(project=project, link=link)
             code_locator = None
+            branch_mapping = {
+                "project_id": link["project_id"],
+                "branch_name": link["branch_name"],
+                "branch": link["branch_name"],
+            }
+            graph = branch_graph_repo.get_by_project_branch(conn, link["project_id"], link["branch_name"])
+            graph_status = "ready" if graph and graph.get("status") == "ready" else "missing"
+            graph_action = None
         else:
+            project = _resolve_project(
+                conn,
+                SimpleArgs(
+                    project_id=getattr(args, "code_project_id", None),
+                    project_name=getattr(args, "code_project_name", None),
+                ),
+            )
+            if not getattr(args, "doc_id", None):
+                raise CliError(category="invalid_argument", message="--doc-id is required for link-code")
             code_locator = _build_code_locator(args)
+            code_node_id = (code_locator or {}).get("code_node_id")
+            if not code_node_id:
+                raise CliError(
+                    category="invalid_argument",
+                    message="provide --code-node-id or --locator-json with code_node_id",
+                )
+            branch_mapping = product_version_service.get_bound_branch(
+                conn,
+                product_version_id=version["id"],
+                project_id=project["id"],
+            )
+            graph, graph_status, graph_action = _ensure_ready_branch_graph(
+                conn,
+                project=project,
+                branch=branch_mapping["branch_name"],
+            )
+            neo4j_config, neo4j_database = _load_neo4j_config(project)
+            if not branch_graph_neo4j_service.code_node_exists(
+                config=neo4j_config,
+                database=neo4j_database,
+                project_id=project["id"],
+                branch_name=branch_mapping["branch_name"],
+                code_node_id=code_node_id,
+            ):
+                raise CliError(
+                    category="not_found",
+                    message="code node not found in branch graph",
+                    details={
+                        "project_id": project["id"],
+                        "branch": branch_mapping["branch_name"],
+                        "code_node_id": code_node_id,
+                    },
+                )
             link = product_version_service.bind_code_link(
                 conn,
                 product_version_id=version["id"],
                 project_id=project["id"],
                 doc_id=args.doc_id,
                 doc_node_id=args.doc_node_id,
-                relation_type=args.relation_type,
+                relation_type=args.relation_type or "LINKS_TO_CODE",
                 code_locator=code_locator or {},
                 source=args.source,
                 confidence=args.confidence,
             )
+            neo4j_link = branch_graph_neo4j_service.upsert_doc_code_link(
+                config=neo4j_config,
+                database=neo4j_database,
+                project_id=project["id"],
+                branch_name=branch_mapping["branch_name"],
+                graph_id=graph["id"],
+                link=link,
+            )
+            if neo4j_link.get("status") != "linked":
+                raise CliError(
+                    category="not_found",
+                    message="code link could not be projected to Neo4j",
+                    details={"neo4j_link": neo4j_link},
+                )
         return build_success_payload(
             args.command_name,
             {
                 "product": product,
                 "version": version,
                 "project": project,
+                "branch": branch_mapping,
+                "graph": graph,
+                "graph_status": graph_status,
+                "graph_action": graph_action,
                 "link": link,
                 "link_action": link_action,
+                "neo4j_link": neo4j_link,
+                "mutation_action": link_action,
+                "mutation_target": "code_link",
+                "mutation_status": (link or {}).get("status") if link else "unknown",
                 "link_id": getattr(args, "link_id", None),
                 "code_locator": code_locator,
             },
@@ -387,13 +530,52 @@ def handle_version_code_facts(args) -> dict:
     def run(conn):
         version = _resolve_version(conn, args)
         product = product_service.get_product(conn, version["product_id"])
+        branches = product_version_service.list_branches(conn, version["id"])
+        facts = []
+        degraded_reasons = []
+        for branch in branches:
+            project = project_service.get_project(conn, branch["project_id"])
+            graph = branch_graph_repo.get_by_project_branch(conn, branch["project_id"], branch["branch_name"])
+            if not graph or graph.get("status") != "ready":
+                degraded_reasons.append(
+                    {
+                        "project_id": branch["project_id"],
+                        "branch": branch["branch_name"],
+                        "reason": "branch_graph_not_ready",
+                    }
+                )
+                continue
+            try:
+                neo4j_config, neo4j_database = _load_neo4j_config(project)
+                branch_facts = branch_graph_neo4j_service.list_doc_code_facts(
+                    config=neo4j_config,
+                    database=neo4j_database,
+                    project_id=branch["project_id"],
+                    branch_name=branch["branch_name"],
+                    doc_id=args.doc_id,
+                    node_types=args.node_types,
+                )
+            except CliError as exc:
+                degraded_reasons.append(
+                    {
+                        "project_id": branch["project_id"],
+                        "branch": branch["branch_name"],
+                        "reason": exc.category,
+                    }
+                )
+                continue
+            for fact in branch_facts:
+                fact["project_id"] = branch["project_id"]
+                fact["project_name"] = branch.get("project_name")
+                fact["branch"] = branch["branch_name"]
+                facts.append(fact)
         result = {
             "product_version_id": version["id"],
             "doc_id": args.doc_id,
             "node_types": args.node_types,
-            "code_facts": [],
-            "storage_status": "removed",
-            "message": "code node storage has been removed; code-facts is preserved as a no-op while storage is rebuilt",
+            "code_facts": facts,
+            "storage_status": "neo4j",
+            "degraded_reasons": degraded_reasons,
         }
         return build_success_payload(
             args.command_name,
@@ -452,6 +634,41 @@ def handle_version_watch_status(args) -> dict:
 class SimpleArgs:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
+
+
+def _ensure_ready_branch_graph(conn, *, project: dict, branch: str) -> tuple[dict, str, str | None]:
+    graph = branch_graph_repo.get_by_project_branch(conn, project["id"], branch)
+    if graph and graph.get("status") == "ready":
+        return graph, "ready", None
+    project_service.refresh_graph(conn, project_id=project["id"], branch=branch)
+    graph = branch_graph_repo.get_by_project_branch(conn, project["id"], branch)
+    if not graph or graph.get("status") != "ready":
+        raise CliError(
+            category="refresh_failed",
+            message="branch graph is not ready after refresh",
+            details={"project_id": project["id"], "branch": branch, "graph": graph},
+        )
+    return graph, "ready", "auto_refresh"
+
+
+def _load_neo4j_config(project: dict) -> tuple[dict, str | None]:
+    neo4j_config, neo4j_database = neo4j_config_service.load_neo4j_config(project)
+    if not neo4j_config:
+        raise CliError(
+            category="invalid_config",
+            message="Neo4j is not configured",
+            details={"project_id": project.get("id")},
+        )
+    return neo4j_config, neo4j_database
+
+
+def _delete_neo4j_doc_code_link(*, project: dict, link: dict) -> dict:
+    neo4j_config, neo4j_database = _load_neo4j_config(project)
+    return branch_graph_neo4j_service.delete_doc_code_link(
+        config=neo4j_config,
+        database=neo4j_database,
+        link_id=link["id"],
+    )
 
 
 def _resolve_product(conn, args) -> dict:
