@@ -50,15 +50,15 @@ def _make_doc_repo() -> Path:
     return path
 
 
-def test_doc_scan_registers_valid_controlled_documents(metadata_db_case):
+def test_doc_scan_registers_valid_markdown_across_docs_root(metadata_db_case):
     doc_repo = _make_doc_repo()
     try:
-        _assert_doc_scan_registers_valid_controlled_documents(metadata_db_case, doc_repo)
+        _assert_doc_scan_registers_valid_markdown_across_docs_root(metadata_db_case, doc_repo)
     finally:
         shutil.rmtree(doc_repo, ignore_errors=True)
 
 
-def _assert_doc_scan_registers_valid_controlled_documents(metadata_db_case, tmp_path):
+def _assert_doc_scan_registers_valid_markdown_across_docs_root(metadata_db_case, tmp_path):
     token = uuid.uuid4().hex[:8]
     product_code = f"DOCSCAN-{token}"
     product_id = _create_product(metadata_db_case, product_code)
@@ -82,14 +82,14 @@ relations:
 """.strip(),
     )
     _write_doc(
-        tmp_path / "notes" / "ignored.md",
+        tmp_path / "dsc" / "domain.md",
         f"""
-doc_id: IGNORED-{token}
-title: Ignored
-{_obsidian_properties("Ignored")}
-doc_type: note
+doc_id: DOMAIN-{token}
+title: Domain Note
+{_obsidian_properties("Domain Note")}
+doc_type: tech-design
 product_key: {product_code}
-status: draft
+status: active
 relations:
   target:
     - PROJECT-{token}
@@ -98,20 +98,22 @@ relations:
 
     result = doc_scan_service.scan_binding(metadata_db_case, binding["id"])
 
-    assert result["registered_count"] == 1
+    assert result["registered_count"] == 2
     assert result["error_count"] == 0
-    assert result["ignored_count"] == 1
+    assert result["ignored_count"] == 0
     documents = document_repository.list_by_binding(metadata_db_case, binding["id"])
-    assert len(documents) == 1
-    assert documents[0]["doc_id"] == f"DOC-{token}"
-    assert documents[0]["relative_path"] == "prd/overview.md"
-    assert documents[0]["doc_type"] == "prd"
-    assert documents[0]["title"] == "Product Overview"
-    assert documents[0]["front_matter_json"]["product_key"] == product_code
-    assert documents[0]["front_matter_json"]["aliases"] == ["Product Overview"]
-    assert documents[0]["front_matter_json"]["tags"] == ["neodev/docs"]
-    assert documents[0]["front_matter_json"]["related"] == ["[[PROJECT-REF]]"]
-    assert documents[0]["relations_json"] == {"target": [f"PROJECT-{token}"]}
+    by_path = {document["relative_path"]: document for document in documents}
+    assert set(by_path) == {"prd/overview.md", "dsc/domain.md"}
+    assert by_path["prd/overview.md"]["doc_id"] == f"DOC-{token}"
+    assert by_path["prd/overview.md"]["doc_type"] == "prd"
+    assert by_path["prd/overview.md"]["title"] == "Product Overview"
+    assert by_path["prd/overview.md"]["front_matter_json"]["product_key"] == product_code
+    assert by_path["prd/overview.md"]["front_matter_json"]["aliases"] == ["Product Overview"]
+    assert by_path["prd/overview.md"]["front_matter_json"]["tags"] == ["neodev/docs"]
+    assert by_path["prd/overview.md"]["front_matter_json"]["related"] == ["[[PROJECT-REF]]"]
+    assert by_path["prd/overview.md"]["relations_json"] == {"target": [f"PROJECT-{token}"]}
+    assert by_path["dsc/domain.md"]["doc_id"] == f"DOMAIN-{token}"
+    assert by_path["dsc/domain.md"]["doc_type"] == "tech-design"
 
 
 def test_doc_scan_records_invalid_front_matter_without_registering_doc(metadata_db_case):
@@ -395,5 +397,40 @@ relations:
         assert result["registered_count"] == 1
         assert result["error_count"] == 0
         assert result["documents"][0]["relative_path"] == "docs/guide.md"
+    finally:
+        shutil.rmtree(doc_repo, ignore_errors=True)
+
+
+def test_doc_scan_skips_hidden_markdown(metadata_db_case):
+    doc_repo = _make_doc_repo()
+    try:
+        token = uuid.uuid4().hex[:8]
+        product_code = f"DOCHIDDEN-{token}"
+        product_id = _create_product(metadata_db_case, product_code)
+        binding = doc_binding_repository.create(
+            metadata_db_case,
+            product_id=product_id,
+            repo_path=str(doc_repo),
+        )
+        _write_doc(
+            doc_repo / ".obsidian" / "workspace.md",
+            f"""
+doc_id: DOC-HIDDEN-{token}
+title: Hidden Workspace
+{_obsidian_properties("Hidden Workspace")}
+doc_type: tech-design
+product_key: {product_code}
+status: active
+relations:
+  target:
+    - PROJECT-{token}
+""".strip(),
+        )
+
+        result = doc_scan_service.scan_binding(metadata_db_case, binding["id"])
+
+        assert result["registered_count"] == 0
+        assert result["error_count"] == 0
+        assert result["ignored_count"] == 1
     finally:
         shutil.rmtree(doc_repo, ignore_errors=True)

@@ -86,7 +86,7 @@ def test_cursor_rules_exist_at_project_root_and_plugin_distribution_copy():
         "neodev-rd-knowledge.mdc": {"alwaysApply": True, "globs": "**/*"},
         "neodev-mvp-docs.mdc": {
             "alwaysApply": False,
-            "globs": "{prd,prototype,tech-design}/**/*.md",
+            "globs": "**/*.md",
         },
         "neodev-git-docchange.mdc": {"alwaysApply": False, "globs": "**/*"},
     }

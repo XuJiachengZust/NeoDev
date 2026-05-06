@@ -5,7 +5,7 @@
 必要边界：
 
 - 远程 CLI 工作流开始前，先执行 `python plugins/neodev-rd-knowledge/check_neodev_environment.py`。
-- 导入前执行 `python plugins/neodev-rd-knowledge/validate_mvp_docs.py prd prototype tech-design`。
+- 导入前执行 `python plugins/neodev-rd-knowledge/validate_mvp_docs.py <docs_path>` 和 `python plugins/neodev-rd-knowledge/validate_obsidian_docs.py <docs_path>`。
 - 如果校验返回 `ok=false`，停止后续流程。
 - 使用 `neodev config show` 确认本地客户端配置。
 - 先执行 `neodev doc binding list --product-code <product_code> --json` 获取 active `doc_binding_id`。

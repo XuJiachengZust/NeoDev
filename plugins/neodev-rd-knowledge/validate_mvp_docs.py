@@ -13,7 +13,7 @@ from typing import Any
 import yaml
 
 
-CONTROLLED_DIRECTORIES = {"prd", "prototype", "tech-design", "docs"}
+IGNORED_MARKDOWN_PATH_PARTS = {".git", ".obsidian", "__pycache__"}
 REQUIRED_FIELDS = {
     "aliases",
     "created",
@@ -63,7 +63,10 @@ def _iter_markdown_files(paths: list[Path]):
         for candidate in candidates:
             if candidate.suffix.lower() != ".md":
                 continue
-            if not _is_controlled_document(candidate):
+            relative_candidate = (
+                candidate.name if root.is_file() else candidate.relative_to(root)
+            )
+            if _is_ignored_markdown_path(relative_candidate):
                 continue
             resolved = candidate.resolve()
             if resolved in seen:
@@ -72,8 +75,9 @@ def _iter_markdown_files(paths: list[Path]):
             yield candidate
 
 
-def _is_controlled_document(path: Path) -> bool:
-    return any(part in CONTROLLED_DIRECTORIES for part in path.parts)
+def _is_ignored_markdown_path(path: Path | str) -> bool:
+    parts = Path(path).parts if isinstance(path, str) else path.parts
+    return any(part.startswith(".") or part in IGNORED_MARKDOWN_PATH_PARTS for part in parts)
 
 
 def _validate_file(path: Path) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:

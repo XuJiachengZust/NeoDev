@@ -21,7 +21,7 @@ def _make_doc_repo() -> Path:
 def test_import_binding_builds_chunks_and_reuses_changed_embeddings(monkeypatch):
     repo_path = _make_doc_repo()
     (repo_path / ".git").mkdir()
-    doc_path = repo_path / "docs" / "guide.md"
+    doc_path = repo_path / "neosuperpower" / "plans" / "guide.md"
     doc_path.parent.mkdir(parents=True)
     doc_path.write_text(
         """---
@@ -97,7 +97,7 @@ The import service chunks documents.
     assert result["imported_count"] == 1
     assert result["chunk_count"] >= 1
     assert embedded
-    assert result["documents"][0]["relative_path"] == "docs/guide.md"
+    assert result["documents"][0]["relative_path"] == "neosuperpower/plans/guide.md"
 
 
 def test_import_binding_persists_last_document_commit(monkeypatch):

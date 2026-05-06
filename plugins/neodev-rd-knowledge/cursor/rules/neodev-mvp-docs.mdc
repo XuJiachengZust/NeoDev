@@ -1,12 +1,12 @@
 ---
-description: MVP controlled document front matter requirements.
-globs: "{prd,prototype,tech-design}/**/*.md"
+description: NeoDev controlled document front matter requirements.
+globs: "**/*.md"
 alwaysApply: false
 ---
 
 # NeoDev MVP Documents
 
-Controlled documents in `prd/`, `prototype/`, and `tech-design/` must use YAML front matter accepted by NeoDev scan and validation.
+Controlled documents under the docs root must use YAML front matter accepted by NeoDev scan and validation.
 
 Required front matter:
 
@@ -32,5 +32,5 @@ Before import, obtain the active binding with `neodev doc binding list --product
 Validate before import or registration:
 
 ```bash
-python plugins/neodev-rd-knowledge/validate_mvp_docs.py prd prototype tech-design
+python plugins/neodev-rd-knowledge/validate_mvp_docs.py <docs_path>
 ```

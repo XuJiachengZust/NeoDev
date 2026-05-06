@@ -82,6 +82,33 @@ def test_validate_mvp_docs_accepts_valid_controlled_documents():
         shutil.rmtree(tmp_path, ignore_errors=True)
 
 
+def test_validate_mvp_docs_accepts_valid_domain_documents():
+    tmp_path = _make_tmp_dir()
+    try:
+        _write_doc(
+            tmp_path / "dsc" / "domain.md",
+            f"""
+doc_id: DSC-DOMAIN-001
+title: Domain Document
+{_obsidian_properties("Domain Document").replace("[[TECH-001]]", "[[dsc/domain|Domain Document]]")}
+doc_type: tech-design
+product_key: DSC
+status: active
+relations:
+  target:
+    - DSC-DOMAIN-001
+""".strip(),
+        )
+
+        result = _run_script(VALIDATOR, str(tmp_path))
+
+        payload = _json_stdout(result)
+        assert result.returncode == 0
+        assert payload == {"ok": True, "checked_count": 1, "errors": []}
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
 def _assert_validate_mvp_docs_accepts_valid_controlled_documents(tmp_path: Path):
     _write_related_pair(tmp_path)
     _write_doc(

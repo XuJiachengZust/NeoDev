@@ -12,7 +12,7 @@ from service.services.doc_validation_service import DocumentValidationError
 from service.services.doc_validation_service import validate_front_matter
 
 
-CONTROLLED_DIRECTORIES = {"prd", "prototype", "tech-design", "docs"}
+IGNORED_MARKDOWN_PATH_PARTS = {".git", ".obsidian", "__pycache__"}
 
 
 def scan_binding(conn, doc_binding_id: int) -> dict:
@@ -37,7 +37,7 @@ def scan_binding(conn, doc_binding_id: int) -> dict:
     ignored_count = 0
     for path in sorted(repo_path.rglob("*.md")):
         relative_path = _relative_path(repo_path, path)
-        if _top_level_directory(relative_path) not in CONTROLLED_DIRECTORIES:
+        if should_ignore_markdown_path(relative_path):
             ignored_count += 1
             continue
         try:
@@ -106,8 +106,9 @@ def _relative_path(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
-def _top_level_directory(relative_path: str) -> str:
-    return relative_path.split("/", 1)[0]
+def should_ignore_markdown_path(relative_path: str) -> bool:
+    parts = relative_path.split("/")
+    return any(part.startswith(".") or part in IGNORED_MARKDOWN_PATH_PARTS for part in parts)
 
 
 def _summary(registered: list[dict], errors: list[dict], ignored_count: int) -> dict:

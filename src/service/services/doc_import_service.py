@@ -19,7 +19,7 @@ from service.repositories import document_scan_error_repository
 from service.services import doc_chunk_service
 from service.services import doc_graph_service
 from service.services import doc_vector_service
-from service.services.doc_scan_service import CONTROLLED_DIRECTORIES
+from service.services.doc_scan_service import should_ignore_markdown_path
 from service.services.doc_validation_service import DocumentValidationError
 from service.services.doc_validation_service import validate_front_matter
 
@@ -52,7 +52,7 @@ def import_binding(conn, doc_binding_id: int, *, force: bool = False) -> dict[st
 
     for path in sorted(repo_path.rglob("*.md")):
         relative_path = path.relative_to(repo_path).as_posix()
-        if relative_path.split("/", 1)[0] not in CONTROLLED_DIRECTORIES:
+        if should_ignore_markdown_path(relative_path):
             continue
         active_paths.append(relative_path)
         try:
