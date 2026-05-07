@@ -109,6 +109,31 @@ def list_branches(conn, version_id: int) -> list[dict]:
         return [dict(row) for row in cur.fetchall()]
 
 
+def list_by_project_branch(conn, project_id: int, branch_name: str) -> list[dict]:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """SELECT pv.id, pv.product_id, pv.version_name, pv.description, pv.status,
+                      pv.release_date, pv.created_at, pv.updated_at,
+                      pvb.id AS branch_binding_id,
+                      pvb.project_id,
+                      pvb.branch_name,
+                      pvb.branch_name AS branch,
+                      p.name AS project_name,
+                      pr.id AS product_id,
+                      pr.name AS product_name,
+                      pr.code AS product_code
+               FROM product_version_branches pvb
+               JOIN product_versions pv ON pv.id = pvb.product_version_id
+               JOIN products pr ON pr.id = pv.product_id
+               JOIN projects p ON p.id = pvb.project_id
+               WHERE pvb.project_id = %s
+                 AND pvb.branch_name = %s
+               ORDER BY pr.name, pv.version_name""",
+            (project_id, branch_name),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
 def set_branch(conn, version_id: int, project_id: int, branch: str) -> dict:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(

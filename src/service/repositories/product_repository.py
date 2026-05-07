@@ -38,6 +38,15 @@ def find_by_code(conn, code: str) -> dict | None:
         return dict(row) if row else None
 
 
+def find_by_name(conn, name: str) -> list[dict]:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"SELECT {_COLUMNS} FROM products WHERE name = %s ORDER BY id",
+            (name,),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
 def create(
     conn,
     name: str,

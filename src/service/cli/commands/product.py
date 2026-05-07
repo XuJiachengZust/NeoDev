@@ -64,6 +64,8 @@ def register(subparsers) -> None:
 
     version_show_parser = version_subparsers.add_parser("show")
     _add_version_locator(version_show_parser)
+    version_show_parser.add_argument("--project-name")
+    version_show_parser.add_argument("--branch-name")
     version_show_parser.add_argument("--json", action="store_true", dest="json_output")
     version_show_parser.set_defaults(
         handler=handle_version_show,
@@ -159,6 +161,7 @@ def _hide_subparser_choices(subparsers, hidden_names: set[str]) -> None:
 def _add_product_locator(parser) -> None:
     parser.add_argument("--product-id", type=int)
     parser.add_argument("--product-code")
+    parser.add_argument("--product-name")
 
 
 def _add_version_locator(parser) -> None:
@@ -272,15 +275,87 @@ def handle_version_create(args) -> dict:
 
 def handle_version_show(args) -> dict:
     def run(conn):
+        if getattr(args, "project_name", None) or getattr(args, "branch_name", None):
+            return build_success_payload(args.command_name, _show_versions_by_branch(conn, args))
         version = _resolve_version(conn, args)
         product = product_service.get_product(conn, version["product_id"])
         branches = product_version_service.list_branches(conn, version["id"])
         return build_success_payload(
             args.command_name,
-            {"product": product, "version": version, "branches": branches},
+            _version_show_payload(product, version, branches),
         )
 
     return _with_db(run)
+
+
+def _show_versions_by_branch(conn, args) -> dict:
+    if not getattr(args, "project_name", None) or not getattr(args, "branch_name", None):
+        raise CliError(
+            category="invalid_argument",
+            message="provide both --project-name and --branch-name for branch lookup",
+        )
+    project = _resolve_project(conn, SimpleArgs(project_name=args.project_name, project_id=None))
+    rows = product_version_service.list_versions_by_project_branch(
+        conn,
+        project_id=project["id"],
+        branch_name=args.branch_name,
+    )
+    resolved_versions = []
+    for row in rows:
+        product = {
+            "id": row["product_id"],
+            "name": row["product_name"],
+            "code": row["product_code"],
+        }
+        version = {
+            "id": row["id"],
+            "product_id": row["product_id"],
+            "version_name": row["version_name"],
+            "description": row.get("description"),
+            "status": row.get("status"),
+            "release_date": row.get("release_date"),
+            "created_at": row.get("created_at"),
+            "updated_at": row.get("updated_at"),
+        }
+        branch = {
+            "id": row["branch_binding_id"],
+            "product_version_id": row["id"],
+            "project_id": project["id"],
+            "project_name": project["name"],
+            "branch_name": row["branch_name"],
+            "branch": row["branch_name"],
+        }
+        resolved_versions.append(
+            {
+                "product": product,
+                "version": version,
+                "branch": branch,
+                "query_params": _query_params(product, version, branch),
+            }
+        )
+    return {
+        "project": project,
+        "branch_name": args.branch_name,
+        "resolved_versions": resolved_versions,
+    }
+
+
+def _version_show_payload(product: dict, version: dict, branches: list[dict]) -> dict:
+    return {
+        "product": product,
+        "version": version,
+        "branches": branches,
+        "query_params": [_query_params(product, version, branch) for branch in branches],
+    }
+
+
+def _query_params(product: dict, version: dict, branch: dict) -> dict:
+    return {
+        "product_name": product.get("name"),
+        "version_name": version.get("version_name"),
+        "project_name": branch.get("project_name"),
+        "branch_name": branch.get("branch_name") or branch.get("branch"),
+    }
 
 
 def handle_version_bind_branch(args) -> dict:
@@ -674,18 +749,29 @@ def _delete_neo4j_doc_code_link(*, project: dict, link: dict) -> dict:
 def _resolve_product(conn, args) -> dict:
     product_id = getattr(args, "product_id", None)
     product_code = getattr(args, "product_code", None)
-    if product_id is None and not product_code:
+    product_name = getattr(args, "product_name", None)
+    provided = [value is not None and value != "" for value in (product_id, product_code, product_name)]
+    if not any(provided):
         raise CliError(
             category="invalid_argument",
-            message="provide --product-id or --product-code",
+            message="provide --product-id, --product-code, or --product-name",
         )
-    if product_id is not None and product_code:
+    if sum(1 for item in provided if item) > 1:
         raise CliError(
             category="invalid_argument",
             message="provide only one product locator",
         )
     if product_id is not None:
         product = product_service.get_product(conn, product_id)
+    elif product_name:
+        matches = product_service.find_products_by_name(conn, product_name)
+        if len(matches) > 1:
+            raise CliError(
+                category="conflict",
+                message="product name is ambiguous",
+                details={"product_name": product_name, "matches": [row["id"] for row in matches]},
+            )
+        product = matches[0] if matches else None
     else:
         product = product_service.get_product_by_code(conn, product_code)
     if not product:

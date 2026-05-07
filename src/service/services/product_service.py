@@ -15,6 +15,10 @@ def get_product_by_code(conn, code: str) -> dict | None:
     return repo.find_by_code(conn, code)
 
 
+def find_products_by_name(conn, name: str) -> list[dict]:
+    return repo.find_by_name(conn, name)
+
+
 def create_product(
     conn,
     name: str,

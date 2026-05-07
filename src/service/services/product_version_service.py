@@ -61,6 +61,10 @@ def list_branches(conn, version_id: int) -> list[dict]:
     return repo.list_branches(conn, version_id)
 
 
+def list_versions_by_project_branch(conn, project_id: int, branch_name: str) -> list[dict]:
+    return repo.list_by_project_branch(conn, project_id, branch_name)
+
+
 def set_branch(conn, version_id: int, project_id: int, branch: str) -> dict:
     return repo.set_branch(conn, version_id, project_id, (branch or "").strip())
 
