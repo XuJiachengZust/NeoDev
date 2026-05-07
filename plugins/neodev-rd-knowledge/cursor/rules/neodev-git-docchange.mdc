@@ -6,7 +6,24 @@ alwaysApply: false
 
 # NeoDev Git DocChange
 
-Implementation commits must include exactly one trailer:
+Before every Git commit, classify staged files:
+
+```bash
+python plugins/neodev-rd-knowledge/check_git_commit_scope.py
+```
+
+Document-only commits must complete the document workflow first:
+
+```bash
+neodev doc binding list --product-code <product_code> --json
+neodev doc binding create --product-code <product_code> --version-name <version_name> --project-id <doc_project_id> --branch <branch> --json
+neodev doc import --doc-binding-id <doc_binding_id> --json
+neodev doc change register --document-id <document_id> --json
+```
+
+Document identity is scoped by product version. The unique key is `doc_id + product_version_id`; re-importing the same `doc_id` in the same version overwrites that version's document record, but never another version's record.
+
+Code commits must include exactly one trailer:
 
 ```text
 DocChange-ID: 0123456789abcdef0123456789abcdef01234567
@@ -28,7 +45,9 @@ neodev cli version-check --json
 neodev git verify-doc-change --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --commit-message <commit_message> --json
 ```
 
-After a successful push, refresh the branch graph on the remote NeoDev service:
+Mixed document and code commits are not allowed; split them so the correct workflow is unambiguous.
+
+After a successful code push, refresh the branch graph on the remote NeoDev service:
 
 ```bash
 neodev project refresh-graph --project-id <project_id> --branch <branch> --json

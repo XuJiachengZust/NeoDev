@@ -64,6 +64,7 @@ def import_binding(conn, doc_binding_id: int, *, force: bool = False) -> dict[st
             document = document_repository.upsert(
                 conn,
                 doc_binding_id=binding["id"],
+                product_version_id=binding.get("product_version_id"),
                 doc_id=front_matter["doc_id"],
                 relative_path=relative_path,
                 doc_type=front_matter["doc_type"],
@@ -211,6 +212,7 @@ def _document_import_summary(document: dict, chunk_count: int) -> dict[str, Any]
     return {
         "id": document.get("id"),
         "doc_binding_id": document.get("doc_binding_id"),
+        "product_version_id": document.get("product_version_id"),
         "doc_id": document.get("doc_id"),
         "relative_path": document.get("relative_path"),
         "doc_type": document.get("doc_type"),

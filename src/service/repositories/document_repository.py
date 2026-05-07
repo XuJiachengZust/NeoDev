@@ -7,7 +7,7 @@ from psycopg2.extras import RealDictCursor
 
 
 _COLUMNS = (
-    "id, doc_binding_id, doc_id, relative_path, doc_type, front_matter_json, "
+    "id, doc_binding_id, product_version_id, doc_id, relative_path, doc_type, front_matter_json, "
     "relations_json, status, last_seen_commit, last_scanned_at, title, body_text, "
     "content_hash, graph_status, chunk_status, deleted_at, created_at, updated_at"
 )
@@ -18,6 +18,7 @@ def create(
     doc_binding_id: int,
     doc_id: str,
     relative_path: str,
+    product_version_id: int | None = None,
     doc_type: str = "markdown",
     front_matter_json: dict | None = None,
     relations_json: dict | None = None,
@@ -30,17 +31,23 @@ def create(
     graph_status: str = "pending",
     chunk_status: str = "pending",
 ) -> dict:
+    conflict_target = (
+        "(doc_id, product_version_id)"
+        if product_version_id is not None
+        else "(doc_binding_id, relative_path)"
+    )
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""INSERT INTO documents (
-                 doc_binding_id, doc_id, relative_path, doc_type, front_matter_json,
+                 doc_binding_id, product_version_id, doc_id, relative_path, doc_type, front_matter_json,
                  relations_json, status, last_seen_commit, last_scanned_at, title,
                  body_text, content_hash, graph_status, chunk_status
              )
-             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
              RETURNING {_COLUMNS}""",
             (
                 doc_binding_id,
+                product_version_id,
                 doc_id,
                 relative_path,
                 doc_type,
@@ -64,6 +71,7 @@ def upsert(
     doc_binding_id: int,
     doc_id: str,
     relative_path: str,
+    product_version_id: int | None = None,
     doc_type: str = "markdown",
     front_matter_json: dict | None = None,
     relations_json: dict | None = None,
@@ -79,14 +87,16 @@ def upsert(
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""INSERT INTO documents (
-                 doc_binding_id, doc_id, relative_path, doc_type, front_matter_json,
+                 doc_binding_id, product_version_id, doc_id, relative_path, doc_type, front_matter_json,
                  relations_json, status, last_seen_commit, last_scanned_at, title,
                  body_text, content_hash, graph_status, chunk_status, deleted_at
              )
-             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL)
-             ON CONFLICT (doc_binding_id, relative_path)
+             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL)
+             ON CONFLICT {conflict_target}
              DO UPDATE SET
-                 doc_id = EXCLUDED.doc_id,
+                 doc_binding_id = EXCLUDED.doc_binding_id,
+                 product_version_id = EXCLUDED.product_version_id,
+                 relative_path = EXCLUDED.relative_path,
                  doc_type = EXCLUDED.doc_type,
                  front_matter_json = EXCLUDED.front_matter_json,
                  relations_json = EXCLUDED.relations_json,
@@ -103,6 +113,7 @@ def upsert(
              RETURNING {_COLUMNS}""",
             (
                 doc_binding_id,
+                product_version_id,
                 doc_id,
                 relative_path,
                 doc_type,

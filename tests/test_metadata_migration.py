@@ -7,6 +7,7 @@ INIT_SQL_FILE = ROOT / "docker" / "init.sql"
 REQUIRED_COLUMNS = {
     "doc_bindings": {
         "product_id",
+        "product_version_id",
         "repo_path",
         "repo_url",
         "default_branch",
@@ -14,6 +15,7 @@ REQUIRED_COLUMNS = {
     },
     "documents": {
         "doc_binding_id",
+        "product_version_id",
         "doc_id",
         "relative_path",
         "doc_type",
@@ -264,14 +266,19 @@ def test_metadata_key_indexes_and_constraints_exist(metadata_migration_pg_conn, 
         )
         constraints = {name: definition for name, definition in cur.fetchall()}
 
-    assert "uq_doc_bindings_active_product" in index_map
-    assert "CREATE UNIQUE INDEX" in index_map["uq_doc_bindings_active_product"]
-    assert "(product_id)" in index_map["uq_doc_bindings_active_product"]
-    assert "WHERE (is_active = true)" in index_map["uq_doc_bindings_active_product"]
+    assert "uq_doc_bindings_active_product_legacy" in index_map
+    assert "CREATE UNIQUE INDEX" in index_map["uq_doc_bindings_active_product_legacy"]
+    assert "(product_id)" in index_map["uq_doc_bindings_active_product_legacy"]
+    assert "product_version_id IS NULL" in index_map["uq_doc_bindings_active_product_legacy"]
+    assert "uq_doc_bindings_active_version" in index_map
+    assert "CREATE UNIQUE INDEX" in index_map["uq_doc_bindings_active_version"]
+    assert "(product_version_id)" in index_map["uq_doc_bindings_active_version"]
 
-    assert "uq_documents_doc_id" in index_map
-    assert "CREATE UNIQUE INDEX" in index_map["uq_documents_doc_id"]
-    assert "(doc_id)" in index_map["uq_documents_doc_id"]
+    assert "uq_documents_doc_version" in index_map
+    assert "CREATE UNIQUE INDEX" in index_map["uq_documents_doc_version"]
+    assert "(doc_id, product_version_id)" in index_map["uq_documents_doc_version"]
+    assert "uq_documents_doc_id_legacy" in index_map
+    assert "(doc_id)" in index_map["uq_documents_doc_id_legacy"]
     assert "uq_documents_binding_path" in index_map
     assert "CREATE UNIQUE INDEX" in index_map["uq_documents_binding_path"]
     assert "(doc_binding_id, relative_path)" in index_map["uq_documents_binding_path"]

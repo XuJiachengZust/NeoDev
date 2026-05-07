@@ -187,6 +187,30 @@
         }
       ]
     },
+    "commit_scope_routing": {
+      "goal": "Before git commit, classify staged changes as document-only, code-only, mixed, or empty and run the matching NeoDev workflow.",
+      "steps": [
+        {
+          "id": "classify_staged_changes",
+          "type": "script",
+          "command": "python plugins/neodev-rd-knowledge/check_git_commit_scope.py",
+          "expects": [
+            "scope is document, code, empty, or mixed",
+            "mixed scope exits non-zero and must be split"
+          ]
+        },
+        {
+          "id": "document_commit_route",
+          "type": "workflow",
+          "command": "For document scope, run version-scoped doc binding resolution, neodev doc import, and neodev doc change register before commit."
+        },
+        {
+          "id": "code_commit_route",
+          "type": "workflow",
+          "command": "For code scope, require one DocChange-ID trailer, verify with neodev git verify-doc-change, and refresh branch graph after push."
+        }
+      ]
+    },
     "pre_push_verification": {
       "goal": "推送前校验提交只关联一个 DocChange，并处理待确认风险记录。",
       "steps": [

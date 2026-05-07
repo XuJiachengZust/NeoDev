@@ -22,6 +22,7 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                 MERGE (d:Document {doc_id: $doc_id, product_id: $product_id})
                 SET d.document_id = $document_id,
                     d.doc_binding_id = $doc_binding_id,
+                    d.product_version_id = $product_version_id,
                     d.title = $title,
                     d.doc_type = $doc_type,
                     d.relative_path = $relative_path,
@@ -32,6 +33,7 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                 document_id=document["id"],
                 doc_binding_id=binding["id"],
                 product_id=binding["product_id"],
+                product_version_id=binding.get("product_version_id"),
                 doc_id=document["doc_id"],
                 title=document.get("title") or "",
                 doc_type=document.get("doc_type") or "",
@@ -50,7 +52,8 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                         p.repo_path = coalesce(p.repo_path, $project_repo_path),
                         p.repo_url = coalesce(p.repo_url, $project_repo_url),
                         p.product_id = coalesce(p.product_id, $product_id),
-                        d.project_id = $project_id
+                        d.project_id = $project_id,
+                        d.product_version_id = $product_version_id
                     MERGE (p)-[r:HAS_DOCUMENT {
                         doc_binding_id: $doc_binding_id,
                         doc_id: $doc_id
@@ -58,6 +61,7 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                     SET r.product_id = $product_id,
                         r.project_id = $project_id,
                         r.document_id = $document_id,
+                        r.product_version_id = $product_version_id,
                         r.relative_path = $relative_path,
                         r.updated_at = $updated_at
                     """,
@@ -69,6 +73,7 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                     document_id=document["id"],
                     doc_binding_id=binding["id"],
                     product_id=binding["product_id"],
+                    product_version_id=binding.get("product_version_id"),
                     doc_id=document["doc_id"],
                     relative_path=document.get("relative_path") or "",
                     updated_at=datetime.now(timezone.utc).isoformat(),

@@ -17,5 +17,9 @@ Workflow expectations:
 - Validate MVP documents before `doc import` or `doc change register`.
 - Resolve `doc_binding_id` with `neodev doc binding list --product-code <product_code> --json` before import.
 - If no active document binding exists, create it with `neodev doc binding create ... --json`; do not write `doc_bindings` directly.
-- Require exactly one valid `DocChange-ID` trailer before commit verification; the value must be the imported document's 40-character Git commit hash.
+- Before any `git commit`, classify staged files with `python plugins/neodev-rd-knowledge/check_git_commit_scope.py`.
+- Document-only commits must complete the document workflow first: resolve a version-scoped doc binding, run `neodev doc import --doc-binding-id <id> --json`, then register relevant DocChange records from imported document ids.
+- Code-only commits must carry exactly one valid `DocChange-ID` trailer; the value must be the imported document's 40-character Git commit hash, then run Git DocChange verification and refresh the branch graph after push.
+- Mixed document and code commits are not allowed; split them so each commit has a single workflow.
+- Document identity is version scoped: `doc_id + product_version_id` is the uniqueness key. Re-importing the same `doc_id` for the same product version overwrites that version's document record; it must not overwrite a different version.
 - Use NeoSuperpower workflows when applicable: requirements-or-design before requirements or design, implementation before code changes, failure-investigation for failures, and verification-before-completion before completion, commit, or push.

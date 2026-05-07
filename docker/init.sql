@@ -598,6 +598,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS doc_bindings (
     id                  SERIAL PRIMARY KEY,
     product_id          INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    product_version_id  INTEGER REFERENCES product_versions(id) ON DELETE CASCADE,
     repo_path           TEXT NOT NULL DEFAULT '',
     repo_url            TEXT NOT NULL DEFAULT '',
     default_branch      VARCHAR(255) NOT NULL DEFAULT 'main',
@@ -607,6 +608,7 @@ CREATE TABLE IF NOT EXISTS doc_bindings (
 );
 
 ALTER TABLE doc_bindings
+    ADD COLUMN IF NOT EXISTS product_version_id INTEGER REFERENCES product_versions(id) ON DELETE CASCADE,
     ADD COLUMN IF NOT EXISTS repo_path TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS repo_url TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS default_branch VARCHAR(255) NOT NULL DEFAULT 'main',
@@ -621,14 +623,21 @@ ALTER TABLE doc_bindings
 CREATE INDEX IF NOT EXISTS idx_doc_bindings_product_id
     ON doc_bindings(product_id);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_product
+DROP INDEX IF EXISTS uq_doc_bindings_active_product;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_product_legacy
     ON doc_bindings(product_id)
-    WHERE is_active = true;
+    WHERE is_active = true AND product_version_id IS NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_version
+    ON doc_bindings(product_version_id)
+    WHERE is_active = true AND product_version_id IS NOT NULL;
 
 
 CREATE TABLE IF NOT EXISTS documents (
     id              SERIAL PRIMARY KEY,
     doc_binding_id  INTEGER NOT NULL REFERENCES doc_bindings(id) ON DELETE CASCADE,
+    product_version_id INTEGER REFERENCES product_versions(id) ON DELETE CASCADE,
     doc_id          VARCHAR(128) NOT NULL,
     relative_path   TEXT NOT NULL,
     doc_type        VARCHAR(64) NOT NULL DEFAULT 'markdown',
@@ -643,6 +652,7 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 ALTER TABLE documents
+    ADD COLUMN IF NOT EXISTS product_version_id INTEGER REFERENCES product_versions(id) ON DELETE CASCADE,
     ADD COLUMN IF NOT EXISTS doc_type VARCHAR(64) NOT NULL DEFAULT 'markdown',
     ADD COLUMN IF NOT EXISTS front_matter_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     ADD COLUMN IF NOT EXISTS relations_json JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -665,8 +675,14 @@ ALTER TABLE documents
     ALTER COLUMN graph_status SET DEFAULT 'pending',
     ALTER COLUMN chunk_status SET DEFAULT 'pending';
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_id
-    ON documents(doc_id);
+DROP INDEX IF EXISTS uq_documents_doc_id;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_version
+    ON documents(doc_id, product_version_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_id_legacy
+    ON documents(doc_id)
+    WHERE product_version_id IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_binding_path
     ON documents(doc_binding_id, relative_path);

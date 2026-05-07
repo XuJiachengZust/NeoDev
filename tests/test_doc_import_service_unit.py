@@ -2,6 +2,9 @@ from pathlib import Path
 import shutil
 import uuid
 
+import service.repositories.doc_binding_repository as doc_binding_repository
+import service.repositories.document_repository as document_repository
+import service.repositories.document_scan_error_repository as scan_error_repository
 from service.services import doc_import_service
 
 
@@ -185,3 +188,148 @@ relations:
 
     assert upserts[0]["last_seen_commit"] == commit_hash
     assert result["documents"][0]["last_seen_commit"] == commit_hash
+
+
+def test_import_binding_overwrites_duplicate_doc_id_and_continues(metadata_db_case, monkeypatch):
+    repo_path = _make_doc_repo()
+    try:
+        _assert_import_binding_overwrites_duplicate_doc_id_and_continues(
+            metadata_db_case,
+            monkeypatch,
+            repo_path,
+        )
+    finally:
+        shutil.rmtree(repo_path, ignore_errors=True)
+
+
+def _assert_import_binding_overwrites_duplicate_doc_id_and_continues(
+    metadata_db_case,
+    monkeypatch,
+    repo_path: Path,
+):
+    token = uuid.uuid4().hex[:8]
+    product_id = _create_product(metadata_db_case, f"IMPORTDUP-{token}")
+    product_version_id = _create_version(metadata_db_case, product_id, f"V-{token}")
+    binding = doc_binding_repository.create(
+        metadata_db_case,
+        product_id=product_id,
+        product_version_id=product_version_id,
+        repo_path=str(repo_path),
+    )
+    document_repository.create(
+        metadata_db_case,
+        doc_binding_id=binding["id"],
+        product_version_id=product_version_id,
+        doc_id=f"DOC-DUP-{token}",
+        relative_path="prd/existing.md",
+        doc_type="prd",
+        front_matter_json={},
+        relations_json={},
+        status="active",
+        title="Existing",
+    )
+    (repo_path / ".git").mkdir()
+    _write_doc(
+        repo_path / "prd" / "duplicate.md",
+        f"""
+doc_id: DOC-DUP-{token}
+title: Duplicate
+{_obsidian_properties("Duplicate")}
+doc_type: prd
+product_key: IMPORTDUP-{token}
+status: active
+relations:
+  target:
+    - PROJECT-{token}
+""".strip(),
+    )
+    _write_doc(
+        repo_path / "prd" / "fresh.md",
+        f"""
+doc_id: DOC-FRESH-{token}
+title: Fresh
+{_obsidian_properties("Fresh")}
+doc_type: prd
+product_key: IMPORTDUP-{token}
+status: active
+relations:
+  target:
+    - PROJECT-{token}
+""".strip(),
+    )
+    monkeypatch.setattr(doc_import_service, "_sync_git_repo", lambda binding: None)
+    monkeypatch.setattr(
+        doc_import_service,
+        "_last_commit_for_path",
+        lambda repo_path, relative_path: "d" * 40,
+    )
+    monkeypatch.setattr(
+        doc_import_service.doc_graph_service,
+        "upsert_document_graph",
+        lambda *args, **kwargs: {"status": "updated"},
+    )
+    monkeypatch.setattr(
+        doc_import_service.document_chunk_repository,
+        "replace_document_chunks",
+        lambda conn, document_id, chunks: [],
+    )
+    monkeypatch.setattr(
+        doc_import_service.doc_vector_service,
+        "embed_chunks",
+        lambda conn, document, chunks, force=False: {"embedded_count": 0, "reused_count": 0},
+    )
+
+    result = doc_import_service.import_binding(metadata_db_case, binding["id"])
+
+    assert result["imported_count"] == 2
+    assert result["failed_count"] == 0
+    by_doc_id = {document["doc_id"]: document for document in result["documents"]}
+    assert by_doc_id[f"DOC-DUP-{token}"]["doc_binding_id"] == binding["id"]
+    assert by_doc_id[f"DOC-DUP-{token}"]["product_version_id"] == product_version_id
+    assert by_doc_id[f"DOC-DUP-{token}"]["relative_path"] == "prd/duplicate.md"
+    assert by_doc_id[f"DOC-FRESH-{token}"]["doc_binding_id"] == binding["id"]
+    assert scan_error_repository.list_by_binding(metadata_db_case, binding["id"]) == []
+
+
+def _create_product(conn, code: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO products (name, code)
+            VALUES (%s, %s)
+            RETURNING id
+            """,
+            (f"doc-import-product-{code}", code),
+        )
+        return cur.fetchone()[0]
+
+
+def _create_version(conn, product_id: int, version_name: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO product_versions (product_id, version_name)
+            VALUES (%s, %s)
+            RETURNING id
+            """,
+            (product_id, version_name),
+        )
+        return cur.fetchone()[0]
+
+
+def _write_doc(path: Path, front_matter: str, body: str = "content") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"---\n{front_matter}\n---\n\n{body}\n", encoding="utf-8")
+
+
+def _obsidian_properties(title: str) -> str:
+    return f"""
+aliases:
+  - {title}
+tags:
+  - neodev/docs
+created: 2026-05-07
+updated: 2026-05-07
+related:
+  - "[[PROJECT-REF]]"
+""".strip()

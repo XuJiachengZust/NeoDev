@@ -35,7 +35,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python plugins/neodev-rd-knowledge/check_docchange_trailer.py --message-file .git/COMMIT_EDITMSG"
+            "command": "python plugins/neodev-rd-knowledge/check_git_commit_scope.py"
+          },
+          {
+            "type": "command",
+            "command": "python plugins/neodev-rd-knowledge/check_docchange_trailer.py --message-file .git/COMMIT_EDITMSG --skip-document-only"
           }
         ]
       },

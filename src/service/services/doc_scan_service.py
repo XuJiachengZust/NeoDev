@@ -74,6 +74,7 @@ def _persist_document(conn, binding: dict, relative_path: str, front_matter: dic
     return document_repository.upsert(
         conn,
         doc_binding_id=binding["id"],
+        product_version_id=binding.get("product_version_id"),
         doc_id=front_matter["doc_id"],
         relative_path=relative_path,
         doc_type=front_matter["doc_type"],

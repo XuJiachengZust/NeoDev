@@ -10,6 +10,7 @@ from service.dependencies import get_database_url
 from service.repositories import doc_binding_repository
 from service.repositories import product_repository
 from service.repositories import project_repository
+from service.services import product_version_service
 from service.services import doc_change_service
 from service.services import doc_import_service
 from service.services import doc_scan_service
@@ -27,6 +28,9 @@ def register(subparsers) -> None:
 
     binding_create_parser = binding_subparsers.add_parser("create")
     _add_product_locator(binding_create_parser)
+    version_source = binding_create_parser.add_mutually_exclusive_group()
+    version_source.add_argument("--version-id", type=int)
+    version_source.add_argument("--version-name")
     project_source = binding_create_parser.add_mutually_exclusive_group()
     project_source.add_argument("--project-id", type=int)
     project_source.add_argument("--project-name")
@@ -104,6 +108,7 @@ def _add_product_locator(parser) -> None:
 def handle_doc_binding_create(args) -> dict:
     def run(conn):
         product = _resolve_product(conn, args)
+        version = _resolve_version(conn, product, args)
         project = _resolve_project(conn, args)
         source_repo_url = _first_text(
             args.repo_url,
@@ -123,6 +128,7 @@ def handle_doc_binding_create(args) -> dict:
         binding = doc_binding_repository.create(
             conn,
             product_id=product["id"],
+            product_version_id=(version or {}).get("id"),
             repo_path=repo_path,
             repo_url=source_repo_url,
             default_branch=args.branch,
@@ -132,6 +138,7 @@ def handle_doc_binding_create(args) -> dict:
             args.command_name,
             {
                 "product": product,
+                "version": version,
                 "project": project,
                 "binding": binding,
                 "import_command": f"neodev doc import --doc-binding-id {binding['id']} --json",
@@ -270,6 +277,30 @@ def _resolve_project(conn, args) -> dict | None:
     if not matches:
         raise CliError(category="not_found", message="project not found")
     return max(matches, key=lambda row: row["id"])
+
+
+def _resolve_version(conn, product: dict, args) -> dict | None:
+    version_id = getattr(args, "version_id", None)
+    version_name = getattr(args, "version_name", None)
+    if version_id is None and not version_name:
+        return None
+    if version_id is not None:
+        version = product_version_service.get_version(conn, version_id)
+        if not version or version["product_id"] != product["id"]:
+            raise CliError(
+                category="not_found",
+                message="product version not found",
+                details={"version_id": version_id, "product_id": product["id"]},
+            )
+        return version
+    version = product_version_service.get_version_by_name(conn, product["id"], version_name)
+    if not version:
+        raise CliError(
+            category="not_found",
+            message="product version not found",
+            details={"version_name": version_name, "product_id": product["id"]},
+        )
+    return version
 
 
 def _first_text(*values: str | None) -> str:

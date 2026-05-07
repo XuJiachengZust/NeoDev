@@ -21,6 +21,19 @@ def _create_product(conn, code: str) -> int:
         return cur.fetchone()[0]
 
 
+def _create_version(conn, product_id: int, version_name: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO product_versions (product_id, version_name)
+            VALUES (%s, %s)
+            RETURNING id
+            """,
+            (product_id, version_name),
+        )
+        return cur.fetchone()[0]
+
+
 def _write_doc(path: Path, front_matter: str, body: str = "content") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"---\n{front_matter}\n---\n\n{body}\n", encoding="utf-8")
@@ -164,6 +177,77 @@ relations:
     assert errors[0]["relative_path"] == "tech-design/missing-relations.md"
     assert errors[0]["error_code"] == "invalid_front_matter"
     assert "relations.target" in errors[0]["error_message"]
+
+
+def test_doc_scan_overwrites_duplicate_doc_id_and_continues(metadata_db_case):
+    doc_repo = _make_doc_repo()
+    try:
+        _assert_doc_scan_overwrites_duplicate_doc_id_and_continues(metadata_db_case, doc_repo)
+    finally:
+        shutil.rmtree(doc_repo, ignore_errors=True)
+
+
+def _assert_doc_scan_overwrites_duplicate_doc_id_and_continues(metadata_db_case, tmp_path):
+    token = uuid.uuid4().hex[:8]
+    product_id = _create_product(metadata_db_case, f"DOCDUP-{token}")
+    product_version_id = _create_version(metadata_db_case, product_id, f"V-{token}")
+    binding = doc_binding_repository.create(
+        metadata_db_case,
+        product_id=product_id,
+        product_version_id=product_version_id,
+        repo_path=str(tmp_path),
+    )
+    document_repository.create(
+        metadata_db_case,
+        doc_binding_id=binding["id"],
+        product_version_id=product_version_id,
+        doc_id=f"DOC-DUP-{token}",
+        relative_path="prd/existing.md",
+        doc_type="prd",
+        front_matter_json={},
+        relations_json={},
+        status="active",
+        title="Existing",
+    )
+    _write_doc(
+        tmp_path / "prd" / "duplicate.md",
+        f"""
+doc_id: DOC-DUP-{token}
+title: Duplicate
+{_obsidian_properties("Duplicate")}
+doc_type: prd
+product_key: DOCDUP-{token}
+status: active
+relations:
+  target:
+    - PROJECT-{token}
+""".strip(),
+    )
+    _write_doc(
+        tmp_path / "prd" / "fresh.md",
+        f"""
+doc_id: DOC-FRESH-{token}
+title: Fresh
+{_obsidian_properties("Fresh")}
+doc_type: prd
+product_key: DOCDUP-{token}
+status: active
+relations:
+  target:
+    - PROJECT-{token}
+""".strip(),
+    )
+
+    result = doc_scan_service.scan_binding(metadata_db_case, binding["id"])
+
+    assert result["registered_count"] == 2
+    assert result["error_count"] == 0
+    by_doc_id = {document["doc_id"]: document for document in result["documents"]}
+    assert by_doc_id[f"DOC-DUP-{token}"]["doc_binding_id"] == binding["id"]
+    assert by_doc_id[f"DOC-DUP-{token}"]["product_version_id"] == product_version_id
+    assert by_doc_id[f"DOC-DUP-{token}"]["relative_path"] == "prd/duplicate.md"
+    assert by_doc_id[f"DOC-FRESH-{token}"]["doc_binding_id"] == binding["id"]
+    assert scan_error_repository.list_by_binding(metadata_db_case, binding["id"]) == []
 
 
 def test_doc_scan_rejects_invalid_doc_type_and_status(metadata_db_case):
