@@ -104,10 +104,10 @@ def _run_upgrade_sql(cur) -> None:
             WHERE is_active = true AND product_version_id IS NOT NULL;
 
         DROP INDEX IF EXISTS uq_documents_doc_id;
+        DROP INDEX IF EXISTS uq_documents_doc_version;
 
         CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_version
-            ON documents(doc_id, product_version_id)
-            WHERE product_version_id IS NOT NULL;
+            ON documents(doc_id, product_version_id);
 
         CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_id_legacy
             ON documents(doc_id)
