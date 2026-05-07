@@ -93,6 +93,12 @@ def _run_upgrade_sql(cur) -> None:
         CREATE INDEX IF NOT EXISTS idx_doc_bindings_product_id
             ON doc_bindings(product_id);
 
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_products_name
+            ON products(name);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_name
+            ON projects(name);
+
         DROP INDEX IF EXISTS uq_doc_bindings_active_product;
 
         CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_product_legacy

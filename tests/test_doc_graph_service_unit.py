@@ -53,3 +53,57 @@ def test_relation_graph_write_passes_product_version_id(monkeypatch):
 
     relation_params = calls[-1][1]
     assert relation_params["product_version_id"] == 4
+
+
+def test_document_graph_writes_name_version_scope(monkeypatch):
+    calls = []
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def run(self, query, **params):
+            calls.append((query, params))
+
+    class Driver:
+        def session(self, database=None):
+            return Session()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(doc_graph_service, "_load_config", lambda: ({"neo4j_uri": "bolt://neo4j"}, None))
+    monkeypatch.setattr(doc_graph_service, "_create_driver", lambda config: Driver())
+    monkeypatch.setattr(doc_graph_service, "resolve_document_project", lambda conn, binding: None)
+    monkeypatch.setattr(
+        doc_graph_service,
+        "_document_version_scope",
+        lambda conn, binding: {
+            "product_name": "NeoDev SP",
+            "version_name": "neodev-sp",
+        },
+    )
+
+    doc_graph_service.upsert_document_graph(
+        object(),
+        binding={"id": 9, "product_id": 2, "product_version_id": 4},
+        document={
+            "id": 11,
+            "doc_id": "DOC-1",
+            "relations_json": {"target": ["DOC-2"]},
+        },
+    )
+
+    document_call = calls[0]
+    relation_call = calls[-1]
+    assert "d.product_name = $product_name" in document_call[0]
+    assert "d.version_name = $version_name" in document_call[0]
+    assert "r.product_name = $product_name" in relation_call[0]
+    assert "r.version_name = $version_name" in relation_call[0]
+    assert document_call[1]["product_name"] == "NeoDev SP"
+    assert document_call[1]["version_name"] == "neodev-sp"
+    assert relation_call[1]["product_name"] == "NeoDev SP"
+    assert relation_call[1]["version_name"] == "neodev-sp"

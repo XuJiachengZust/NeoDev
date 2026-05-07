@@ -17,6 +17,7 @@ from service.repositories import branch_graph_repository as branch_graph_repo
 from service.repositories import project_repository as project_repo
 from service.services import branch_graph_neo4j_service
 from service.services import neo4j_config_service
+from service.services import product_version_service
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,7 @@ def refresh_graph_for_branch(conn, project_id: int, branch: str) -> dict | None:
     try:
         head = timed("git_head", lambda: git_ops.get_head_commit(local_root, normalized_branch))
         existing_graph = branch_graph_repo.get_by_project_branch(conn, project_id, normalized_branch)
+        version_scope = _branch_version_scope(conn, project_id, normalized_branch)
         neo4j_config, neo4j_database = neo4j_config_service.load_neo4j_config(project)
         if not neo4j_config:
             raise RuntimeError("Neo4j is not configured for branch graph refresh")
@@ -140,6 +142,7 @@ def refresh_graph_for_branch(conn, project_id: int, branch: str) -> dict | None:
                     database=neo4j_database,
                     project_id=project_id,
                     branch_name=normalized_branch,
+                    version_scope=version_scope,
                 ),
             )
         if (
@@ -208,6 +211,7 @@ def refresh_graph_for_branch(conn, project_id: int, branch: str) -> dict | None:
                 branch_name=normalized_branch,
                 graph_id=graph["id"],
                 head_commit=head,
+                version_scope=version_scope,
             ),
         )
         pipeline_timings = getattr(pipeline_result, "timings", None)
@@ -286,6 +290,19 @@ def _graph_hash(
 ) -> str:
     payload = f"{project_id}\0{branch_name}\0{head_commit or ''}\0{node_count}\0{edge_count}"
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _branch_version_scope(conn, project_id: int, branch_name: str) -> dict:
+    rows = product_version_service.list_versions_by_project_branch(conn, project_id, branch_name)
+    if len(rows) != 1:
+        return {}
+    row = rows[0]
+    return {
+        "product_version_id": row.get("id"),
+        "product_name": row.get("product_name"),
+        "version_name": row.get("version_name"),
+        "project_name": row.get("project_name"),
+    }
 
 
 def sync_commits_for_project(conn, project_id: int) -> dict | None:

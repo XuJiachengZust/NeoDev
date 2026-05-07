@@ -40,20 +40,27 @@ def branch_has_graph(
     database: str | None,
     project_id: int,
     branch_name: str,
+    version_scope: dict[str, Any] | None = None,
 ) -> bool:
+    scope = _scope_props(version_scope)
+    version_filter = ""
+    if scope.get("product_version_id") is not None:
+        version_filter = "AND g.product_version_id = $product_version_id"
     driver = _create_driver(config)
     try:
         with driver.session(database=database) as session:
             row = session.run(
-                """
-                MATCH (:Project {project_id: $project_id})-[:HAS_BRANCH_GRAPH]->(g:BranchGraph {
+                f"""
+                MATCH (:Project {{project_id: $project_id}})-[:HAS_BRANCH_GRAPH]->(g:BranchGraph {{
                     project_id: $project_id,
                     branch_name: $branch_name
-                })
+                }})
+                WHERE true {version_filter}
                 RETURN count(g) AS count
                 """,
                 project_id=project_id,
                 branch_name=branch_name,
+                product_version_id=scope.get("product_version_id"),
             ).single()
             return bool(row and int(row["count"]) > 0)
     finally:
@@ -286,9 +293,11 @@ def replace_branch_graph(
     branch_name: str,
     graph_id: int,
     head_commit: str | None,
+    version_scope: dict[str, Any] | None = None,
     batch_size: int = 1000,
     rel_batch_size: int = 1000,
 ) -> dict[str, Any]:
+    scope = _scope_props(version_scope)
     driver = _create_driver(config)
     try:
         _ensure_constraints(driver, database)
@@ -300,6 +309,7 @@ def replace_branch_graph(
             branch_name=branch_name,
             graph_id=graph_id,
             head_commit=head_commit,
+            version_scope=scope,
             batch_size=batch_size,
             rel_batch_size=rel_batch_size,
         )
@@ -310,6 +320,7 @@ def replace_branch_graph(
             project_id=project_id,
             branch_name=branch_name,
             graph_id=graph_id,
+            version_scope=scope,
         )
     finally:
         driver.close()
@@ -342,8 +353,10 @@ def _ensure_constraints(driver, database: str | None) -> None:
             "CREATE CONSTRAINT project_project_id IF NOT EXISTS FOR (n:Project) REQUIRE n.project_id IS UNIQUE",
             "CREATE CONSTRAINT branch_graph_graph_id IF NOT EXISTS FOR (n:BranchGraph) REQUIRE n.graph_id IS UNIQUE",
             "CREATE INDEX branch_graph_branch IF NOT EXISTS FOR (n:BranchGraph) ON (n.project_id, n.branch_name)",
+            "CREATE INDEX branch_graph_version IF NOT EXISTS FOR (n:BranchGraph) ON (n.product_version_id, n.project_name, n.branch_name)",
             "CREATE CONSTRAINT code_node_id IF NOT EXISTS FOR (n:CodeNode) REQUIRE n.id IS UNIQUE",
             "CREATE INDEX code_node_branch IF NOT EXISTS FOR (n:CodeNode) ON (n.project_id, n.branch_name)",
+            "CREATE INDEX code_node_version IF NOT EXISTS FOR (n:CodeNode) ON (n.product_version_id, n.project_name, n.branch_name)",
             *[
                 f"CREATE CONSTRAINT code_{label.lower()}_id IF NOT EXISTS FOR (n:{label}) REQUIRE n.id IS UNIQUE"
                 for label in sorted(_NODE_LABELS)
@@ -368,6 +381,7 @@ def _replace_graph(
     branch_name: str,
     graph_id: int,
     head_commit: str | None,
+    version_scope: dict[str, Any],
     batch_size: int,
     rel_batch_size: int,
 ) -> tuple[int, int]:
@@ -395,6 +409,7 @@ def _replace_graph(
             branch_name=branch_name,
             graph_id=graph_id,
             head_commit=head_commit,
+            **version_scope,
         )
         session.run(
             """
@@ -416,6 +431,7 @@ def _replace_graph(
                         branch_name=branch_name,
                         graph_id=graph_id,
                         head_commit=head_commit,
+                        version_scope=version_scope,
                     )
                     for node in label_batch
                 ]
@@ -430,6 +446,7 @@ def _replace_graph(
             project_id=project_id,
             branch_name=branch_name,
             graph_id=graph_id,
+            version_scope=version_scope,
         )
         if root_rows:
             for target_label, root_batch in _group_by(root_rows, "target_label").items():
@@ -450,6 +467,7 @@ def _replace_graph(
                     project_id=project_id,
                     branch_name=branch_name,
                     graph_id=graph_id,
+                    version_scope=version_scope,
                 )
                 for relationship in batch
             ]
@@ -495,26 +513,43 @@ def _write_branch_graph_root(
     branch_name: str,
     graph_id: int,
     head_commit: str | None,
+    product_version_id: int | None = None,
+    product_name: str | None = None,
+    version_name: str | None = None,
+    project_name: str | None = None,
 ) -> None:
     tx.run(
         """
         MERGE (p:Project {project_id: $project_id})
         SET p.id = 'project:' + toString($project_id),
-            p.name = coalesce(p.name, 'project:' + toString($project_id))
+            p.name = coalesce($project_name, p.name, 'project:' + toString($project_id)),
+            p.product_name = coalesce($product_name, p.product_name)
         MERGE (g:BranchGraph {graph_id: $graph_id})
         SET g.project_id = $project_id,
             g.branch_name = $branch_name,
             g.branch = $branch_name,
-            g.head_commit = $head_commit
+            g.head_commit = $head_commit,
+            g.product_version_id = $product_version_id,
+            g.product_name = $product_name,
+            g.version_name = $version_name,
+            g.project_name = $project_name
         MERGE (p)-[r:HAS_BRANCH_GRAPH {graph_id: $graph_id}]->(g)
         SET r.project_id = $project_id,
             r.branch_name = $branch_name,
-            r.branch = $branch_name
+            r.branch = $branch_name,
+            r.product_version_id = $product_version_id,
+            r.product_name = $product_name,
+            r.version_name = $version_name,
+            r.project_name = $project_name
         """,
         project_id=project_id,
         branch_name=branch_name,
         graph_id=graph_id,
         head_commit=head_commit or "",
+        product_version_id=product_version_id,
+        product_name=product_name,
+        version_name=version_name,
+        project_name=project_name,
     )
 
 
@@ -565,7 +600,9 @@ def _rebuild_doc_code_links(
     project_id: int,
     branch_name: str,
     graph_id: int,
+    version_scope: dict[str, Any] | None = None,
 ) -> int:
+    version_scope = _scope_props(version_scope)
     links = doc_code_link_repository.list_active_for_branch(
         conn,
         project_id=project_id,
@@ -591,6 +628,7 @@ def _rebuild_doc_code_links(
                 "relation_type": link.get("relation_type") or "LINKS_TO_CODE",
                 "source": link.get("source") or "manual",
                 "confidence": link.get("confidence"),
+                **version_scope,
             }
         )
     if not rows:
@@ -618,6 +656,10 @@ def _write_doc_code_links(tx, *, code_label: str, rows: list[dict[str, Any]]) ->
         SET r.project_id = link.project_id,
             r.branch_name = link.branch_name,
             r.branch = link.branch_name,
+            r.product_version_id = link.product_version_id,
+            r.product_name = link.product_name,
+            r.version_name = link.version_name,
+            r.project_name = link.project_name,
             r.graph_id = link.graph_id,
             r.doc_node_id = link.doc_node_id,
             r.code_node_id = link.code_node_id,
@@ -663,6 +705,7 @@ def _doc_code_link_row(
     project_id: int,
     branch_name: str,
     graph_id: int,
+    version_scope: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     locator = link.get("code_locator_json") or {}
     code_node_id = locator.get("code_node_id") or link.get("resolved_node_id")
@@ -681,6 +724,7 @@ def _doc_code_link_row(
         "relation_type": link.get("relation_type") or "LINKS_TO_CODE",
         "source": link.get("source") or "manual",
         "confidence": link.get("confidence"),
+        **_scope_props(version_scope),
     }
 
 
@@ -805,6 +849,7 @@ def _node_row(
     branch_name: str,
     graph_id: int,
     head_commit: str | None,
+    version_scope: dict[str, Any],
 ) -> dict[str, Any]:
     node_id = str(node["id"])
     props = _props_for_neo4j(node.get("properties") or {})
@@ -819,6 +864,7 @@ def _node_row(
             "graph_id": graph_id,
             "head_commit": head_commit or "",
             "label": str(node.get("label") or ""),
+            **version_scope,
         }
     )
     return {"id": props["id"], "props": props}
@@ -831,6 +877,7 @@ def _relationship_row(
     project_id: int,
     branch_name: str,
     graph_id: int,
+    version_scope: dict[str, Any],
 ) -> dict[str, Any]:
     rel_id = str(relationship.get("id") or f"{relationship['sourceId']}->{relationship['targetId']}")
     source_node = nodes_by_id.get(str(relationship["sourceId"])) or {}
@@ -848,6 +895,7 @@ def _relationship_row(
             "confidence": relationship.get("confidence", 1.0),
             "reason": relationship.get("reason") or "",
             "type": relationship.get("type") or "",
+            **version_scope,
         }
     )
     return {
@@ -916,6 +964,7 @@ def _root_relationship_rows(
     project_id: int,
     branch_name: str,
     graph_id: int,
+    version_scope: dict[str, Any],
 ) -> list[dict[str, Any]]:
     contained_node_ids = {
         relationship["targetId"]
@@ -939,6 +988,7 @@ def _root_relationship_rows(
                     "branch_name": branch_name,
                     "branch": branch_name,
                     "graph_id": graph_id,
+                    **version_scope,
                     "type": "CONTAINS",
                 },
             }
@@ -959,3 +1009,14 @@ def _scoped_id(project_id: int, branch_name: str, item_id: str) -> str:
     if str(item_id).startswith("project:"):
         return str(item_id)
     return f"project:{project_id}:branch:{branch_name}:node:{item_id}"
+
+
+def _scope_props(version_scope: dict[str, Any] | None) -> dict[str, Any]:
+    version_scope = version_scope or {}
+    props = {
+        "product_version_id": version_scope.get("product_version_id"),
+        "product_name": version_scope.get("product_name"),
+        "version_name": version_scope.get("version_name"),
+        "project_name": version_scope.get("project_name"),
+    }
+    return {key: value for key, value in props.items() if value is not None}

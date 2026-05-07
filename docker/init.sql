@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS versions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_versions_project_id ON versions(project_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_name ON projects(name);
 
 -- requirements (Requirement aggregate root)
 CREATE TABLE IF NOT EXISTS requirements (
@@ -168,6 +169,7 @@ CREATE TABLE IF NOT EXISTS ai_agent_sessions (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+
 COMMENT ON TABLE ai_agent_sessions IS '浏览器级 Agent 会话，前端 localStorage 持久化 UUID';
 
 -- 2. 会话内的对话（每个 route_context_key + project 组合一个）
@@ -281,6 +283,8 @@ COMMENT ON COLUMN products.status IS 'active|archived';
 -- ============================================================
 -- 2. 产品-项目关联（Product 1:N Project）
 -- ============================================================
+CREATE UNIQUE INDEX IF NOT EXISTS uq_products_name ON products(name);
+
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES products(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_projects_product_id ON projects(product_id);

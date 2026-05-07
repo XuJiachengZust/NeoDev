@@ -102,6 +102,12 @@ def test_replace_branch_graph_scopes_nodes_by_project_branch(monkeypatch):
         branch_name="release/V1",
         graph_id=9,
         head_commit="abc",
+        version_scope={
+            "product_version_id": 23,
+            "product_name": "NeoDev SP",
+            "version_name": "V1",
+            "project_name": "NeoDev",
+        },
     )
 
     all_calls = [call for session in driver.sessions for call in session.calls]
@@ -133,6 +139,10 @@ def test_replace_branch_graph_scopes_nodes_by_project_branch(monkeypatch):
         "branch_name": "release/V1",
         "graph_id": 9,
         "head_commit": "abc",
+        "product_version_id": 23,
+        "product_name": "NeoDev SP",
+        "version_name": "V1",
+        "project_name": "NeoDev",
     }
     node_ids = {row["id"] for call in node_calls for row in call[1]["nodes"]}
     assert "project:3:branch:release/V1:node:Folder:src" in node_ids
@@ -140,7 +150,15 @@ def test_replace_branch_graph_scopes_nodes_by_project_branch(monkeypatch):
     assert "project:3:branch:release/V1:node:Function:src/app.py:main" in node_ids
     node_props = {row["id"]: row["props"] for call in node_calls for row in call[1]["nodes"]}
     assert node_props["project:3:branch:release/V1:node:File:src/app.py"]["branch"] == "release/V1"
+    assert node_props["project:3:branch:release/V1:node:File:src/app.py"]["product_version_id"] == 23
+    assert node_props["project:3:branch:release/V1:node:File:src/app.py"]["product_name"] == "NeoDev SP"
+    assert node_props["project:3:branch:release/V1:node:File:src/app.py"]["version_name"] == "V1"
+    assert node_props["project:3:branch:release/V1:node:File:src/app.py"]["project_name"] == "NeoDev"
     rel_rows = [row for call in rel_calls for row in call[1]["rels"]]
+    assert rel_rows[0]["props"]["product_version_id"] == 23
+    assert rel_rows[0]["props"]["product_name"] == "NeoDev SP"
+    assert rel_rows[0]["props"]["version_name"] == "V1"
+    assert rel_rows[0]["props"]["project_name"] == "NeoDev"
     assert {
         (row["source_label"], row["target_label"], row["source_id"], row["target_id"])
         for row in rel_rows
@@ -168,6 +186,10 @@ def test_replace_branch_graph_scopes_nodes_by_project_branch(monkeypatch):
                 "branch_name": "release/V1",
                 "branch": "release/V1",
                 "graph_id": 9,
+                "product_version_id": 23,
+                "product_name": "NeoDev SP",
+                "version_name": "V1",
+                "project_name": "NeoDev",
                 "type": "CONTAINS",
             },
         }

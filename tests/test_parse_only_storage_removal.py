@@ -27,6 +27,18 @@ def test_refresh_graph_for_branch_replaces_neo4j_branch_graph(monkeypatch):
     monkeypatch.setattr(sync_service, "_git_checkout", lambda local_root, branch: "main")
     monkeypatch.setattr(sync_service, "_restore_checkout", lambda local_root, previous_branch, current_branch: calls.setdefault("restore", current_branch))
     monkeypatch.setattr(sync_service.branch_graph_repo, "get_by_project_branch", lambda conn, project_id, branch_name: None)
+    monkeypatch.setattr(
+        sync_service.product_version_service,
+        "list_versions_by_project_branch",
+        lambda conn, project_id, branch_name: [
+            {
+                "id": 23,
+                "product_name": "NeoDev SP",
+                "version_name": "V1",
+                "project_name": "NeoDev",
+            }
+        ],
+    )
 
     def fake_upsert(conn, *, project_id, branch_name, status):
         calls["upsert_graph"] = {"project_id": project_id, "branch_name": branch_name, "status": status}
@@ -84,6 +96,12 @@ def test_refresh_graph_for_branch_replaces_neo4j_branch_graph(monkeypatch):
     assert calls["neo4j_replace"]["project_id"] == 3
     assert calls["neo4j_replace"]["branch_name"] == "main"
     assert calls["neo4j_replace"]["graph_id"] == 9
+    assert calls["neo4j_replace"]["version_scope"] == {
+        "product_version_id": 23,
+        "product_name": "NeoDev SP",
+        "version_name": "V1",
+        "project_name": "NeoDev",
+    }
     assert calls["upsert_graph"]["status"] == "running"
     assert calls["mark_ready"]["node_count"] == 4
     assert calls["mark_ready"]["edge_count"] == 3
@@ -125,7 +143,24 @@ def test_refresh_graph_for_branch_skips_unchanged_existing_neo4j_graph(monkeypat
         "load_neo4j_config",
         lambda project: ({"neo4j_uri": "bolt://neo4j:7687", "neo4j_user": "neo4j", "neo4j_password": "pw"}, None),
     )
-    monkeypatch.setattr(sync_service.branch_graph_neo4j_service, "branch_has_graph", lambda **kwargs: True)
+    monkeypatch.setattr(
+        sync_service.product_version_service,
+        "list_versions_by_project_branch",
+        lambda conn, project_id, branch_name: [
+            {
+                "id": 23,
+                "product_name": "NeoDev SP",
+                "version_name": "V1",
+                "project_name": "NeoDev",
+            }
+        ],
+    )
+
+    def fake_branch_has_graph(**kwargs):
+        calls["branch_has_graph"] = kwargs
+        return True
+
+    monkeypatch.setattr(sync_service.branch_graph_neo4j_service, "branch_has_graph", fake_branch_has_graph)
     monkeypatch.setattr(pipeline, "run_pipeline", lambda *args, **kwargs: calls.setdefault("pipeline", True))
 
     conn = FakeConn()
@@ -134,6 +169,8 @@ def test_refresh_graph_for_branch_skips_unchanged_existing_neo4j_graph(monkeypat
     assert result["graph_action"] == "skipped_unchanged"
     assert result["graph_id"] == 9
     assert result["head_commit"] == head
+    assert calls["branch_has_graph"]["version_scope"]["product_version_id"] == 23
+    assert calls["branch_has_graph"]["version_scope"]["product_name"] == "NeoDev SP"
     assert "pipeline" not in calls
     assert conn.commits == 0
 

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
-from service.repositories import project_repository
+from service.repositories import product_repository, product_version_repository, project_repository
 
 
 def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, Any]:
@@ -14,6 +14,7 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
     if not config or not config.get("neo4j_uri"):
         return {"status": "not_configured"}
     project = resolve_document_project(conn, binding)
+    scope = _document_version_scope(conn, binding)
     driver = _create_driver(config)
     merge_document = _document_merge_clause(binding, "d")
     match_document = _document_match_clause(binding, "d")
@@ -27,6 +28,8 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                 SET d.document_id = $document_id,
                     d.doc_binding_id = $doc_binding_id,
                     d.product_version_id = $product_version_id,
+                    d.product_name = $product_name,
+                    d.version_name = $version_name,
                     d.title = $title,
                     d.doc_type = $doc_type,
                     d.relative_path = $relative_path,
@@ -38,6 +41,8 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                 doc_binding_id=binding["id"],
                 product_id=binding["product_id"],
                 product_version_id=binding.get("product_version_id"),
+                product_name=scope.get("product_name"),
+                version_name=scope.get("version_name"),
                 doc_id=document["doc_id"],
                 title=document.get("title") or "",
                 doc_type=document.get("doc_type") or "",
@@ -57,7 +62,9 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                         p.repo_url = coalesce(p.repo_url, $project_repo_url),
                         p.product_id = coalesce(p.product_id, $product_id),
                         d.project_id = $project_id,
-                        d.product_version_id = $product_version_id
+                        d.product_version_id = $product_version_id,
+                        d.product_name = $product_name,
+                        d.version_name = $version_name
                     MERGE (p)-[r:HAS_DOCUMENT {
                         doc_binding_id: $doc_binding_id,
                         doc_id: $doc_id
@@ -66,6 +73,8 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                         r.project_id = $project_id,
                         r.document_id = $document_id,
                         r.product_version_id = $product_version_id,
+                        r.product_name = $product_name,
+                        r.version_name = $version_name,
                         r.relative_path = $relative_path,
                         r.updated_at = $updated_at
                     """,
@@ -78,6 +87,8 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                     doc_binding_id=binding["id"],
                     product_id=binding["product_id"],
                     product_version_id=binding.get("product_version_id"),
+                    product_name=scope.get("product_name"),
+                    version_name=scope.get("version_name"),
                     doc_id=document["doc_id"],
                     relative_path=document.get("relative_path") or "",
                     updated_at=datetime.now(timezone.utc).isoformat(),
@@ -88,12 +99,18 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                     f"""
                     {match_source}
                     {match_target}
-                    MERGE (source)-[:RELATES_TO]->(target)
+                    MERGE (source)-[r:RELATES_TO]->(target)
+                    SET r.product_id = $product_id,
+                        r.product_version_id = $product_version_id,
+                        r.product_name = $product_name,
+                        r.version_name = $version_name
                     """,
                     source_doc_id=document["doc_id"],
                     target_doc_id=target,
                     product_id=binding["product_id"],
                     product_version_id=binding.get("product_version_id"),
+                    product_name=scope.get("product_name"),
+                    version_name=scope.get("version_name"),
                 )
     finally:
         driver.close()
@@ -115,6 +132,21 @@ def _document_key(binding: dict, *, doc_id_param: str = "doc_id") -> str:
     if binding.get("product_version_id") is not None:
         parts.append("product_version_id: $product_version_id")
     return ", ".join(parts)
+
+
+def _document_version_scope(conn, binding: dict) -> dict[str, str | None]:
+    try:
+        product = product_repository.find_by_id(conn, binding["product_id"])
+        version = None
+        if binding.get("product_version_id") is not None:
+            version = product_version_repository.find_by_id(conn, binding["product_version_id"])
+    except Exception:
+        product = None
+        version = None
+    return {
+        "product_name": (product or {}).get("name"),
+        "version_name": (version or {}).get("version_name"),
+    }
 
 
 def resolve_document_project(conn, binding: dict) -> dict | None:
