@@ -93,6 +93,7 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                     source_doc_id=document["doc_id"],
                     target_doc_id=target,
                     product_id=binding["product_id"],
+                    product_version_id=binding.get("product_version_id"),
                 )
     finally:
         driver.close()
