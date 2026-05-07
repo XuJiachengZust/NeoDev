@@ -55,7 +55,7 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                 session.run(
                     f"""
                     {match_document}
-                    MERGE (p:Project {project_id: $project_id})
+                    MERGE (p:Project {{project_id: $project_id}})
                     SET p.id = coalesce(p.id, $project_node_id),
                         p.name = coalesce(p.name, $project_name, $project_node_id),
                         p.repo_path = coalesce(p.repo_path, $project_repo_path),
@@ -65,10 +65,10 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                         d.product_version_id = $product_version_id,
                         d.product_name = $product_name,
                         d.version_name = $version_name
-                    MERGE (p)-[r:HAS_DOCUMENT {
+                    MERGE (p)-[r:HAS_DOCUMENT {{
                         doc_binding_id: $doc_binding_id,
                         doc_id: $doc_id
-                    }]->(d)
+                    }}]->(d)
                     SET r.product_id = $product_id,
                         r.project_id = $project_id,
                         r.document_id = $document_id,
