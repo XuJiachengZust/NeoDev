@@ -84,6 +84,11 @@ def upsert(
     graph_status: str = "pending",
     chunk_status: str = "pending",
 ) -> dict:
+    conflict_target = (
+        "(doc_id, product_version_id)"
+        if product_version_id is not None
+        else "(doc_binding_id, relative_path)"
+    )
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
             f"""INSERT INTO documents (
