@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-PLUGIN-HOOKS-DOC-VALIDATION-SUPERPOWERS-PLATFORMS
-title: "NeoDev 插件钩子、MVP 文档校验与 Superpowers 平台留痕"
+title: NeoDev 插件钩子、MVP 文档校验与 Superpowers 平台留痕
 aliases:
-  - "NeoDev 插件钩子、MVP 文档校验与 Superpowers 平台留痕"
+- NeoDev 插件钩子、MVP 文档校验与 Superpowers 平台留痕
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,12 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
 related:
-  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+- '[[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev
+  CLI 与元数据基础设计]]'
 ---
+
 # NeoDev 插件钩子、MVP 文档校验与 Superpowers 平台留痕
 
 ## 已实现范围
@@ -83,3 +85,6 @@ relations:
 - Claude Code 钩子通过 `hooks/hooks.json` 中的事件分组和命令钩子表示。
 - Cursor 支持基于规则文件，不声明具备与 Claude Code 等价的运行时阻断钩子能力。
 - 本次工作在当前分支 `neodev-sp` 上执行，未执行 git commit 或 push。
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev CLI 与元数据基础设计]]

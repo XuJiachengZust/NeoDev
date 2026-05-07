@@ -1,11 +1,11 @@
 ---
 doc_id: NEODEV-DOC-NEODEV-SP-PRODUCT-SIGNIFICANCE
-title: "NeoDev SP 产品意义说明"
+title: NeoDev SP 产品意义说明
 aliases:
-  - "NeoDev SP 产品意义说明"
+- NeoDev SP 产品意义说明
 tags:
-  - neodev/docs
-  - neodev/prd
+- neodev/docs
+- neodev/prd
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: prd
@@ -13,10 +13,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # NeoDev SP 产品意义说明
 
 ## 核心结论
@@ -160,3 +161,6 @@ NeoDev SP 要回答的问题不是：AI 能不能让一个人做得更快。
 所以，NeoDev SP 的长期意义可以概括为一句话：
 
 让一人团队在 AI 软件工程时代，不只是拥有更强的生产力，也拥有能够驾驭这种生产力的产品工程秩序。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

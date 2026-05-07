@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-GRAPH-QUERY-CLI-F002-CONTEXT-CHAIN
-title: "NeoDev F002 图谱查询 CLI 留痕：entity-context / get-chain"
+title: NeoDev F002 图谱查询 CLI 留痕：entity-context / get-chain
 aliases:
-  - "NeoDev F002 图谱查询 CLI 留痕：entity-context / get-chain"
+- NeoDev F002 图谱查询 CLI 留痕：entity-context / get-chain
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,12 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
 related:
-  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+- '[[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev
+  CLI 与元数据基础设计]]'
 ---
+
 # NeoDev F002 图谱查询 CLI 留痕：entity-context / get-chain
 
 ## 背景
@@ -149,3 +151,6 @@ warning 仍是 `.pytest_cache` 写入权限问题，不影响功能验证。
 - `graph refresh-nodes`
 
 其中 `graph refresh-nodes` 会触达节点刷新、AI 描述和 embedding 复用/重算，建议作为下一个独立切片处理。
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev CLI 与元数据基础设计]]

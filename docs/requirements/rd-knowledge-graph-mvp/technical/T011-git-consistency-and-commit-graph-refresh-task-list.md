@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-T011-GIT-CONSISTENCY-AND-POST-PUSH-REFRESH-TASK-LIST
-title: "T011 Git 一致性与推送后刷新任务清单"
+title: T011 Git 一致性与推送后刷新任务清单
 aliases:
-  - "T011 Git 一致性与推送后刷新任务清单"
+- T011 Git 一致性与推送后刷新任务清单
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # T011 Git 一致性与推送后刷新任务清单
 
 ## 1. 目标
@@ -341,3 +342,6 @@ related:
 - 当前已有“提交同步”和“图谱刷新”基础，但还没有“Git 一致性闭环”的正式模型
 - `DocChange-ID`、`CodeChangeLink`、`DangerousCommitRecord` 和分支快照记录是这条链路稳定化的关键
 - 推送后刷新不应等价于全量同步，而应转为按 commit 和节点范围执行的定向刷新
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

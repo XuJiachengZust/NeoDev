@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-FEATURES-F002-GRAPH-QUERY-AND-CHANGE-CONTEXT
-title: "F002 图谱查询、文档语义检索与上下文供给 PRD"
+title: F002 图谱查询、文档语义检索与上下文供给 PRD
 aliases:
-  - "F002 图谱查询、文档语义检索与上下文供给 PRD"
+- F002 图谱查询、文档语义检索与上下文供给 PRD
 tags:
-  - neodev/docs
-  - neodev/prd
-  - neodev/requirements
+- neodev/docs
+- neodev/prd
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: prd
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # F002 图谱查询、文档语义检索与上下文供给 PRD
 
 ## 1. 基本信息
@@ -333,3 +334,6 @@ F002 负责向本地智能工具输出“可消费的事实和关系”，包括
 | TC-F002-10 | P0 | 关系类型白名单限制关系新增和更新 |
 | TC-F002-11 | P0 | 所有节点允许手动更新非身份字段 |
 | TC-F002-12 | P0 | 跨项目关系按关系归属项目校验 |
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-28-REPOSITORY-FACT-GRAPH-STORAGE-DESIGN
-title: "NeoDev 仓库级事实图存储结构设计"
+title: NeoDev 仓库级事实图存储结构设计
 aliases:
-  - "NeoDev 仓库级事实图存储结构设计"
+- NeoDev 仓库级事实图存储结构设计
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/spec
+- neodev/docs
+- neodev/tech-design
+- neodev/spec
 created: 2026-04-28
 updated: 2026-04-28
 doc_type: tech-design
@@ -14,12 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-06-GRAPH-STORAGE-STRUCTURE
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-06-GRAPH-STORAGE-STRUCTURE
   related:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-28-BRANCH-SNAPSHOT-METADATA-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-28-BRANCH-SNAPSHOT-METADATA-DESIGN
 related:
-  - "[[06-graph-storage-structure]]"
-  - "[[2026-04-28-branch-snapshot-metadata-design]]"
+- '[[requirements/rd-knowledge-graph-mvp/technical/06-graph-storage-structure|图谱存储结构设计]]'
 ---
 
 # NeoDev 仓库级事实图存储结构设计
@@ -176,3 +175,6 @@ project_id + branch -> current branch_snapshot -> visible branch_snapshot_entrie
 - 本设计把分支视图放在 PostgreSQL，把代码事实放在 Neo4j，符合原始技术方案。
 - 本设计保留 API 入参兼容，降低上层 CLI 和路由改造范围。
 - 本设计明确了无快照时的降级行为，避免查询误返回其他分支事实。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/technical/06-graph-storage-structure|图谱存储结构设计]]

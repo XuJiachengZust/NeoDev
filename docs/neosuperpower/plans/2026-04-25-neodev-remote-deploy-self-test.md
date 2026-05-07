@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-25-NEODEV-REMOTE-DEPLOY-SELF-TEST
-title: "NeoDev 远程部署与自测留痕"
+title: NeoDev 远程部署与自测留痕
 aliases:
-  - "NeoDev 远程部署与自测留痕"
+- NeoDev 远程部署与自测留痕
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-25
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,12 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
 related:
-  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+- '[[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev
+  CLI 与元数据基础设计]]'
 ---
+
 # NeoDev 远程部署与自测留痕
 
 日期：2026-04-25
@@ -78,3 +80,6 @@ neodev-neo4j Up (healthy)
 - 当前远程验证证明 T003/T004 的 CLI 链路可以在远程环境运行。
 - 当前不是正式镜像级部署，因为远程 Docker Hub 拉取基础镜像超时；若要固化部署，需要解决远程网络拉取问题，或本地构建镜像后通过 `docker save/load` 传入远程。
 - 完整项目自动分析命令仍未实现，后续应进入 T006：`product version analyze` / `analyze-status`。
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev CLI 与元数据基础设计]]

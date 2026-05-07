@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-28-BRANCH-SNAPSHOT-METADATA-DESIGN
-title: "NeoDev 分支快照元数据设计"
+title: NeoDev 分支快照元数据设计
 aliases:
-  - "NeoDev 分支快照元数据设计"
+- NeoDev 分支快照元数据设计
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/spec
+- neodev/docs
+- neodev/tech-design
+- neodev/spec
 created: 2026-04-28
 updated: 2026-04-28
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-06-GRAPH-STORAGE-STRUCTURE
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-06-GRAPH-STORAGE-STRUCTURE
 related:
-  - "[[06-graph-storage-structure]]"
+- '[[requirements/rd-knowledge-graph-mvp/technical/06-graph-storage-structure|图谱存储结构设计]]'
 ---
+
 # NeoDev 分支快照元数据设计
 
 ## 1. 目标
@@ -158,3 +159,6 @@ pytest tests/test_branch_snapshot_service.py tests/test_branch_analysis_service_
 ```
 
 如本机 PostgreSQL 不可用，数据库集成测试允许沿用现有 fixture 跳过策略，但纯服务层测试必须可执行。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/technical/06-graph-storage-structure|图谱存储结构设计]]

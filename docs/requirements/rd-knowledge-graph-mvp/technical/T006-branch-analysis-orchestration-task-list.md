@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-T006-BRANCH-ANALYSIS-ORCHESTRATION-TASK-LIST
-title: "T006 仓库接入与自动图谱构建任务清单"
+title: T006 仓库接入与自动图谱构建任务清单
 aliases:
-  - "T006 仓库接入与自动图谱构建任务清单"
+- T006 仓库接入与自动图谱构建任务清单
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # T006 仓库接入与自动图谱构建任务清单
 
 ## 1. 目标
@@ -343,3 +344,6 @@ related:
 - 同 HEAD 分支触发图谱构建时，不重复生成整套图数据
 - 增量分析后可以看到快照 entry 被局部替换
 - `project show` 可返回当前快照标识及来源动作
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

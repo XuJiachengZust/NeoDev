@@ -1,25 +1,24 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-28-REPOSITORY-FACT-GRAPH-STORAGE
-title: "NeoDev 仓库级事实图存储结构实施计划"
+title: NeoDev 仓库级事实图存储结构实施计划
 aliases:
-  - "NeoDev 仓库级事实图存储结构实施计划"
+- NeoDev 仓库级事实图存储结构实施计划
 tags:
-  - neodev/docs
-  - neodev/implementation-plan
-  - neodev/superpowers
+- neodev/docs
+- neodev/implementation-plan
+- neodev/superpowers
 created: 2026-04-28
 updated: 2026-04-28
-doc_type: implementation-plan
+doc_type: tech-design
 product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-28-REPOSITORY-FACT-GRAPH-STORAGE-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-28-REPOSITORY-FACT-GRAPH-STORAGE-DESIGN
   related:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-06-GRAPH-STORAGE-STRUCTURE
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-06-GRAPH-STORAGE-STRUCTURE
 related:
-  - "[[2026-04-28-repository-fact-graph-storage-design]]"
-  - "[[06-graph-storage-structure]]"
+- '[[neosuperpower/specs/2026-04-28-repository-fact-graph-storage-design|NeoDev 仓库级事实图存储结构设计]]'
 ---
 
 # NeoDev 仓库级事实图存储结构实施计划
@@ -119,3 +118,6 @@ related:
 
 - 完整 `pytest` 受本机临时目录权限影响，可能在 pytest 创建临时目录阶段报 `PermissionError`；功能相关的定向测试已通过。
 - API 仍保留 `branch` 入参作为分支视图选择条件，这是兼容层，不再表示 Neo4j 节点身份。
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-28-repository-fact-graph-storage-design|NeoDev 仓库级事实图存储结构设计]]

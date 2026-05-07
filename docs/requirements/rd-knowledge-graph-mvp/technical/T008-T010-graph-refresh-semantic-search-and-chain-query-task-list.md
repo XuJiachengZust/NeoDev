@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-T008-T010-GRAPH-REFRESH-SEMANTIC-SEARCH-AND-CHAIN-QUERY-TASK-LIST
-title: "T008-T010 图谱查询、文档语义检索与链路查询任务清单"
+title: T008-T010 图谱查询、文档语义检索与链路查询任务清单
 aliases:
-  - "T008-T010 图谱查询、文档语义检索与链路查询任务清单"
+- T008-T010 图谱查询、文档语义检索与链路查询任务清单
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-28
 doc_type: tech-design
@@ -14,9 +14,9 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
 
 # T008-T010 图谱查询、文档语义检索与链路查询任务清单
@@ -165,3 +165,6 @@ related:
 - `ProductVersion` 是文档语义检索和图谱链路查询的正式边界。
 - `branch_snapshot` 是多分支查询的可见性边界。
 - `project refresh-commit-graph` 是推送后的默认刷新入口。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-04-IMPLEMENTATION-CHECKLIST
-title: "MVP 实现清单"
+title: MVP 实现清单
 aliases:
-  - "MVP 实现清单"
+- MVP 实现清单
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # MVP 实现清单
 
 ## 1. 目标
@@ -367,3 +368,6 @@ related:
 - 插件 / skill 和 CLI 的职责边界不再模糊
 - 官方插件与官方 skill 都达到可用状态，而不是停留在规范文档
 - 可以直接据此拆成开发任务、测试任务和集成任务
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-PLUGIN-SKILL-ZH-LOCALIZATION
-title: "NeoDev 官方插件与 Skill 中文化留痕"
+title: NeoDev 官方插件与 Skill 中文化留痕
 aliases:
-  - "NeoDev 官方插件与 Skill 中文化留痕"
+- NeoDev 官方插件与 Skill 中文化留痕
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,12 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
 related:
-  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+- '[[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev
+  CLI 与元数据基础设计]]'
 ---
+
 # NeoDev 官方插件与 Skill 中文化留痕
 
 日期：2026-04-27
@@ -105,3 +107,6 @@ $env:PYTHONUTF8='1'; python C:\Users\AH\.codex\skills\.system\skill-creator\scri
 结果：`Skill is valid!`。
 
 说明：`PYTHONUTF8=1` 是为了避免 Windows 默认 GBK 读取 UTF-8 中文 skill 时误报解码失败。
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev CLI 与元数据基础设计]]

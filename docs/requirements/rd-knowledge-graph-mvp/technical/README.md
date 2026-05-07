@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-README
-title: "技术设计索引"
+title: 技术设计索引
 aliases:
-  - "技术设计索引"
+- 技术设计索引
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # 技术设计索引
 
 这个目录存放研发知识中台 MVP 的技术实现类文档，和总 PRD、子 PRD 分开管理。
@@ -42,3 +43,6 @@ related:
   Git 校验、危险提交、推送后节点刷新与链路更新专项任务列表。
 - [T008-T010-graph-refresh-semantic-search-and-chain-query-task-list.md](./T008-T010-graph-refresh-semantic-search-and-chain-query-task-list.md)
   图谱节点刷新、图谱语义索引、产品版本语义检索和链路查询专项任务列表。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

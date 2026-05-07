@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-POST-PUSH-REFRESH-CLI-F003
-title: "NeoDev F003 推送后刷新 CLI 留痕"
+title: NeoDev F003 推送后刷新 CLI 留痕
 aliases:
-  - "NeoDev F003 推送后刷新 CLI 留痕"
+- NeoDev F003 推送后刷新 CLI 留痕
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,12 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
 related:
-  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+- '[[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev
+  CLI 与元数据基础设计]]'
 ---
+
 # NeoDev F003 推送后刷新 CLI 留痕
 
 ## 背景
@@ -130,3 +132,5 @@ pytest tests/test_cli_contract.py tests/test_metadata_migration.py tests/test_me
 - 将 `chains_updated` 与后续链路刷新/缓存失效能力打通
 - 将 AI 局部刷新统计接入 `graph_refresh_service`
 
+## 关联文档
+- [[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev CLI 与元数据基础设计]]

@@ -1,3 +1,24 @@
+---
+doc_id: NEODEV-DOC-NEOSUPERPOWER-PLANS-2026-04-28-CONTROLLED-GRAPH-MANAGEMENT
+title: NeoDev ?????????
+aliases:
+- NeoDev ?????????
+tags:
+- neodev/docs
+- neodev/tech-design
+- neosuperpower/plans
+created: 2026-04-28
+updated: 2026-04-28
+related:
+- '[[requirements/rd-knowledge-graph-mvp/technical/06-graph-storage-structure|图谱存储结构设计]]'
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-06-GRAPH-STORAGE-STRUCTURE
+---
+
 # 受控图管理实现计划
 
 > **给智能体执行者：** 必须使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 按任务逐项执行。任务使用复选框语法跟踪。
@@ -127,3 +148,6 @@
 运行：`pytest`
 
 已知环境限制：当前机器可能因无法创建 `C:\Users\AH\AppData\Local\Temp\pytest-of-AH` 导致 `tmp_path` 夹具失败；如果再次出现，必须如实记录。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/technical/06-graph-storage-structure|图谱存储结构设计]]

@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-28-BRANCH-SNAPSHOT-METADATA
-title: "NeoDev 分支快照元数据实现计划"
+title: NeoDev 分支快照元数据实现计划
 aliases:
-  - "NeoDev 分支快照元数据实现计划"
+- NeoDev 分支快照元数据实现计划
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-28
 updated: 2026-04-28
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-28-BRANCH-SNAPSHOT-METADATA-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-28-BRANCH-SNAPSHOT-METADATA-DESIGN
 related:
-  - "[[2026-04-28-branch-snapshot-metadata-design]]"
+- '[[neosuperpower/specs/2026-04-28-branch-snapshot-metadata-design|NeoDev 分支快照元数据设计]]'
 ---
+
 # NeoDev 分支快照元数据实现计划
 
 日期：2026-04-28
@@ -186,3 +187,6 @@ pytest tests/test_metadata_migration.py
 - 分支分析状态返回真实 `current_snapshot_id`。
 - 链路查询返回真实 `snapshot_id`。
 - 相关单元测试通过。
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-28-branch-snapshot-metadata-design|NeoDev 分支快照元数据设计]]

@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
-title: "NeoDev CLI 与元数据基础设计"
+title: NeoDev CLI 与元数据基础设计
 aliases:
-  - "NeoDev CLI 与元数据基础设计"
+- NeoDev CLI 与元数据基础设计
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/spec
+- neodev/docs
+- neodev/tech-design
+- neodev/spec
 created: 2026-04-24
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # NeoDev CLI 与元数据基础设计
 
 ## 1. 范围
@@ -345,3 +346,6 @@ CLI 可能逐渐演变成第二套应用表面，并开始复制业务逻辑。
 - 新增元数据对象具备 repository 访问能力
 - 自动化测试覆盖 CLI 契约与元数据持久化
 - 至少执行过一次真实 CLI 命令作为最终验证
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

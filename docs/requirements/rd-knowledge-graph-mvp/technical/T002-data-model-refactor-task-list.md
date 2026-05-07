@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-T002-DATA-MODEL-REFACTOR-TASK-LIST
-title: "T002 数据模型重构任务清单"
+title: T002 数据模型重构任务清单
 aliases:
-  - "T002 数据模型重构任务清单"
+- T002 数据模型重构任务清单
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-29
 doc_type: tech-design
@@ -14,9 +14,9 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
 
 # T002 数据模型重构任务清单
@@ -785,3 +785,6 @@ sync-commits 驱动图谱更新的行为
 - 刷新图谱后能自动检测并重建失效文档关系。
 - PG 可作为唯一事实源。
 - Neo4j 可作为查询投影重建。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-T012-T014-PLUGIN-SKILL-E2E
-title: "NeoDev T012-T014 插件 / Skill / 端到端留痕"
+title: NeoDev T012-T014 插件 / Skill / 端到端留痕
 aliases:
-  - "NeoDev T012-T014 插件 / Skill / 端到端留痕"
+- NeoDev T012-T014 插件 / Skill / 端到端留痕
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,12 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
 related:
-  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+- '[[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev
+  CLI 与元数据基础设计]]'
 ---
+
 # NeoDev T012-T014 插件 / Skill / 端到端留痕
 
 日期：2026-04-27
@@ -176,3 +178,6 @@ pytest tests/test_cli_contract.py tests/test_metadata_migration.py tests/test_me
 - T014 当前是可复现文档和示例骨架，尚未自动创建独立 Git 仓库并执行真实端到端提交/推送。
 - `git verify-doc-change` 的危险分支自动创建 `DangerousCommitRecord` 仍是 T011 增强项。
 - `git post-push-refresh` 的真实 commit 同步统计和链路刷新统计仍是后续增强项。
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev CLI 与元数据基础设计]]

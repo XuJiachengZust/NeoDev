@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-00-SOURCE-INDEX
-title: "研发知识图谱中台 MVP 来源索引"
+title: 研发知识图谱中台 MVP 来源索引
 aliases:
-  - "研发知识图谱中台 MVP 来源索引"
+- 研发知识图谱中台 MVP 来源索引
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # 研发知识图谱中台 MVP 来源索引
 
 ## 1. 用户确认来源
@@ -70,3 +71,6 @@ related:
 
 - 这版 PRD 不是抽象设想，而是围绕现有产品版本、图谱同步、分支分析状态、仓库级结构事实、快照裁剪、文档语义检索和 CLI 图管理能力形成。
 - 产品默认通过插件/skill 引导用户，再调用 CLI 完成执行；CLI 是业务执行、状态持久化和结构化结果输出的唯一事实层。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-05-DEVELOPMENT-TASK-LIST
-title: "研发知识中台 MVP 开发任务列表"
+title: 研发知识中台 MVP 开发任务列表
 aliases:
-  - "研发知识中台 MVP 开发任务列表"
+- 研发知识中台 MVP 开发任务列表
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # 研发知识中台 MVP 开发任务列表
 
 ## 1. 目标
@@ -573,3 +574,6 @@ related:
 - 如果要直接进入实现，可以先从 `T001 + T002` 开始建立骨架
 - 如果要让多名 agent 并行工作，可以按第 6 节拆线
 - 如果后续你决定正式改底层表结构，我建议先把 `T002` 单独再细拆一版“数据模型改造任务清单”
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-GRAPH-SEMANTIC-SEARCH-CLI-T007
-title: "NeoDev T007 图谱语义检索 CLI 留痕"
+title: NeoDev T007 图谱语义检索 CLI 留痕
 aliases:
-  - "NeoDev T007 图谱语义检索 CLI 留痕"
+- NeoDev T007 图谱语义检索 CLI 留痕
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,12 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
 related:
-  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+- '[[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev
+  CLI 与元数据基础设计]]'
 ---
+
 # NeoDev T007 图谱语义检索 CLI 留痕
 
 ## 背景
@@ -156,3 +158,6 @@ T007 当前是 CLI 最小闭环：能按 ProductVersion 限定范围，并在语
 - 将 `graph impact`、`graph entity-context`、`graph refresh-nodes`、`graph get-chain` 纳入 F002 完整闭环。
 - 补齐真实 Neo4j 向量索引环境下的端到端语义命中验收。
 - 将 T008 的 AI 语义增强和 T007 检索结果质量联动验证。
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev CLI 与元数据基础设计]]

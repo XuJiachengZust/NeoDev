@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-06-GRAPH-STORAGE-STRUCTURE
-title: "图谱存储结构设计"
+title: 图谱存储结构设计
 aliases:
-  - "图谱存储结构设计"
+- 图谱存储结构设计
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-29
 doc_type: tech-design
@@ -14,10 +14,9 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
-  - "[[T002-data-model-refactor-task-list]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
 
 # 图谱存储结构设计
@@ -646,3 +645,6 @@ RETURN n
 - 刷新分支后能检测并重建失效文档关系。
 - Neo4j 不包含 `branch_name`、源码正文、AI/语义字段。
 - Neo4j 可从 PG 事实源和仓库重新投影。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

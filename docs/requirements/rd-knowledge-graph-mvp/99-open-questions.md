@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-99-OPEN-QUESTIONS
-title: "开放问题"
+title: 开放问题
 aliases:
-  - "开放问题"
+- 开放问题
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # 开放问题
 
 当前这版 MVP 的开放问题已经全部收敛完成。
@@ -43,3 +44,6 @@ related:
   结论：危险提交允许二次确认后放行，但必须进入待处理清单；CLI 需要提供查询和关闭能力，并记录 `resolved_by`、`resolved_at`；MVP 不做多级审批、自动升级和定时催办。
 
 当前无未决开放问题。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

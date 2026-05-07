@@ -1,3 +1,24 @@
+---
+doc_id: NEODEV-DOC-NEOSUPERPOWER-SPECS-2026-04-29-MANUAL-GRAPH-FACT-UNIFICATION-DESIGN
+title: Manual Graph Fact Unification Design
+aliases:
+- Manual Graph Fact Unification Design
+tags:
+- neodev/docs
+- neodev/tech-design
+- neosuperpower/specs
+created: 2026-04-29
+updated: 2026-04-29
+related:
+- '[[requirements/rd-knowledge-graph-mvp/technical/06-graph-storage-structure|图谱存储结构设计]]'
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-06-GRAPH-STORAGE-STRUCTURE
+---
+
 # 手工图与事实图统一设计
 
 ## 背景
@@ -171,3 +192,6 @@ type_key = ...
 ## 自检
 
 本文档没有占位章节。分支覆盖语义已经明确：手工写入修改当前 latest completed snapshot；重新扫描会先清理该分支旧图数据，再基于扫描结果创建新的 latest snapshot，不继承手工新增内容。手工节点和扫描节点在查询上等价，来源只通过 metadata 和操作日志保留。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/technical/06-graph-storage-structure|图谱存储结构设计]]

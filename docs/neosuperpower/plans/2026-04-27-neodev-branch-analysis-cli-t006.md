@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-BRANCH-ANALYSIS-CLI-T006
-title: "NeoDev T006 分支分析 CLI 最小切片留痕"
+title: NeoDev T006 分支分析 CLI 最小切片留痕
 aliases:
-  - "NeoDev T006 分支分析 CLI 最小切片留痕"
+- NeoDev T006 分支分析 CLI 最小切片留痕
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,12 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
 related:
-  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+- '[[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev
+  CLI 与元数据基础设计]]'
 ---
+
 # NeoDev T006 分支分析 CLI 最小切片留痕
 
 日期：2026-04-27
@@ -95,3 +97,6 @@ pytest tests/test_cli_contract.py tests/test_branch_analysis_service_unit.py -v
 - BA-05：正式输出 `copy_data / incremental / full` 分析策略
 - BA-06 / BA-07：图谱刷新阶段与 AI 分析阶段标准化
 - BA-09：让旧 HTTP `preprocess` 入口代理到新服务层
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev CLI 与元数据基础设计]]

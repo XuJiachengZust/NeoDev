@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-02-PLUGIN-SKILL-GUIDANCE
-title: "插件 / Skill 引导规范"
+title: 插件 / Skill 引导规范
 aliases:
-  - "插件 / Skill 引导规范"
+- 插件 / Skill 引导规范
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # 插件 / Skill 引导规范
 
 ## 1. 目标
@@ -198,3 +199,6 @@ MVP 中插件 / skill 不再是“可选参考实现”，而是正式交付件�
 - 插件与 skill 的工作流保持一致
 - 插件与 skill 调用同一套 CLI 契约
 - 插件与 skill 不得各自发明额外状态机
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-README
-title: "研发知识中台 MVP 文档索引"
+title: 研发知识中台 MVP 文档索引
 aliases:
-  - "研发知识中台 MVP 文档索引"
+- 研发知识中台 MVP 文档索引
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/requirements
+- neodev/docs
+- neodev/tech-design
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # 研发知识中台 MVP 文档索引
 
 这组文档描述一个以 `Product` 和 `ProductVersion` 为组织单元、以本地 `neodev` CLI 客户端为唯一执行入口、与官方插件和官方 skill 协同工作的研发知识中台 MVP。
@@ -72,3 +73,6 @@ related:
 3. 阅读 3 份子 PRD
 4. 阅读 [technical/04-implementation-checklist.md](./technical/04-implementation-checklist.md)
 5. 阅读 [technical/05-development-task-list.md](./technical/05-development-task-list.md) 做开发排期和任务分配
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

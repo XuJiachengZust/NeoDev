@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-FEATURES-F001-PRODUCT-BINDING-AND-DOCCHANGE-REGISTRATION
-title: "F001 产品绑定、版本分支绑定与文档变更登记 PRD"
+title: F001 产品绑定、版本分支绑定与文档变更登记 PRD
 aliases:
-  - "F001 产品绑定、版本分支绑定与文档变更登记 PRD"
+- F001 产品绑定、版本分支绑定与文档变更登记 PRD
 tags:
-  - neodev/docs
-  - neodev/prd
-  - neodev/requirements
+- neodev/docs
+- neodev/prd
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: prd
@@ -14,10 +14,11 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
+
 # F001 产品绑定、版本分支绑定与文档变更登记 PRD
 
 ## 1. 基本信息
@@ -184,3 +185,6 @@ F001 负责把产品、产品版本、代码仓库、文档仓库以及文档变
 | TC-F001-08 | P0 | 同 HEAD 分支触发时走 `copy_data` |
 | TC-F001-09 | P1 | 增量场景走 `incremental` |
 | TC-F001-10 | P1 | stale 任务被转 failed 并可重新触发 |
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

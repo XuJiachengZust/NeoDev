@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-25-NEODEV-DOC-SCAN-CLI-T004
-title: "T004 文档治理、扫描与受控仓库接入 CLI 记录"
+title: T004 文档治理、扫描与受控仓库接入 CLI 记录
 aliases:
-  - "T004 文档治理、扫描与受控仓库接入 CLI 记录"
+- T004 文档治理、扫描与受控仓库接入 CLI 记录
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-25
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,12 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
 related:
-  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+- '[[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev
+  CLI 与元数据基础设计]]'
 ---
+
 # T004 文档治理、扫描与受控仓库接入 CLI 记录
 
 ## 范围
@@ -110,3 +112,6 @@ T004 第一阶段已打通文档扫描和错误留痕主链路。后续可继续
 - `doc change register` 生成 `DocChange ID`。
 - 扫描错误去重或按扫描批次归档。
 - 文档仓库远程拉取、分支校验和 commit 绑定。
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev CLI 与元数据基础设计]]

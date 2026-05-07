@@ -1,3 +1,25 @@
+---
+doc_id: NEODEV-DOC-NEOSUPERPOWER-PLANS-2026-04-29-MANUAL-GRAPH-FACT-UNIFICATION
+title: Manual Graph Fact Unification Implementation Plan
+aliases:
+- Manual Graph Fact Unification Implementation Plan
+tags:
+- neodev/docs
+- neodev/tech-design
+- neosuperpower/plans
+created: 2026-04-29
+updated: 2026-04-29
+related:
+- '[[neosuperpower/specs/2026-04-29-manual-graph-fact-unification-design|Manual Graph
+  Fact Unification Design]]'
+doc_type: tech-design
+product_key: NEODEV
+status: active
+relations:
+  target:
+  - NEODEV-DOC-NEOSUPERPOWER-SPECS-2026-04-29-MANUAL-GRAPH-FACT-UNIFICATION-DESIGN
+---
+
 # Manual Graph Fact Unification Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -122,3 +144,6 @@ Fix only failures caused by this change set.
 - [ ] **Step 3: Final status**
 
 Report changed files, verification command, and remaining risks.
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-29-manual-graph-fact-unification-design|Manual Graph Fact Unification Design]]

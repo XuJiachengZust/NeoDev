@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
-title: "研发知识图谱中台 MVP 总 PRD"
+title: 研发知识图谱中台 MVP 总 PRD
 aliases:
-  - "研发知识图谱中台 MVP 总 PRD"
+- 研发知识图谱中台 MVP 总 PRD
 tags:
-  - neodev/docs
-  - neodev/prd
-  - neodev/requirements
+- neodev/docs
+- neodev/prd
+- neodev/requirements
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: prd
@@ -14,10 +14,9 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-00-SOURCE-INDEX
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-00-SOURCE-INDEX
 related:
-  - "[[00-source-index]]"
-
+- '[[requirements/rd-knowledge-graph-mvp/00-source-index|研发知识图谱中台 MVP 来源索引]]'
 ---
 
 # 研发知识图谱中台 MVP 总 PRD
@@ -451,3 +450,6 @@ MVP 简化图存储结构的重点不是减少节点类型和关系类型，而�
 - 更复杂的自动完成判定
 - 更细粒度的任务排队与调度策略
 - 更复杂的人工审批流
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/00-source-index|研发知识图谱中台 MVP 来源索引]]

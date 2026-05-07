@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-DOCCHANGE-CLI-T005
-title: "NeoDev T005 DocChange CLI 留痕"
+title: NeoDev T005 DocChange CLI 留痕
 aliases:
-  - "NeoDev T005 DocChange CLI 留痕"
+- NeoDev T005 DocChange CLI 留痕
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,12 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
 related:
-  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+- '[[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev
+  CLI 与元数据基础设计]]'
 ---
+
 # NeoDev T005 DocChange CLI 留痕
 
 ## 背景
@@ -141,3 +143,6 @@ T005 当前完成最小 CLI 闭环。后续可继续扩展：
 - 增加 DocChange 列表查询能力
 - 增加更完整的 `details_json` CLI 输入
 - 在插件/skill 中把 `doc change register/show/mark-implemented` 包装成研发工作流
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev CLI 与元数据基础设计]]

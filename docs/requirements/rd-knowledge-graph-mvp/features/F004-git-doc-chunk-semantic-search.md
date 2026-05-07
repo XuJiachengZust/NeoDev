@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-F004-GIT-DOC-CHUNK-SEMANTIC-SEARCH
-title: "F004 Git 文档导入、分块向量化与文档语义检索 PRD"
+title: F004 Git 文档导入、分块向量化与文档语义检索 PRD
 aliases:
-  - "F004 Git 文档导入、分块向量化与文档语义检索 PRD"
+- F004 Git 文档导入、分块向量化与文档语义检索 PRD
 tags:
-  - neodev/docs
-  - neodev/prd
-  - neodev/requirements
+- neodev/docs
+- neodev/prd
+- neodev/requirements
 created: 2026-04-28
 updated: 2026-04-28
 doc_type: prd
@@ -14,9 +14,9 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-01-MASTER-PRD
 related:
-  - "[[01-master-prd]]"
+- '[[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]'
 ---
 
 # F004 Git 文档导入、分块向量化与文档语义检索 PRD
@@ -134,3 +134,6 @@ Neo4j 仍然是文档图事实存储。
 - PostgreSQL 包含文档分块和分块 embedding。
 - 内容未变化的分块不会重复生成 embedding。
 - `graph semantic-search` 返回产品版本作用域内的文档分块结果。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/01-master-prd|研发知识图谱中台 MVP 总 PRD]]

@@ -1,18 +1,23 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-30-PROJECT-BRANCH-GRAPH-DESIGN
-title: "NeoDev 项目分支图谱与产品版本绑定设计"
+title: NeoDev 项目分支图谱与产品版本绑定设计
 aliases:
-  - "项目分支图谱设计"
-  - "产品版本绑定分支图谱设计"
+- 项目分支图谱设计
+- 产品版本绑定分支图谱设计
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/spec
+- neodev/docs
+- neodev/tech-design
+- neodev/spec
 created: 2026-04-30
 updated: 2026-04-30
 doc_type: tech-design
 product_key: NEODEV
 status: active
+related:
+- '[[requirements/rd-knowledge-graph-mvp/technical/06-graph-storage-structure|图谱存储结构设计]]'
+relations:
+  target:
+  - NEODEV-DOC-REQUIREMENTS-RD-KNOWLEDGE-GRAPH-MVP-TECHNICAL-06-GRAPH-STORAGE-STRUCTURE
 ---
 
 # NeoDev 项目分支图谱与产品版本绑定设计
@@ -607,3 +612,6 @@ SET r += link.props
 - 使用 `CodeNode` 作为代码符号节点的统一索引标签。
 - 使用 `Project` 和 `BranchGraph` 作为 Neo4j 图边界。
 - 保留 `Folder/File` 结构节点，因为它们是代码图语义的一部分。
+
+## 关联文档
+- [[requirements/rd-knowledge-graph-mvp/technical/06-graph-storage-structure|图谱存储结构设计]]

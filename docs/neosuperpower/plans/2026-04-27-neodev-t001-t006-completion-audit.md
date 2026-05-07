@@ -1,12 +1,12 @@
 ---
 doc_id: NEODEV-DOC-SUPERPOWERS-PLANS-2026-04-27-NEODEV-T001-T006-COMPLETION-AUDIT
-title: "NeoDev T001-T006 完整性检查留痕"
+title: NeoDev T001-T006 完整性检查留痕
 aliases:
-  - "NeoDev T001-T006 完整性检查留痕"
+- NeoDev T001-T006 完整性检查留痕
 tags:
-  - neodev/docs
-  - neodev/tech-design
-  - neodev/plan
+- neodev/docs
+- neodev/tech-design
+- neodev/plan
 created: 2026-04-27
 updated: 2026-04-27
 doc_type: tech-design
@@ -14,10 +14,12 @@ product_key: NEODEV
 status: active
 relations:
   target:
-    - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
+  - NEODEV-DOC-SUPERPOWERS-SPECS-2026-04-24-NEODEV-CLI-AND-METADATA-FOUNDATION-DESIGN
 related:
-  - "[[2026-04-24-neodev-cli-and-metadata-foundation-design]]"
+- '[[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev
+  CLI 与元数据基础设计]]'
 ---
+
 # NeoDev T001-T006 完整性检查留痕
 
 日期：2026-04-27
@@ -191,3 +193,6 @@ T001-T006 当前按 CLI 最小 MVP 闭环可用。以下能力属于 T007 之后
 - 图谱复用策略 `copy_data / incremental / full` 的独立任务决策表述
 - 分支快照表和快照条目表
 - HTTP `preprocess` 完全代理到新的产品版本分析入口
+
+## 关联文档
+- [[neosuperpower/specs/2026-04-24-neodev-cli-and-metadata-foundation-design|NeoDev CLI 与元数据基础设计]]
