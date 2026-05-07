@@ -15,11 +15,15 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
         return {"status": "not_configured"}
     project = resolve_document_project(conn, binding)
     driver = _create_driver(config)
+    merge_document = _document_merge_clause(binding, "d")
+    match_document = _document_match_clause(binding, "d")
+    match_source = _document_match_clause(binding, "source", doc_id_param="source_doc_id")
+    match_target = _document_match_clause(binding, "target", doc_id_param="target_doc_id")
     try:
         with driver.session(database=database) as session:
             session.run(
-                """
-                MERGE (d:Document {doc_id: $doc_id, product_id: $product_id})
+                f"""
+                {merge_document}
                 SET d.document_id = $document_id,
                     d.doc_binding_id = $doc_binding_id,
                     d.product_version_id = $product_version_id,
@@ -44,8 +48,8 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
             )
             if project:
                 session.run(
-                    """
-                    MATCH (d:Document {doc_id: $doc_id, product_id: $product_id})
+                    f"""
+                    {match_document}
                     MERGE (p:Project {project_id: $project_id})
                     SET p.id = coalesce(p.id, $project_node_id),
                         p.name = coalesce(p.name, $project_name, $project_node_id),
@@ -81,9 +85,9 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
             targets = ((document.get("relations_json") or {}).get("target") or [])
             for target in targets:
                 session.run(
-                    """
-                    MATCH (source:Document {doc_id: $source_doc_id, product_id: $product_id})
-                    MATCH (target:Document {doc_id: $target_doc_id, product_id: $product_id})
+                    f"""
+                    {match_source}
+                    {match_target}
                     MERGE (source)-[:RELATES_TO]->(target)
                     """,
                     source_doc_id=document["doc_id"],
@@ -93,6 +97,23 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
     finally:
         driver.close()
     return {"status": "updated", "project_id": project["id"] if project else None}
+
+
+def _document_merge_clause(binding: dict, alias: str) -> str:
+    key = _document_key(binding)
+    return f"MERGE ({alias}:Document {{{key}}})"
+
+
+def _document_match_clause(binding: dict, alias: str, *, doc_id_param: str = "doc_id") -> str:
+    key = _document_key(binding, doc_id_param=doc_id_param)
+    return f"MATCH ({alias}:Document {{{key}}})"
+
+
+def _document_key(binding: dict, *, doc_id_param: str = "doc_id") -> str:
+    parts = [f"doc_id: ${doc_id_param}", "product_id: $product_id"]
+    if binding.get("product_version_id") is not None:
+        parts.append("product_version_id: $product_version_id")
+    return ", ".join(parts)
 
 
 def resolve_document_project(conn, binding: dict) -> dict | None:

@@ -53,10 +53,12 @@ def run_migrations() -> None:
         with conn.cursor() as cur:
             cur.execute("SELECT pg_advisory_xact_lock(%s)", (_INIT_LOCK_ID,))
             if _is_initialized(cur):
+                _run_upgrade_sql(cur)
                 conn.commit()
-                logger.info("database initialization already applied")
+                logger.info("database initialization already applied; upgrade SQL checked")
                 return
             cur.execute(init_sql_path.read_text(encoding="utf-8-sig"))
+            _run_upgrade_sql(cur)
         conn.commit()
         logger.info("database initialization SQL applied: %s", init_sql_path)
     except Exception as exc:
@@ -64,3 +66,57 @@ def run_migrations() -> None:
         logger.error("database initialization failed: %s", exc)
     finally:
         conn.close()
+
+
+def _run_upgrade_sql(cur) -> None:
+    """Apply additive metadata upgrades for databases initialized by older images."""
+    cur.execute(
+        """
+        ALTER TABLE IF EXISTS doc_bindings
+            ADD COLUMN IF NOT EXISTS product_version_id INTEGER REFERENCES product_versions(id) ON DELETE CASCADE;
+
+        ALTER TABLE IF EXISTS documents
+            ADD COLUMN IF NOT EXISTS product_version_id INTEGER REFERENCES product_versions(id) ON DELETE CASCADE,
+            ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS body_text TEXT NOT NULL DEFAULT '',
+            ADD COLUMN IF NOT EXISTS content_hash VARCHAR(64),
+            ADD COLUMN IF NOT EXISTS graph_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+            ADD COLUMN IF NOT EXISTS chunk_status VARCHAR(32) NOT NULL DEFAULT 'pending',
+            ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+        UPDATE documents AS d
+           SET product_version_id = db.product_version_id
+          FROM doc_bindings AS db
+         WHERE d.doc_binding_id = db.id
+           AND d.product_version_id IS DISTINCT FROM db.product_version_id;
+
+        CREATE INDEX IF NOT EXISTS idx_doc_bindings_product_id
+            ON doc_bindings(product_id);
+
+        DROP INDEX IF EXISTS uq_doc_bindings_active_product;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_product_legacy
+            ON doc_bindings(product_id)
+            WHERE is_active = true AND product_version_id IS NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_version
+            ON doc_bindings(product_version_id)
+            WHERE is_active = true AND product_version_id IS NOT NULL;
+
+        DROP INDEX IF EXISTS uq_documents_doc_id;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_version
+            ON documents(doc_id, product_version_id)
+            WHERE product_version_id IS NOT NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_doc_id_legacy
+            ON documents(doc_id)
+            WHERE product_version_id IS NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_binding_path
+            ON documents(doc_binding_id, relative_path);
+
+        CREATE INDEX IF NOT EXISTS idx_documents_binding_deleted
+            ON documents(doc_binding_id, deleted_at);
+        """
+    )
