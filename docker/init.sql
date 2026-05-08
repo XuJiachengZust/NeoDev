@@ -324,6 +324,8 @@ CREATE TABLE IF NOT EXISTS product_version_branches (
 
 CREATE INDEX IF NOT EXISTS idx_pvb_version_id ON product_version_branches(product_version_id);
 CREATE INDEX IF NOT EXISTS idx_pvb_project_id ON product_version_branches(project_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pvb_project_branch
+    ON product_version_branches(project_id, branch_name);
 CREATE INDEX IF NOT EXISTS idx_product_version_branches_project_branch
     ON product_version_branches(project_id, branch_name);
 
@@ -636,6 +638,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_product_legacy
 CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_version
     ON doc_bindings(product_version_id)
     WHERE is_active = true AND product_version_id IS NOT NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM doc_bindings WHERE product_version_id IS NULL
+    ) THEN
+        ALTER TABLE IF EXISTS doc_bindings
+            ALTER COLUMN product_version_id SET NOT NULL;
+    END IF;
+END $$;
 
 
 CREATE TABLE IF NOT EXISTS documents (

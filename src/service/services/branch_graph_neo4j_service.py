@@ -97,12 +97,14 @@ def upsert_doc_code_link(
     branch_name: str,
     graph_id: int,
     link: dict[str, Any],
+    version_scope: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     row = _doc_code_link_row(
         link,
         project_id=project_id,
         branch_name=branch_name,
         graph_id=graph_id,
+        version_scope=version_scope,
     )
     if not row:
         return {"status": "missing_code_node_id", "written": 0}
@@ -628,7 +630,10 @@ def _rebuild_doc_code_links(
                 "relation_type": link.get("relation_type") or "LINKS_TO_CODE",
                 "source": link.get("source") or "manual",
                 "confidence": link.get("confidence"),
-                **version_scope,
+                **{
+                    **version_scope,
+                    "product_version_id": version_scope.get("product_version_id") or link.get("product_version_id"),
+                },
             }
         )
     if not rows:
@@ -651,7 +656,10 @@ def _write_doc_code_links(tx, *, code_label: str, rows: list[dict[str, Any]]) ->
         """
         UNWIND $links AS link
         MATCH (code:CodeNode {id: link.scoped_code_node_id})
-        MERGE (doc:Document {doc_id: link.doc_id})
+        MERGE (doc:Document {doc_id: link.doc_id, product_version_id: link.product_version_id})
+        SET doc.product_name = link.product_name,
+            doc.version_name = link.version_name,
+            doc.project_name = link.project_name
         MERGE (doc)-[r:LINKS_TO_CODE {id: link.id}]->(code)
         SET r.project_id = link.project_id,
             r.branch_name = link.branch_name,
@@ -711,6 +719,8 @@ def _doc_code_link_row(
     code_node_id = locator.get("code_node_id") or link.get("resolved_node_id")
     if not code_node_id:
         return None
+    scope = _scope_props(version_scope)
+    scope["product_version_id"] = scope.get("product_version_id") or link.get("product_version_id")
     return {
         "id": f"doc_code_link:{link['id']}",
         "doc_id": link["doc_id"],
@@ -724,7 +734,7 @@ def _doc_code_link_row(
         "relation_type": link.get("relation_type") or "LINKS_TO_CODE",
         "source": link.get("source") or "manual",
         "confidence": link.get("confidence"),
-        **_scope_props(version_scope),
+        **scope,
     }
 
 

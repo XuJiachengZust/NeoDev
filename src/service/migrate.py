@@ -99,6 +99,19 @@ def _run_upgrade_sql(cur) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_name
             ON projects(name);
 
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_pvb_project_branch
+            ON product_version_branches(project_id, branch_name);
+
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM doc_bindings WHERE product_version_id IS NULL
+            ) THEN
+                ALTER TABLE IF EXISTS doc_bindings
+                    ALTER COLUMN product_version_id SET NOT NULL;
+            END IF;
+        END $$;
+
         DROP INDEX IF EXISTS uq_doc_bindings_active_product;
 
         CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_product_legacy

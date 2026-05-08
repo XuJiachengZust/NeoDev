@@ -232,6 +232,14 @@ def test_doc_import_command_is_registered():
     assert "--force" in proc.stdout
 
 
+def test_doc_graph_show_command_accepts_name_scope():
+    proc = _run("neodev.py", "doc", "graph", "show", "--help")
+    assert proc.returncode == 0
+    assert "--product-name" in proc.stdout
+    assert "--version-name" in proc.stdout
+    assert "--json" in proc.stdout
+
+
 def test_doc_binding_commands_are_registered():
     create = _run("neodev.py", "doc", "binding", "create", "--help")
     assert create.returncode == 0
@@ -336,10 +344,12 @@ def test_graph_refresh_nodes_command_is_removed():
 def test_graph_entity_context_command_is_registered():
     proc = _run("neodev.py", "graph", "entity-context", "--help")
     assert proc.returncode == 0
+    assert "--product-name" in proc.stdout
     assert "--product-code" in proc.stdout
     assert "--version-name" in proc.stdout
     assert "--project-id" in proc.stdout
     assert "--branch" in proc.stdout
+    assert "--branch-name" in proc.stdout
     assert "--entity-id" in proc.stdout
     assert "--depth" in proc.stdout
 
@@ -347,10 +357,12 @@ def test_graph_entity_context_command_is_registered():
 def test_graph_get_chain_command_is_registered():
     proc = _run("neodev.py", "graph", "get-chain", "--help")
     assert proc.returncode == 0
+    assert "--product-name" in proc.stdout
     assert "--product-code" in proc.stdout
     assert "--version-name" in proc.stdout
     assert "--project-id" in proc.stdout
     assert "--branch" in proc.stdout
+    assert "--branch-name" in proc.stdout
     assert "--start-node" in proc.stdout
     assert "--file-path" in proc.stdout
     assert "--symbol" in proc.stdout

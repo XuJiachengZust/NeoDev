@@ -294,8 +294,12 @@ def _graph_hash(
 
 def _branch_version_scope(conn, project_id: int, branch_name: str) -> dict:
     rows = product_version_service.list_versions_by_project_branch(conn, project_id, branch_name)
-    if len(rows) != 1:
+    if not rows:
         return {}
+    if len(rows) > 1:
+        raise RuntimeError(
+            f"branch is bound to multiple product versions: project_id={project_id}, branch={branch_name}"
+        )
     row = rows[0]
     return {
         "product_version_id": row.get("id"),

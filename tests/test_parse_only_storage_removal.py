@@ -175,6 +175,26 @@ def test_refresh_graph_for_branch_skips_unchanged_existing_neo4j_graph(monkeypat
     assert conn.commits == 0
 
 
+def test_refresh_graph_for_branch_rejects_ambiguous_version_scope(monkeypatch):
+    from service.services import sync_service
+
+    monkeypatch.setattr(
+        sync_service.product_version_service,
+        "list_versions_by_project_branch",
+        lambda conn, project_id, branch_name: [
+            {"id": 23, "product_name": "NeoDev SP", "version_name": "V1", "project_name": "NeoDev"},
+            {"id": 24, "product_name": "NeoDev SP", "version_name": "V2", "project_name": "NeoDev"},
+        ],
+    )
+
+    try:
+        sync_service._branch_version_scope(object(), 3, "main")
+    except RuntimeError as exc:
+        assert "branch is bound to multiple product versions" in str(exc)
+    else:
+        raise AssertionError("expected ambiguous version scope to be rejected")
+
+
 def test_pipeline_result_no_longer_exposes_code_fact_storage_fields():
     from gitnexus_parser.ingestion.pipeline import PipelineResult
 
@@ -310,6 +330,12 @@ def test_product_cli_code_storage_commands_are_noops(monkeypatch):
     assert link_payload["data"]["neo4j_link"]["status"] == "linked"
     assert link_payload["data"]["code_locator"] == {"code_node_id": "Function:src/a.py:handle"}
     assert neo4j_actions[-1][0] == "upsert"
+    assert neo4j_actions[-1][1]["version_scope"] == {
+        "product_version_id": 23,
+        "product_name": "Product",
+        "version_name": "V1",
+        "project_name": "Code Project",
+    }
 
     unlink_payload = product_command.handle_version_link_code(
         SimpleNamespace(

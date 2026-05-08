@@ -15,6 +15,7 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
         return {"status": "not_configured"}
     project = resolve_document_project(conn, binding)
     scope = _document_version_scope(conn, binding)
+    project_name = (project or {}).get("name") if project else None
     driver = _create_driver(config)
     merge_document = _document_merge_clause(binding, "d")
     match_document = _document_match_clause(binding, "d")
@@ -30,6 +31,7 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                     d.product_version_id = $product_version_id,
                     d.product_name = $product_name,
                     d.version_name = $version_name,
+                    d.project_name = $project_name,
                     d.title = $title,
                     d.doc_type = $doc_type,
                     d.relative_path = $relative_path,
@@ -43,6 +45,7 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                 product_version_id=binding.get("product_version_id"),
                 product_name=scope.get("product_name"),
                 version_name=scope.get("version_name"),
+                project_name=project_name,
                 doc_id=document["doc_id"],
                 title=document.get("title") or "",
                 doc_type=document.get("doc_type") or "",
@@ -64,7 +67,8 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                         d.project_id = $project_id,
                         d.product_version_id = $product_version_id,
                         d.product_name = $product_name,
-                        d.version_name = $version_name
+                        d.version_name = $version_name,
+                        d.project_name = $project_name
                     MERGE (p)-[r:HAS_DOCUMENT {{
                         doc_binding_id: $doc_binding_id,
                         doc_id: $doc_id
@@ -75,12 +79,13 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                         r.product_version_id = $product_version_id,
                         r.product_name = $product_name,
                         r.version_name = $version_name,
+                        r.project_name = $project_name,
                         r.relative_path = $relative_path,
                         r.updated_at = $updated_at
                     """,
                     project_id=project["id"],
                     project_node_id=f"project:{project['id']}",
-                    project_name=project.get("name") or f"project:{project['id']}",
+                    project_name=project_name,
                     project_repo_path=project.get("repo_path") or "",
                     project_repo_url=project.get("repo_url") or "",
                     document_id=document["id"],
@@ -103,7 +108,9 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                     SET r.product_id = $product_id,
                         r.product_version_id = $product_version_id,
                         r.product_name = $product_name,
-                        r.version_name = $version_name
+                        r.version_name = $version_name,
+                        r.project_id = $project_id,
+                        r.project_name = $project_name
                     """,
                     source_doc_id=document["doc_id"],
                     target_doc_id=target,
@@ -111,10 +118,44 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                     product_version_id=binding.get("product_version_id"),
                     product_name=scope.get("product_name"),
                     version_name=scope.get("version_name"),
+                    project_id=(project or {}).get("id"),
+                    project_name=project_name,
                 )
     finally:
         driver.close()
     return {"status": "updated", "project_id": project["id"] if project else None}
+
+
+def document_graph_summary(*, product_name: str, version_name: str) -> dict[str, Any]:
+    config, database = _load_config()
+    if not config or not config.get("neo4j_uri"):
+        return {"status": "not_configured", "documents": [], "document_count": 0}
+    driver = _create_driver(config)
+    try:
+        with driver.session(database=database) as session:
+            result = session.run(
+                """
+                MATCH (d:Document {product_name: $product_name, version_name: $version_name})
+                RETURN d.doc_id AS doc_id,
+                       d.title AS title,
+                       d.relative_path AS relative_path,
+                       d.doc_type AS doc_type,
+                       d.project_name AS project_name
+                ORDER BY d.relative_path, d.doc_id
+                """,
+                product_name=product_name,
+                version_name=version_name,
+            )
+            documents = [dict(row) for row in result]
+    finally:
+        driver.close()
+    return {
+        "status": "ready",
+        "product_name": product_name,
+        "version_name": version_name,
+        "document_count": len(documents),
+        "documents": documents,
+    }
 
 
 def _document_merge_clause(binding: dict, alias: str) -> str:

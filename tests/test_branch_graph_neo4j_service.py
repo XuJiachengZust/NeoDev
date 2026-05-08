@@ -277,6 +277,12 @@ def test_upsert_doc_code_link_writes_single_link_when_code_node_exists(monkeypat
             "source": "manual",
             "confidence": 0.9,
         },
+        version_scope={
+            "product_version_id": 23,
+            "product_name": "NeoDev SP",
+            "version_name": "V1",
+            "project_name": "NeoDev",
+        },
     )
 
     all_calls = [call for session in driver.sessions for call in session.calls]
@@ -288,6 +294,64 @@ def test_upsert_doc_code_link_writes_single_link_when_code_node_exists(monkeypat
     }
     assert any("MATCH (code:CodeNode {id: $scoped_code_node_id})" in call[0] for call in all_calls)
     assert any("MERGE (doc)-[r:LINKS_TO_CODE {id: link.id}]->(code)" in call[0] for call in all_calls)
+
+
+def test_upsert_doc_code_link_uses_version_scoped_document_node(monkeypatch):
+    from service.services import branch_graph_neo4j_service
+
+    class LinkTx(FakeTx):
+        def run(self, query, **kwargs):
+            self.session.calls.append((query, kwargs))
+            if "RETURN count(code) AS count" in query:
+                return FakeResult({"count": 1})
+            if "RETURN count(r) AS written" in query:
+                return FakeResult({"written": 1})
+            return FakeResult()
+
+    class LinkSession(FakeSession):
+        def execute_write(self, fn, **kwargs):
+            return fn(LinkTx(self), **kwargs)
+
+    class LinkDriver(FakeDriver):
+        def session(self, database=None):
+            session = LinkSession()
+            self.sessions.append(session)
+            return session
+
+    driver = LinkDriver()
+    monkeypatch.setattr(branch_graph_neo4j_service, "_create_driver", lambda config: driver)
+
+    branch_graph_neo4j_service.upsert_doc_code_link(
+        config={"neo4j_uri": "bolt://neo4j:7687"},
+        database=None,
+        project_id=3,
+        branch_name="release/V1",
+        graph_id=9,
+        link={
+            "id": 7,
+            "doc_id": "doc-1",
+            "doc_node_id": "section-1",
+            "relation_type": "IMPLEMENTS",
+            "code_locator_json": {"code_node_id": "Function:src/app.py:main"},
+        },
+        version_scope={
+            "product_version_id": 23,
+            "product_name": "NeoDev SP",
+            "version_name": "V1",
+            "project_name": "NeoDev",
+        },
+    )
+
+    all_calls = [call for session in driver.sessions for call in session.calls]
+    link_call = next(call for call in all_calls if "UNWIND $links AS link" in call[0])
+    link = link_call[1]["links"][0]
+
+    assert "MERGE (doc:Document {doc_id: link.doc_id, product_version_id: link.product_version_id})" in link_call[0]
+    assert "doc.product_name = link.product_name" in link_call[0]
+    assert "doc.version_name = link.version_name" in link_call[0]
+    assert link["product_version_id"] == 23
+    assert link["product_name"] == "NeoDev SP"
+    assert link["version_name"] == "V1"
 
 
 def test_upsert_doc_code_link_reports_missing_code_node(monkeypatch):

@@ -12,6 +12,7 @@ from service.repositories import product_repository
 from service.repositories import project_repository
 from service.services import product_version_service
 from service.services import doc_change_service
+from service.services import doc_graph_service
 from service.services import doc_import_service
 from service.services import doc_scan_service
 
@@ -49,6 +50,17 @@ def register(subparsers) -> None:
     binding_list_parser.set_defaults(
         handler=handle_doc_binding_list,
         command_name="doc binding list",
+    )
+
+    graph_parser = doc_subparsers.add_parser("graph")
+    graph_subparsers = graph_parser.add_subparsers(dest="graph_command", required=True)
+    graph_show_parser = graph_subparsers.add_parser("show")
+    graph_show_parser.add_argument("--product-name", required=True)
+    graph_show_parser.add_argument("--version-name", required=True)
+    graph_show_parser.add_argument("--json", action="store_true", dest="json_output")
+    graph_show_parser.set_defaults(
+        handler=handle_doc_graph_show,
+        command_name="doc graph show",
     )
 
     scan_parser = doc_subparsers.add_parser("scan")
@@ -109,6 +121,11 @@ def handle_doc_binding_create(args) -> dict:
     def run(conn):
         product = _resolve_product(conn, args)
         version = _resolve_version(conn, product, args)
+        if not version:
+            raise CliError(
+                category="invalid_argument",
+                message="doc binding must be scoped to a product version",
+            )
         project = _resolve_project(conn, args)
         source_repo_url = _first_text(
             args.repo_url,
@@ -146,6 +163,14 @@ def handle_doc_binding_create(args) -> dict:
         )
 
     return _with_db(run)
+
+
+def handle_doc_graph_show(args) -> dict:
+    result = doc_graph_service.document_graph_summary(
+        product_name=args.product_name,
+        version_name=args.version_name,
+    )
+    return build_success_payload(args.command_name, result)
 
 
 def handle_doc_binding_list(args) -> dict:

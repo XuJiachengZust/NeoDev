@@ -34,3 +34,15 @@ def test_runtime_upgrade_sql_enforces_name_lookup_uniqueness():
     assert "ON products(name);" in sql
     assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_name" in sql
     assert "ON projects(name);" in sql
+
+
+def test_runtime_upgrade_sql_enforces_branch_scope_uniqueness():
+    cursor = _FakeCursor()
+
+    migrate._run_upgrade_sql(cursor)
+
+    sql = cursor.statements[0][0]
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_pvb_project_branch" in sql
+    assert "ON product_version_branches(project_id, branch_name);" in sql
+    assert "ALTER TABLE IF EXISTS doc_bindings" in sql
+    assert "ALTER COLUMN product_version_id SET NOT NULL" in sql

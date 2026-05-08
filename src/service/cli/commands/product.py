@@ -548,6 +548,12 @@ def handle_version_link_code(args) -> dict:
                 branch_name=branch_mapping["branch_name"],
                 graph_id=graph["id"],
                 link=link,
+                version_scope={
+                    "product_version_id": version["id"],
+                    "product_name": product.get("name"),
+                    "version_name": version.get("version_name"),
+                    "project_name": project.get("name"),
+                },
             )
             if neo4j_link.get("status") != "linked":
                 raise CliError(

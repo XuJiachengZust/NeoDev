@@ -29,7 +29,7 @@ def register(subparsers) -> None:
     entity_parser = graph_subparsers.add_parser("entity-context")
     _add_version_locator(entity_parser)
     _add_project_locator(entity_parser)
-    entity_parser.add_argument("--branch", required=True)
+    entity_parser.add_argument("--branch", "--branch-name", dest="branch", required=True)
     entity_parser.add_argument("--entity-id", required=True)
     entity_parser.add_argument("--depth", type=int, default=1)
     entity_parser.add_argument("--json", action="store_true", dest="json_output")
@@ -41,7 +41,7 @@ def register(subparsers) -> None:
     chain_parser = graph_subparsers.add_parser("get-chain")
     _add_version_locator(chain_parser)
     _add_project_locator(chain_parser)
-    chain_parser.add_argument("--branch", required=True)
+    chain_parser.add_argument("--branch", "--branch-name", dest="branch", required=True)
     chain_parser.add_argument("--start-node")
     chain_parser.add_argument("--file-path")
     chain_parser.add_argument("--symbol")
@@ -206,6 +206,7 @@ def _register_edge_commands(subparsers) -> None:
 def _add_product_locator(parser) -> None:
     parser.add_argument("--product-id", type=int)
     parser.add_argument("--product-code")
+    parser.add_argument("--product-name")
 
 
 def _add_version_locator(parser) -> None:
@@ -577,20 +578,31 @@ def handle_get_chain(args) -> dict:
 def _resolve_product(conn, args) -> dict:
     product_id = getattr(args, "product_id", None)
     product_code = getattr(args, "product_code", None)
-    if product_id is None and not product_code:
+    product_name = getattr(args, "product_name", None)
+    provided = [value is not None and value != "" for value in (product_id, product_code, product_name)]
+    if not any(provided):
         raise CliError(
             category="invalid_argument",
-            message="provide --product-id or --product-code",
+            message="provide --product-id, --product-code, or --product-name",
         )
-    if product_id is not None and product_code:
+    if sum(1 for item in provided if item) > 1:
         raise CliError(
             category="invalid_argument",
             message="provide only one product locator",
         )
     if product_id is not None:
         product = product_service.get_product(conn, product_id)
-    else:
+    elif product_code:
         product = product_service.get_product_by_code(conn, product_code)
+    else:
+        matches = product_service.find_products_by_name(conn, product_name)
+        if len(matches) > 1:
+            raise CliError(
+                category="conflict",
+                message="product name is ambiguous",
+                details={"product_name": product_name, "matches": [row["id"] for row in matches]},
+            )
+        product = matches[0] if matches else None
     if not product:
         raise CliError(category="not_found", message="product not found")
     return product
