@@ -1,81 +1,18 @@
 # NeoDev SP
 
-## 本地 CLI 一行安装
+NeoDev SP 是面向 AI 软件工程的一人团队工作台。它把产品目标、研发文档、代码仓库、分支图谱和 AI 协作规范连接起来，让个人在借助 AI 提升产出速度的同时，仍然保留可追踪、可复盘、可验证的研发秩序。
 
-远程服务部署完成后，本地只需要安装轻量 CLI 客户端。Windows PowerShell 一行命令：
+这个仓库提供 NeoDev SP 的后端服务、轻量 CLI、代码图谱解析器、研发知识插件示例和 Docker 部署资产。核心目标不是单次生成代码，而是让需求、文档、代码事实、分支状态和变更影响可以被持续管理。
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/XuJiachengZust/NeoDev/neodev-sp/scripts/install-neodev-client.ps1 -OutFile $env:TEMP\install-neodev-client.ps1; & $env:TEMP\install-neodev-client.ps1 -Server http://10.50.3.149"
-```
-
-安装后重新打开终端，直接使用：
-
-```powershell
-neodev config show
-neodev cli version-check --json
-```
-
-如需切换远程服务：
-
-```powershell
-neodev config set-server http://10.50.3.149
-```
-
-## 与 Codex Skill 和插件协同使用
-
-NeoDev SP 的推荐入口不是单独记忆 CLI 参数，而是和 `NeoDev 研发知识插件`、`neodev-rd-knowledge` skill 一起使用。
-
-协同边界：
-
-- 插件和 skill 负责引导流程、校验文档规范、补齐命令顺序和解释结果。
-- 状态读取和写入统一通过已配置远程服务的 `neodev` CLI 完成。
-- 不要绕过 CLI 直接写 PostgreSQL 或 Neo4j；直连数据库只用于排障定位。
-
-每次执行会写远程状态的流程前，先检查本地客户端和远程服务：
-
-```powershell
-neodev config show
-neodev cli version-check --json
-```
-
-研发知识图谱的常用流程：
-
-```powershell
-neodev project create --name <project_name> --repo-url <repo_url> --json
-neodev product version bind-branch --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json
-neodev doc binding list --product-code <product_code> --json
-neodev doc binding create --product-code <product_code> --project-id <doc_project_id> --branch <branch> --json
-neodev doc import --doc-binding-id <doc_binding_id> --json
-neodev doc change register --document-id <document_id> --json
-neodev graph impact --doc-change-id <doc_change_id> --json
-neodev project refresh-graph --project-id <project_id> --branch <branch> --json
-```
-
-文档导入说明：
-
-- 日常导入使用 `neodev doc import --doc-binding-id <id> --json`。
-- 只有确认需要重建已有 chunk embedding 时才加 `--force`。
-- `doc import` 返回轻量文档摘要，并写入每个文档的 `last_seen_commit`。
-- 文档图谱会由服务投影 `Project -[:HAS_DOCUMENT]-> Document` 归属关系。
-
-维护受控文档时，先按插件目录规范放在同一个 docs root 下，再执行：
-
-```powershell
-python plugins/neodev-rd-knowledge/validate_mvp_docs.py <docs_path>
-python plugins/neodev-rd-knowledge/validate_obsidian_docs.py <docs_path>
-```
-
-需要在 Codex 中调用时，优先使用 `neodev-rd-knowledge` 或插件提供的 `neosuperpower` 工作流，让 skill 读取 `plugins/neodev-rd-knowledge/workflows/core-workflows.json` 后再执行命令。
-
-## 核心结论
+## 产品理念
 
 NeoDev SP 的产品意义，是为 AI 时代的一人团队提供一套以文档和规范为中心的研发秩序。
 
-AI 正在改变软件工程：个人的产出能力被显著放大，过去需要多人协作完成的需求梳理、方案比较、执行推进和结果检查，现在越来越多可以由一个人在 AI 辅助下完成。但能力被放大之后，新的瓶颈不再只是“能不能做出来”，而是“能不能持续做对、做稳、做得可追踪”。
+AI 正在改变软件工程的生产方式。个人的产出能力被显著放大，过去需要多人协作完成的需求梳理、方案比较、执行推进和结果检查，现在越来越多可以由一个人在 AI 辅助下完成。但能力被放大之后，新的瓶颈不再只是“能不能做出来”，而是“能不能持续做对、做稳、做得可追踪”。
 
-这正是 NeoDev SP 要解决的问题：让 OPT（One-Person Team，一人团队）在 AI 软件工程中，不只是更快地产出，而是能围绕清晰目标、稳定文档、明确规范和可追踪结果持续演进。
+NeoDev SP 要解决的正是这个持续性问题：让 OPT（One-Person Team，一人团队）在 AI 软件工程中，不只是更快地产出，而是能围绕清晰目标、稳定文档、明确规范和可追踪结果持续演进。
 
-## AI 改变了软件工程的生产方式
+### AI 软件工程需要新的秩序
 
 AI 让软件工程从“人直接完成大量工作”，转向“人负责判断和约束，AI 辅助完成大量过程性工作”。
 
@@ -96,7 +33,7 @@ AI 让软件工程从“人直接完成大量工作”，转向“人负责判�
 
 因此，AI 软件工程的核心问题不只是“如何使用 AI 提高效率”，而是“如何让 AI 在清晰目标和稳定规范下提高效率”。
 
-## OPT 是 AI 软件工程中的新组织形态
+### OPT 是新的组织形态
 
 OPT 不是简单的“一个人做所有事”，而是一种被 AI 放大的个人组织形态。
 
@@ -108,7 +45,7 @@ AI 可以帮助完成很多工作，但不能自动承担最终判断。AI 可�
 
 NeoDev SP 的意义就在这里：它帮助一人团队建立接近小型研发组织的秩序，让个人不再完全依赖记忆和临时对话维持项目连续性。
 
-## Spec Coding 解决开始问题，NeoDev SP 解决持续问题
+### Spec Coding 解决开始问题，NeoDev SP 解决持续问题
 
 Spec Coding 的核心价值，是让 AI 在产出之前先理解规格。它强调先明确目标、范围、约束和完成标准，再让 AI 参与执行。这比“直接给 AI 一个模糊提示，然后边做边修”更稳定。
 
@@ -130,7 +67,7 @@ NeoDev SP 对 Spec Coding 的意义，是把规格从“开始前的说明”升
 
 因此，NeoDev SP 不是替代 Spec Coding，而是把 Spec Coding 推向更完整的产品工程状态：从“按照规格做一次”，走向“围绕规格持续演进”。
 
-## 文档、规范和代码的关联，是 AI 研发的长期稳定器
+### 文档、规范和代码的关联是长期稳定器
 
 现有 AI 研发流程的痛点，往往不是某一次产出失败，而是过程失去连续性。
 
@@ -154,7 +91,7 @@ NeoDev SP 把文档、规范和代码关联起来，核心价值是让 AI 研发
 
 这就是 NeoDev SP 区别于普通 AI 工具的地方：它关注的不是单次生成能力，而是长期协作能力。
 
-## 以文档和规范为中心
+### 以文档和规范为中心
 
 AI 让软件工程更快，但越快越需要秩序。
 
@@ -170,7 +107,7 @@ NeoDev SP 主张把文档和规范放在研发过程中心：
 
 这不是增加负担，而是减少长期混乱。对一人团队来说，文档和规范承担了一部分“团队组织能力”：它们帮助个人保持方向，帮助 AI 理解边界，也帮助未来的自己接续过去的工作。
 
-## 产品定位
+### 产品定位
 
 NeoDev SP 不是传统项目管理工具，也不是单纯的 AI 生成工具。
 
@@ -185,7 +122,7 @@ NeoDev SP 不是传统项目管理工具，也不是单纯的 AI 生成工具。
 
 通过这四件事的连接，NeoDev SP 帮助 OPT 从“一个人和 AI 临时协作”，升级为“一个人管理多个 AI 助手持续推进产品”。
 
-## 最终价值
+### 最终价值
 
 NeoDev SP 要回答的问题不是：AI 能不能让一个人做得更快。
 
@@ -194,3 +131,354 @@ NeoDev SP 要回答的问题不是：AI 能不能让一个人做得更快。
 所以，NeoDev SP 的长期意义可以概括为一句话：
 
 让一人团队在 AI 软件工程时代，不只是拥有更强的生产力，也拥有能够驾驭这种生产力的产品工程秩序。
+
+## 核心能力
+
+- 产品与版本管理：维护产品、版本、项目仓库和版本到分支的绑定关系。
+- 代码仓库登记：支持通过远程 Git URL 或服务端本地路径登记项目。
+- 分支代码图谱：解析仓库代码结构，生成文件、符号、调用、继承、导入等代码事实，并写入 Neo4j。
+- 文档绑定与导入：把产品文档仓库绑定到产品版本，扫描并导入受控文档。
+- DocChange 流程：登记文档变更，追踪实现状态，并关联代码变更。
+- 图谱查询：按产品、版本、项目和分支查询实体上下文、关系链和影响范围。
+- Git 一致性检查：检查提交与 DocChange 的关联，识别需要处理的危险提交。
+- CLI 与插件协同：通过 `neodev` CLI 和 `plugins/neodev-rd-knowledge` 里的技能、命令、工作流约束协作。
+
+## 架构概览
+
+NeoDev SP 由以下几层组成：
+
+- API 服务：`src/service/main.py` 启动 FastAPI 应用，统一暴露产品、项目、仓库、解析、同步和 CLI 执行接口。
+- Router 层：`src/service/routers/` 处理 HTTP 传输协议和请求响应模型。
+- Service 层：`src/service/services/` 承载产品版本、分支分析、文档导入、图谱查询、Git 检查等业务流程。
+- Repository 层：`src/service/repositories/` 负责 PostgreSQL 持久化访问。
+- 代码解析器：`src/gitnexus_parser/` 基于 tree-sitter 解析多语言代码，并构建可写入图数据库的代码事实。
+- CLI 客户端：`src/service/cli/` 实现 `neodev` 命令行入口，可调用远程 API 服务。
+- 插件与技能：`plugins/neodev-rd-knowledge/` 提供 Codex/NeoSuperpower 工作流、命令说明、文档校验脚本和插件元数据。
+- 部署资产：`docker-compose.yml`、`Dockerfile`、`docker/` 提供 PostgreSQL、Neo4j、API 和 Web 反向代理部署配置。
+
+运行时主要依赖：
+
+- PostgreSQL + pgvector：保存产品、项目、文档、DocChange、图谱元数据和 CLI 业务状态。
+- Neo4j：保存分支代码图谱和人工图谱事实。
+- OpenAI 兼容接口：用于文档语义搜索、摘要或 LLM 辅助能力，可通过环境变量替换为内网兼容服务。
+
+## 目录结构
+
+```text
+.
+├── src/
+│   ├── service/              # FastAPI 服务、CLI、业务服务、仓储、迁移入口
+│   ├── deepagents/           # Agent graph、middleware 和 backend adapter
+│   └── gitnexus_parser/      # 代码解析、符号表、调用/导入/继承关系解析和图谱写入
+├── plugins/
+│   └── neodev-rd-knowledge/  # NeoDev 研发知识插件、技能、命令和工作流契约
+├── docs/                     # PRD、技术设计、计划和验收材料
+├── harness/                  # 仓库级协作规则和上下文
+├── tests/                    # pytest 测试
+├── docker/                   # 镜像、初始化 SQL、离线部署脚本和 Nginx 配置
+├── docker-compose.yml        # 本地/服务端容器编排
+├── environment.yml           # Conda 环境定义
+└── neodev.py                 # 不安装 shim 时的本地 CLI 调用入口
+```
+
+## 快速开始
+
+### 1. 创建 Python 环境
+
+```powershell
+conda env create -f environment.yml
+conda activate NeoDev
+```
+
+`environment.yml` 使用 Python 3.11，并通过 `src/requirements.txt` 安装 FastAPI、uvicorn、pytest、tree-sitter、Neo4j、LangChain/LangGraph 等依赖。
+
+### 2. 配置环境变量
+
+复制 `.env.example` 为本地 `.env`，按需修改：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+常用变量：
+
+```text
+POSTGRES_PORT=5432
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=password123
+NEO4J_HTTP_PORT=7474
+NEO4J_BOLT_PORT=7687
+OPENAI_API_KEY=sk-your-key-here
+OPENAI_BASE=
+OPENAI_MODEL_CHAT=gpt-4o-mini
+OPENAI_MODEL_EMBEDDING=text-embedding-3-small
+WEB_PORT=80
+```
+
+服务端运行时还会使用：
+
+- `DATABASE_URL`：PostgreSQL 连接串。
+- `NEO4J_URI`、`NEO4J_USER`、`NEO4J_PASSWORD`：Neo4j 连接配置。
+- `REPO_CLONE_BASE`：服务端克隆远程仓库的目录。
+- `AGENT_SANDBOX_ROOT`：Agent 执行沙箱目录。
+- `ALLOWED_BASE_PATHS`：可选路径白名单；设置后，本地路径必须位于白名单下。
+
+不要提交真实密钥或内网部署地址。远程服务地址、部署细节和凭据应放在本地环境或 `harness/context/dev-environment.md` 这类受控上下文中。
+
+### 3. 启动依赖服务
+
+本地完整栈：
+
+```powershell
+docker compose up -d --build
+```
+
+默认包含：
+
+- PostgreSQL：`localhost:5432`，数据库 `neodev`。
+- Neo4j HTTP：`localhost:7474`。
+- Neo4j Bolt：`localhost:7687`。
+- Web/Nginx：由 `WEB_PORT` 控制，默认 `80`。
+
+如需重建本地数据库卷：
+
+```powershell
+docker compose down -v
+docker compose up -d --build
+```
+
+### 4. 启动 API 服务
+
+如果只本地启动 API：
+
+```powershell
+$env:PYTHONPATH="src"
+python -m uvicorn service.main:app --reload
+```
+
+健康检查：
+
+```powershell
+curl http://127.0.0.1:8000/health
+```
+
+FastAPI 文档默认位于：
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+## API 入口
+
+API 当前注册的主要路由：
+
+- `GET /health`：服务健康检查。
+- `/cli/execute`：远程执行 CLI 命令。
+- `/repos/*`：仓库分支查询、路径解析、远程仓库确保本地可用。
+- `/parse/`：解析代码仓库并生成图谱数据。
+- `/projects/*`：项目创建、查询、更新、删除、分支查询和图谱刷新。
+- `/products/*`：产品创建、查询、更新、删除以及产品-项目关联。
+- `/products/{product_id}/versions/*`：产品版本管理、版本-分支绑定和解绑。
+
+Router 只处理传输层逻辑。业务规则应放在 `src/service/services/`，数据库访问应放在 `src/service/repositories/`。
+
+## CLI 使用
+
+安装远程 CLI shim 后可直接使用：
+
+```powershell
+neodev config show
+neodev cli version-check --json
+```
+
+切换远程服务：
+
+```powershell
+neodev config set-server http://<neodev-api-host>
+```
+
+如果尚未安装 shim，可在仓库内直接调用：
+
+```powershell
+python neodev.py --server http://<neodev-api-host> cli version-check --json
+```
+
+### 常用命令
+
+产品与版本：
+
+```powershell
+neodev product create --name <product_name> --product-code <product_code> --json
+neodev product version create --product-code <product_code> --version-name <version_name> --json
+neodev product version show --product-code <product_code> --version-name <version_name> --json
+```
+
+项目登记与分支绑定：
+
+```powershell
+neodev project create --name <project_name> --repo-url <repo_url> --json
+neodev product version bind-branch --product-code <product_code> --version-name <version_name> --project-name <project_name> --branch <branch> --json
+```
+
+刷新分支代码图谱：
+
+```powershell
+neodev project refresh-graph --project-name <project_name> --branch <branch> --json
+neodev project init-status --project-name <project_name> --branch <branch> --json
+```
+
+文档绑定、扫描和导入：
+
+```powershell
+neodev doc binding create --product-code <product_code> --project-name <doc_project_name> --branch <branch> --json
+neodev doc binding list --product-code <product_code> --json
+neodev doc scan --doc-binding-id <doc_binding_id> --json
+neodev doc import --doc-binding-id <doc_binding_id> --json
+```
+
+DocChange：
+
+```powershell
+neodev doc change register --document-id <document_id> --json
+neodev doc change show --doc-change-id <doc_change_id> --json
+neodev doc change mark-implemented --doc-change-id <doc_change_id> --json
+```
+
+图谱查询：
+
+```powershell
+neodev graph impact --doc-change-id <doc_change_id> --json
+neodev graph entity-context --product-code <product_code> --version-name <version_name> --project-name <project_name> --branch-name <branch> --entity-id <node_id> --json
+neodev graph get-chain --product-code <product_code> --version-name <version_name> --project-name <project_name> --branch-name <branch> --file-path <path> --json
+```
+
+Git 检查：
+
+```powershell
+neodev git verify-doc-change --doc-change-id <doc_change_id> --json
+neodev git dangerous-commit list --json
+neodev git dangerous-commit resolve --commit <commit_sha> --json
+```
+
+## 推荐工作流
+
+### 代码仓库图谱
+
+1. 创建产品和版本。
+2. 登记代码仓库。
+3. 将产品版本绑定到项目分支。
+4. 刷新分支代码图谱。
+5. 使用 `product version show` 获取低噪声导航信息。
+6. 使用 `graph entity-context` 或 `graph get-chain` 查询代码事实。
+
+示例：
+
+```powershell
+neodev product create --name NeoDev --product-code neodev --json
+neodev product version create --product-code neodev --version-name v1 --json
+neodev project create --name neodev-service --repo-url https://example.com/org/neodev.git --json
+neodev product version bind-branch --product-code neodev --version-name v1 --project-name neodev-service --branch main --json
+neodev project refresh-graph --project-name neodev-service --branch main --json
+```
+
+### 版本范围文档流程
+
+1. 登记文档仓库为项目。
+2. 创建产品文档绑定。
+3. 扫描文档结构。
+4. 导入文档 chunk 和 embedding。
+5. 登记 DocChange。
+6. 查询 DocChange 影响范围。
+7. 实现后标记 DocChange 状态并执行 Git 一致性检查。
+
+受控文档校验脚本：
+
+```powershell
+python plugins/neodev-rd-knowledge/validate_mvp_docs.py <docs_path>
+python plugins/neodev-rd-knowledge/validate_obsidian_docs.py <docs_path>
+```
+
+## 代码图谱解析能力
+
+`src/gitnexus_parser/` 负责把代码仓库转换为可查询图谱事实。当前依赖 tree-sitter，支持 Python、Java、Lua、C、C++、JavaScript、TypeScript、Go、Rust 等语言的基础解析。
+
+主要处理内容：
+
+- 文件和目录结构。
+- 函数、类、方法等符号节点。
+- 调用关系、继承关系、覆盖关系。
+- import/use 关系解析。
+- 可增量更新的分支快照和图谱写入。
+
+解析结果会服务于版本-分支导航、实体上下文查询、影响分析和文档变更闭环。
+
+## NeoDev 研发知识插件
+
+`plugins/neodev-rd-knowledge/` 是 NeoDev SP 的协作层示例，包含：
+
+- `workflows/core-workflows.json`：共享工作流契约。
+- `skills/`：NeoSuperpower 工作流技能。
+- `commands/`：面向 Codex/插件入口的命令说明。
+- `validate_mvp_docs.py`、`validate_obsidian_docs.py`：文档规范校验脚本。
+- `hooks/`：环境检查、Git 提交范围检查、DocChange trailer 检查等钩子配置。
+
+日常使用时，优先通过 `neodev` CLI 读写 NeoDev 状态。不要绕过 CLI 直接写 PostgreSQL 或 Neo4j；直连数据库只用于排障定位。
+
+## 测试
+
+运行全部测试：
+
+```powershell
+pytest
+```
+
+运行单个测试文件：
+
+```powershell
+pytest tests/test_project_cli.py
+```
+
+测试覆盖范围包括：
+
+- CLI 契约和远程执行。
+- 产品、版本、项目、文档和图谱服务。
+- PostgreSQL 初始化 SQL。
+- Neo4j 分支图谱写入。
+- 文档扫描、导入、DocChange 和语义搜索相关逻辑。
+- 插件平台、文档校验脚本和环境 hook。
+
+## 开发约定
+
+- Python 使用 4 空格缩进。
+- 模块、函数和变量使用 `snake_case`；类使用 `PascalCase`。
+- Router 只处理 HTTP 传输；业务逻辑放在 Service；持久化访问放在 Repository。
+- 配置形状以 `.env.example` 和 `src/config.example.json` 为公开参考。
+- 不提交真实密钥、内网地址或本地环境文件。
+- 涉及接口、字段、schema、跨层契约变更时，同步补充测试和文档。
+- 变更完成后，能本地执行的检查不要只靠静态审查。
+
+提交信息建议使用 Conventional Commit：
+
+```text
+feat: add graph entity context cli
+fix: repair doc import status update
+test: cover product version branch binding
+docs: expand project readme
+chore: update docker bootstrap config
+```
+
+## 部署说明
+
+本仓库提供两类部署方式：
+
+- 开发/本地验证：使用根目录 `docker-compose.yml` 构建并启动完整依赖。
+- 镜像包/离线部署：使用 `docker/images/` 和 `docker/deploy-offline.sh` 相关资产。
+
+根目录 compose 栈包含：
+
+- `neodev-postgres`：PostgreSQL + pgvector，首次启动执行 `docker/init.sql`。
+- `neodev-neo4j`：Neo4j 5 community，启用 APOC。
+- `neodev-api`：FastAPI 服务。
+- `neodev-web`：Nginx 入口。
+
+本地数据库 schema 变更时，当前约定是更新 `docker/init.sql`，再重建 volume 验证初始化结果。
