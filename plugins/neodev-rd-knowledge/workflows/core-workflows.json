@@ -1,5 +1,6 @@
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "contract": "The local neodev CLI is the execution boundary for NeoDev facts and state changes. Plugins and skills guide command order, parameter completion, risk handling, and result interpretation. Direct PostgreSQL or Neo4j access is allowed only as diagnostic evidence when explicitly requested.",
   "mvp_doc_contract": {
     "directory_structure": {
       "docs_root": "All controlled Markdown documents live under one docs root. Open this root, not a nested subdirectory, as the Obsidian vault when graph visibility is required.",
@@ -46,26 +47,98 @@
       "active",
       "deprecated"
     ],
-    "relations_target": "relations.target must be a non-empty list of real doc_id values that exist in the same docs root",
-    "obsidian_properties": "aliases/tags/related must be non-empty lists, created/updated must use YYYY-MM-DD, related must use Obsidian wiki links to real files, and NeoDev workflow docs must use neosuperpower paths/tags"
+    "relations_target": "relations.target must be a non-empty list of real doc_id values that exist in the same docs root.",
+    "obsidian_properties": "aliases/tags/related must be non-empty lists, created/updated must use YYYY-MM-DD, related must use Obsidian wiki links to real files, and NeoDev workflow docs must use neosuperpower paths/tags."
   },
   "neosuperpower": {
+    "contract": "NeoSuperpower is the NeoDev-owned name for workflow discipline. Former Superpowers planning, TDD, debugging, review, delegation, verification, and branch-completion skill bodies are embedded under neosuperpower-* skill names and represented by neosuperpower phase names in this plugin.",
     "requirements_or_design": "neosuperpower:requirements-or-design",
+    "planning": "neosuperpower:planning",
     "implementation": "neosuperpower:implementation",
+    "test_driven_implementation": "neosuperpower:test-driven-implementation",
     "failure_investigation": "neosuperpower:failure-investigation",
-    "completion_commit_push": "neosuperpower:verification-before-completion"
+    "review": "neosuperpower:review",
+    "delegated_execution": "neosuperpower:delegated-execution",
+    "completion_commit_push": "neosuperpower:verification-before-completion",
+    "branch_completion": "neosuperpower:branch-completion",
+    "embedded_skills": {
+      "brainstorming": "neosuperpower-brainstorming",
+      "dispatching_parallel_agents": "neosuperpower-dispatching-parallel-agents",
+      "executing_plans": "neosuperpower-executing-plans",
+      "finishing_a_development_branch": "neosuperpower-finishing-a-development-branch",
+      "receiving_code_review": "neosuperpower-receiving-code-review",
+      "requesting_code_review": "neosuperpower-requesting-code-review",
+      "subagent_driven_development": "neosuperpower-subagent-driven-development",
+      "systematic_debugging": "neosuperpower-systematic-debugging",
+      "test_driven_development": "neosuperpower-test-driven-development",
+      "using_git_worktrees": "neosuperpower-using-git-worktrees",
+      "using_neosuperpower": "neosuperpower-using-neosuperpower",
+      "verification_before_completion": "neosuperpower-verification-before-completion",
+      "writing_plans": "neosuperpower-writing-plans",
+      "writing_skills": "neosuperpower-writing-skills",
+      "requirement_refiner": "neosuperpower-requirement-refiner"
+    },
+    "superpowers_compatibility": {
+      "brainstorming": "neosuperpower-brainstorming",
+      "writing-plans": "neosuperpower-writing-plans",
+      "executing-plans": "neosuperpower-executing-plans",
+      "test-driven-development": "neosuperpower-test-driven-development",
+      "systematic-debugging": "neosuperpower-systematic-debugging",
+      "requesting-code-review": "neosuperpower-requesting-code-review",
+      "receiving-code-review": "neosuperpower-receiving-code-review",
+      "dispatching-parallel-agents": "neosuperpower-dispatching-parallel-agents",
+      "subagent-driven-development": "neosuperpower-subagent-driven-development",
+      "verification-before-completion": "neosuperpower-verification-before-completion",
+      "finishing-a-development-branch": "neosuperpower-finishing-a-development-branch",
+      "using-superpowers": "neosuperpower-using-neosuperpower",
+      "using-git-worktrees": "neosuperpower-using-git-worktrees",
+      "writing-skills": "neosuperpower-writing-skills",
+      "requirement-refiner": "neosuperpower-requirement-refiner"
+    },
+    "weak_orchestration": {
+      "mode": "advisory",
+      "contract": "Workflow awareness suggests NeoSuperpower phases and embedded skills without inserting mandatory steps or changing the local neodev CLI execution boundary.",
+      "rules": [
+        "Use phase hooks as trigger hints and review checklists, not as hard workflow steps.",
+        "Invoke embedded NeoSuperpower skills when the user request or current evidence matches the hook intent.",
+        "Do not block low-risk read-only CLI discovery just because a planning or review hook exists.",
+        "For state-changing, commit, push, or completion claims, treat verification hooks as required evidence gates."
+      ]
+    }
   },
-  "contract": "NeoDev CLI 是本地客户端调用统一远程服务的唯一执行边界和状态变更边界。插件与内置 skill 只负责引导命令顺序、参数补全、风险提示和结果解释；事实读取与状态写入都必须通过已配置远程服务的 neodev 命令完成。",
+  "workflow_awareness_defaults": {
+    "mode": "weak",
+    "applies_to": "workflows.*.neosuperpower_awareness",
+    "fields": {
+      "phase_hooks": "Ordered advisory NeoSuperpower phases relevant to the workflow.",
+      "suggested_skills": "Embedded neosuperpower-* skills to consider when the task matches the phase.",
+      "evidence_focus": "Evidence the agent should remember to collect or report.",
+      "non_blocking": "When true, the hook informs behavior but is not a mandatory step."
+    }
+  },
   "workflows": {
     "session_version_check": {
-      "goal": "在高风险或会写状态的工作流前检查本地 CLI 远程配置和版本兼容性。",
+      "goal": "Check local CLI remote configuration and compatibility before high-risk or state-changing work.",
+      "neosuperpower_awareness": {
+        "phase_hooks": [
+          "neosuperpower:verification-before-completion"
+        ],
+        "suggested_skills": [
+          "neosuperpower-verification-before-completion"
+        ],
+        "evidence_focus": [
+          "configured server URL",
+          "CLI compatibility result"
+        ],
+        "non_blocking": false
+      },
       "steps": [
         {
           "id": "check_remote_config",
           "type": "cli",
           "command": "neodev config show",
           "expects": [
-            "data.server_url"
+            "server_url or data.server_url is configured"
           ]
         },
         {
@@ -73,27 +146,153 @@
           "type": "cli",
           "command": "neodev cli version-check --json",
           "expects": [
-            "data.compatible=true"
+            "compatible or data.compatible is true"
           ]
         }
       ]
     },
-    "doc_change_to_implementation": {
-      "goal": "登记受控文档变更，并收集实现所需上下文。",
+    "version_branch_navigation": {
+      "goal": "Resolve product-version, project, branch, document, and code graph context with the current CLI.",
+      "neosuperpower_awareness": {
+        "phase_hooks": [
+          "neosuperpower:requirements-or-design",
+          "neosuperpower:planning"
+        ],
+        "suggested_skills": [
+          "neosuperpower-brainstorming",
+          "neosuperpower-requirement-refiner",
+          "neosuperpower-writing-plans"
+        ],
+        "evidence_focus": [
+          "resolved product/version/project/branch names",
+          "query_params returned by product version discovery",
+          "graph or document context used for downstream work"
+        ],
+        "non_blocking": true
+      },
       "steps": [
         {
-          "id": "check_remote_config",
+          "id": "show_version_by_product",
           "type": "cli",
-          "command": "neodev config show",
+          "command": "neodev product version show --product-code <product_code> --version-name <version_name> --json",
           "expects": [
-            "data.server_url"
+            "query_params",
+            "project/branch bindings when present"
           ]
         },
         {
-          "id": "check_cli_contract",
+          "id": "reverse_lookup_from_branch",
           "type": "cli",
-          "command": "neodev cli version-check --json"
+          "command": "neodev product version show --project-name <project_name> --branch-name <branch> --json",
+          "expects": [
+            "resolved_versions"
+          ]
         },
+        {
+          "id": "read_chain_context",
+          "type": "cli",
+          "command": "neodev graph get-chain --product-code <product_code> --version-name <version_name> --project-name <project_name> --branch-name <branch> --file-path <path> --json"
+        },
+        {
+          "id": "read_entity_context",
+          "type": "cli",
+          "command": "neodev graph entity-context --product-code <product_code> --version-name <version_name> --project-name <project_name> --branch-name <branch> --entity-id <entity_id> --json"
+        },
+        {
+          "id": "read_document_graph",
+          "type": "cli",
+          "command": "neodev doc graph show --product-name <product_name> --version-name <version_name> --json"
+        }
+      ]
+    },
+    "repository_auto_graph": {
+      "goal": "Register product/version/project, bind a branch to the version, and refresh the remote code graph.",
+      "neosuperpower_awareness": {
+        "phase_hooks": [
+          "neosuperpower:planning",
+          "neosuperpower:verification-before-completion"
+        ],
+        "suggested_skills": [
+          "neosuperpower-writing-plans",
+          "neosuperpower-verification-before-completion"
+        ],
+        "evidence_focus": [
+          "created or reused product/version/project identifiers",
+          "branch binding result",
+          "graph_id, node_count, edge_count"
+        ],
+        "non_blocking": false
+      },
+      "steps": [
+        {
+          "id": "check_remote_config",
+          "type": "workflow",
+          "command": "session_version_check"
+        },
+        {
+          "id": "create_or_find_product",
+          "type": "cli",
+          "command": "neodev product create --name <product_name> --code <product_code> --json"
+        },
+        {
+          "id": "create_or_find_version",
+          "type": "cli",
+          "command": "neodev product version create --product-code <product_code> --version-name <version_name> --json"
+        },
+        {
+          "id": "create_or_find_project",
+          "type": "cli",
+          "command": "neodev project create --name <project_name> --repo-url <repo_url> --json"
+        },
+        {
+          "id": "initialize_project",
+          "type": "cli",
+          "command": "neodev project init-status --project-name <project_name> --branch <branch> --json"
+        },
+        {
+          "id": "bind_branch_to_version",
+          "type": "cli",
+          "command": "neodev product version bind-branch --product-code <product_code> --version-name <version_name> --project-name <project_name> --branch <branch> --json"
+        },
+        {
+          "id": "refresh_branch_graph",
+          "type": "cli",
+          "command": "neodev project refresh-graph --project-name <project_name> --branch <branch> --json",
+          "expects": [
+            "graph_id",
+            "node_count",
+            "edge_count"
+          ]
+        },
+        {
+          "id": "verify_branch_version_lookup",
+          "type": "cli",
+          "command": "neodev product version show --project-name <project_name> --branch-name <branch> --json"
+        }
+      ]
+    },
+    "version_scoped_document_import": {
+      "goal": "Create or reuse a version-scoped document binding, then scan and import controlled documents.",
+      "neosuperpower_awareness": {
+        "phase_hooks": [
+          "neosuperpower:requirements-or-design",
+          "neosuperpower:verification-before-completion"
+        ],
+        "suggested_skills": [
+          "neosuperpower-brainstorming",
+          "neosuperpower-requirement-refiner",
+          "neosuperpower-verification-before-completion"
+        ],
+        "evidence_focus": [
+          "docs root and version scope",
+          "validator output",
+          "doc binding product_version_id",
+          "scan/import counts",
+          "document graph readiness"
+        ],
+        "non_blocking": false
+      },
+      "steps": [
         {
           "id": "validate_mvp_docs",
           "type": "script",
@@ -109,32 +308,87 @@
           "type": "cli",
           "command": "neodev doc binding list --product-code <product_code> --json",
           "expects": [
-            "data.bindings[].id"
+            "bindings or data.bindings"
           ]
         },
         {
           "id": "create_doc_binding_when_missing",
           "type": "cli",
-          "command": "neodev doc binding create --product-code <product_code> --project-id <doc_project_id> --branch <branch> --json",
+          "command": "neodev doc binding create --product-code <product_code> --version-name <version_name> --project-name <project_name> --repo-path <docs_repo_path> --branch <branch> --json",
           "expects": [
-            "data.binding.id"
+            "binding.id or data.binding.id",
+            "binding.product_version_id"
           ]
+        },
+        {
+          "id": "scan_controlled_docs",
+          "type": "cli",
+          "command": "neodev doc scan --doc-binding-id <doc_binding_id> --json"
         },
         {
           "id": "import_controlled_docs",
           "type": "cli",
           "command": "neodev doc import --doc-binding-id <doc_binding_id> --json",
           "expects": [
-            "data.documents[].last_seen_commit"
+            "documents carry product_version_id",
+            "documents carry last_seen_commit"
           ]
+        },
+        {
+          "id": "show_doc_graph",
+          "type": "cli",
+          "command": "neodev doc graph show --product-name <product_name> --version-name <version_name> --json",
+          "expects": [
+            "status=ready when graph can be built",
+            "document_count"
+          ]
+        }
+      ]
+    },
+    "doc_change_to_implementation": {
+      "goal": "Register a controlled document change and collect implementation context through version-scoped graphs.",
+      "neosuperpower_awareness": {
+        "phase_hooks": [
+          "neosuperpower:requirements-or-design",
+          "neosuperpower:planning",
+          "neosuperpower:test-driven-implementation",
+          "neosuperpower:review",
+          "neosuperpower:verification-before-completion"
+        ],
+        "suggested_skills": [
+          "neosuperpower-brainstorming",
+          "neosuperpower-requirement-refiner",
+          "neosuperpower-writing-plans",
+          "neosuperpower-test-driven-development",
+          "neosuperpower-requesting-code-review",
+          "neosuperpower-verification-before-completion"
+        ],
+        "evidence_focus": [
+          "registered DocChange hash",
+          "impact result and confidence",
+          "code graph context used by implementation",
+          "tests or verification proving the implementation"
+        ],
+        "non_blocking": true
+      },
+      "steps": [
+        {
+          "id": "check_remote_config",
+          "type": "workflow",
+          "command": "session_version_check"
+        },
+        {
+          "id": "import_docs",
+          "type": "workflow",
+          "command": "version_scoped_document_import"
         },
         {
           "id": "register_doc_change",
           "type": "cli",
-          "command": "neodev doc change register --document-id <document_id> --json",
+          "command": "neodev doc change register --document-id <document_id> --doc-change-id <40_char_source_commit> --json",
           "expects": [
-            "data.doc_change.doc_change_id equals selected document last_seen_commit",
-            "data.doc_change.source_commit equals selected document last_seen_commit"
+            "doc_change.doc_change_id is a 40-character hash",
+            "doc_change.source_commit equals the selected document last_seen_commit"
           ]
         },
         {
@@ -143,52 +397,37 @@
           "command": "neodev graph impact --doc-change-id <doc_change_id> --json"
         },
         {
-          "id": "read_entity_context",
-          "type": "cli",
-          "command": "neodev graph entity-context --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --entity-id <entity_id> --json"
-        },
-        {
           "id": "read_chain_context",
           "type": "cli",
-          "command": "neodev graph get-chain --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --start-node <node_id> --json"
-        }
-      ]
-    },
-    "repository_auto_graph": {
-      "goal": "登记远程仓库地址，并由统一远程 NeoDev 服务自动触发图谱构建。",
-      "steps": [
-        {
-          "id": "check_remote_config",
-          "type": "cli",
-          "command": "neodev config show",
-          "expects": [
-            "data.server_url"
-          ]
+          "command": "neodev graph get-chain --product-code <product_code> --version-name <version_name> --project-name <project_name> --branch-name <branch> --file-path <path> --json"
         },
         {
-          "id": "check_cli_contract",
+          "id": "read_entity_context",
           "type": "cli",
-          "command": "neodev cli version-check --json"
-        },
-        {
-          "id": "register_repository",
-          "type": "cli",
-          "command": "neodev project create --name <project_name> --repo-url <repo_url> --json"
-        },
-        {
-          "id": "read_project",
-          "type": "cli",
-          "command": "neodev project show --project-id <project_id> --json"
-        },
-        {
-          "id": "bind_to_product_version_when_needed",
-          "type": "cli",
-          "command": "neodev product version bind-branch --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json"
+          "command": "neodev graph entity-context --product-code <product_code> --version-name <version_name> --project-name <project_name> --branch-name <branch> --entity-id <entity_id> --json"
         }
       ]
     },
     "commit_scope_routing": {
       "goal": "Before git commit, classify staged changes as document-only, code-only, mixed, or empty and run the matching NeoDev workflow.",
+      "neosuperpower_awareness": {
+        "phase_hooks": [
+          "neosuperpower:review",
+          "neosuperpower:verification-before-completion",
+          "neosuperpower:branch-completion"
+        ],
+        "suggested_skills": [
+          "neosuperpower-requesting-code-review",
+          "neosuperpower-verification-before-completion",
+          "neosuperpower-finishing-a-development-branch"
+        ],
+        "evidence_focus": [
+          "staged change classification",
+          "single DocChange-ID trailer for code commits",
+          "split decision for mixed scope"
+        ],
+        "non_blocking": false
+      },
       "steps": [
         {
           "id": "classify_staged_changes",
@@ -202,30 +441,38 @@
         {
           "id": "document_commit_route",
           "type": "workflow",
-          "command": "For document scope, run version-scoped doc binding resolution, neodev doc import, and neodev doc change register before commit."
+          "command": "For document scope, run version_scoped_document_import and register the document change before commit."
         },
         {
           "id": "code_commit_route",
           "type": "workflow",
-          "command": "For code scope, require one DocChange-ID trailer, verify with neodev git verify-doc-change, and refresh branch graph after push."
+          "command": "For code scope, require one 40-character DocChange-ID trailer, verify with neodev git verify-doc-change, and refresh the branch graph after push."
         }
       ]
     },
     "pre_push_verification": {
-      "goal": "推送前校验提交只关联一个 DocChange，并处理待确认风险记录。",
+      "goal": "Before push, verify the commit is connected to exactly one DocChange and resolve dangerous-commit records only after explicit review.",
+      "neosuperpower_awareness": {
+        "phase_hooks": [
+          "neosuperpower:review",
+          "neosuperpower:verification-before-completion"
+        ],
+        "suggested_skills": [
+          "neosuperpower-receiving-code-review",
+          "neosuperpower-verification-before-completion"
+        ],
+        "evidence_focus": [
+          "DocChange verification result",
+          "open dangerous-commit records",
+          "explicit review before risk resolution"
+        ],
+        "non_blocking": false
+      },
       "steps": [
         {
           "id": "check_remote_config",
-          "type": "cli",
-          "command": "neodev config show",
-          "expects": [
-            "data.server_url"
-          ]
-        },
-        {
-          "id": "check_cli_contract",
-          "type": "cli",
-          "command": "neodev cli version-check --json"
+          "type": "workflow",
+          "command": "session_version_check"
         },
         {
           "id": "verify_doc_change",
@@ -245,30 +492,43 @@
       ]
     },
     "project_refresh_graph": {
-      "goal": "推送成功后刷新受影响的图谱节点。",
+      "goal": "After successful push, refresh the impacted branch graph and verify version navigation still resolves.",
+      "neosuperpower_awareness": {
+        "phase_hooks": [
+          "neosuperpower:verification-before-completion",
+          "neosuperpower:branch-completion"
+        ],
+        "suggested_skills": [
+          "neosuperpower-verification-before-completion",
+          "neosuperpower-finishing-a-development-branch"
+        ],
+        "evidence_focus": [
+          "refreshed branch graph result",
+          "chain lookup after refresh",
+          "branch/version reverse lookup"
+        ],
+        "non_blocking": false
+      },
       "steps": [
         {
           "id": "check_remote_config",
-          "type": "cli",
-          "command": "neodev config show",
-          "expects": [
-            "data.server_url"
-          ]
-        },
-        {
-          "id": "check_cli_contract",
-          "type": "cli",
-          "command": "neodev cli version-check --json"
+          "type": "workflow",
+          "command": "session_version_check"
         },
         {
           "id": "refresh_branch_graph",
           "type": "cli",
-          "command": "neodev project refresh-graph --project-id <project_id> --branch <branch> --json"
+          "command": "neodev project refresh-graph --project-name <project_name> --branch <branch> --json"
         },
         {
           "id": "inspect_chain_when_needed",
           "type": "cli",
-          "command": "neodev graph get-chain --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --commit-sha <commit_sha> --json"
+          "command": "neodev graph get-chain --product-code <product_code> --version-name <version_name> --project-name <project_name> --branch-name <branch> --commit-sha <commit_sha> --json"
+        },
+        {
+          "id": "verify_branch_version_lookup",
+          "type": "cli",
+          "command": "neodev product version show --project-name <project_name> --branch-name <branch> --json"
         }
       ]
     }

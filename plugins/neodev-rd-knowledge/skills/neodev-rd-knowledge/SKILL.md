@@ -1,92 +1,218 @@
 ---
 name: neodev-rd-knowledge
-description: 使用 NeoDev 远程服务管理研发知识图谱、文档导入、文档关系、Obsidian 可视化链接、DocChange、NeoSuperpower 工作流和代码分支图谱。
+description: Use the local NeoDev CLI client against the configured remote NeoDev service to manage product versions, branch code graphs, version-scoped document bindings/imports, DocChange records, graph impact, and NeoSuperpower workflows.
 ---
 
-# NeoDev 研发知识图谱
+# NeoDev RD Knowledge
 
-只通过本地 `neodev` CLI 访问远程 NeoDev 服务；除排障外，不直接连接 PostgreSQL 或 Neo4j。
+Use the local `neodev` CLI client as the only normal boundary for NeoDev facts and state changes. The API service, PostgreSQL, Neo4j, graph refresh, document import, and DocChange state live in the remote NeoDev environment.
 
-共享工作流契约位于 `plugins/neodev-rd-knowledge/workflows/core-workflows.json`，插件、skill 和 CLI 引导必须以该文件为准。
+Direct PostgreSQL or Neo4j access is allowed only for debugging mismatches between CLI/API and storage. Do not use direct database writes as a workflow shortcut.
 
-NeoDev 插件内的流程纪律统一称为 `neosuperpower`。新建或维护 NeoDev 受控文档时，目录、标签和工作流名称都应使用 `neosuperpower`。
+Shared workflow contracts live in `plugins/neodev-rd-knowledge/workflows/core-workflows.json`; plugin docs, commands, and skills should stay aligned with that file.
 
-## 启动检查
+NeoSuperpower is the plugin-owned workflow layer. Former Superpowers planning, test-first implementation, systematic debugging, code-review, delegation, verification, and branch-completion workflows are embedded as `neosuperpower-*` skills and represented with `neosuperpower:*` phase names in this plugin. Treat `superpowers` as a migration/search keyword and third-party attribution term only.
+
+Workflow weak orchestration lives in `core-workflows.json` as `neosuperpower.weak_orchestration` plus per-workflow `neosuperpower_awareness`. These fields make agents aware of relevant phases, suggested embedded skills, and evidence focus without changing the explicit CLI `steps`. Use them as soft routing and verification hints; do not treat them as extra mandatory CLI commands.
+
+## Session Checks
+
+Before write workflows, high-risk reads, commit/push checks, or verification:
 
 ```bash
-scripts/install-neodev-client.cmd -Server <remote_api_url>
-# 或在允许当前进程绕过执行策略时：
-pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/install-neodev-client.ps1 -Server <remote_api_url>
-neodev config set-server <remote_api_url>
-neodev config show --json
+neodev config show
 neodev cli version-check --json
 ```
 
-## 文档目录结构
+If the client is not installed or not configured:
 
-所有受控 Markdown 文档必须位于同一个 `<docs_root>` 下。需要 Obsidian 图谱时，打开 `<docs_root>` 作为 vault，不要打开它的子目录。
+```bash
+scripts/install-neodev-client.cmd -Server <remote_api_url>
+neodev config set-server <remote_api_url>
+```
 
-标准目录：
+When testing from this repository without installing the shim, use:
 
-- `<docs_root>/prd/`: 产品 PRD。
-- `<docs_root>/prototype/`: 原型和交互对齐文档。
-- `<docs_root>/tech-design/`: 技术设计文档。
-- `<docs_root>/neosuperpower/`: NeoDev 工作流、计划、校验和 skill 文档。
-- `<docs_root>/<domain>/`: 产品域证据、报告、抽取源文档和专题笔记。
+```bash
+python neodev.py --server <remote_api_url> <command> --json
+```
 
-`neosuperpower` 子目录：
+## Version-Branch Navigation
 
-- `neosuperpower/plans/`: 执行计划和任务计划。
-- `neosuperpower/specs/`: 设计规格和决策记录。
-- `neosuperpower/skills/<skill_name>/`: skill 指令、模板和局部指南。
-- `neosuperpower/reports/`: 验证报告和运行摘要。
-- `neosuperpower/templates/`: 可复用文档模板。
+`product version show` is the low-noise discovery entry point. It returns product, version, project, branch, and `query_params`; it must not trigger graph refresh, document import, or Neo4j reads.
 
-禁止：
+Version lookup:
 
-- 新增 `docs/superpowers/`。
-- 把嵌套 Obsidian vault 当成源目录。
-- 在 `<docs_root>` 外生成受控文档。
+```bash
+neodev product version show \
+  --product-code <product_code> \
+  --version-name <version_name> \
+  --json
+```
 
-## 文档关系规则
+Branch reverse lookup:
 
-NeoDev 和 Obsidian 使用不同的关系来源，维护文档时必须同时满足：
+```bash
+neodev product version show \
+  --project-name <project_name> \
+  --branch-name <branch> \
+  --json
+```
 
-- NeoDev 图谱关系以 front matter 的 `relations.target` 为准，值必须是真实 `doc_id`，例如 `DSC-DOC-0003`。
-- Obsidian 图谱关系以 Markdown wikilink 为准，必须写成真实目标文件链接，例如 `[[neosuperpower/plans/2026-04-14-tag-manage-prototype-alignment|标签管理抽屉原型对齐 Implementation Plan]]`。
-- `related` 字段和正文末尾 `## 关联文档` 小节应由 `relations.target` 自动反查生成，不要手工维护两套不一致关系。
-- 不要把聚合概念 ID，如 `DSC-TAG-MANAGEMENT`，写入 `relations.target`；这类值不会被 NeoDev graph importer 解析成文档节点关系。
+Use the returned names directly for graph and document queries:
 
-同步 Obsidian 链接：
+```bash
+neodev graph get-chain \
+  --product-code <product_code> \
+  --version-name <version_name> \
+  --project-name <project_name> \
+  --branch-name <branch> \
+  --file-path <path> \
+  --json
+
+neodev graph entity-context \
+  --product-code <product_code> \
+  --version-name <version_name> \
+  --project-name <project_name> \
+  --branch-name <branch> \
+  --entity-id <node_id> \
+  --json
+```
+
+Prefer `--project-name` / `--branch-name` in user-facing workflows. Use IDs only when a command has no name-based alternative or while debugging.
+
+## Repository And Code Graph Flow
+
+1. Create or reuse a product and version:
+
+```bash
+neodev product create --name <product_name> --product-code <product_code> --json
+neodev product version create --product-code <product_code> --version-name <version_name> --json
+```
+
+2. Register the code repository:
+
+```bash
+neodev project create --name <project_name> --repo-url <repo_url> --json
+# or, for a server-local checkout:
+neodev project create --name <project_name> --repo-path <repo_path> --json
+```
+
+3. Bind version to project branch:
+
+```bash
+neodev product version bind-branch \
+  --product-code <product_code> \
+  --version-name <version_name> \
+  --project-name <project_name> \
+  --branch <branch> \
+  --json
+```
+
+4. Refresh or verify the branch code graph:
+
+```bash
+neodev project refresh-graph --project-name <project_name> --branch <branch> --json
+```
+
+A ready graph should return `graph_id`, `head_commit`, `node_count`, and `edge_count`. Nodes and edges written to Neo4j should include version scope fields such as `product_version_id`, `product_name`, `version_name`, `project_name`, and `branch_name`.
+
+## Version-Scoped Document Flow
+
+Document bindings are scoped to a product version. `doc_bindings.product_version_id` and imported `documents.product_version_id` must point at the target version.
+
+Create or discover a binding:
+
+```bash
+neodev doc binding list --product-code <product_code> --json
+neodev doc binding create \
+  --product-code <product_code> \
+  --version-name <version_name> \
+  --project-name <project_name> \
+  --repo-path <repo_path> \
+  --branch <branch> \
+  --json
+```
+
+Scan and import:
+
+```bash
+neodev doc scan --doc-binding-id <doc_binding_id> --json
+neodev doc import --doc-binding-id <doc_binding_id> --json
+```
+
+Use `--force` only when intentionally rebuilding existing chunks/embeddings:
+
+```bash
+neodev doc import --doc-binding-id <doc_binding_id> --force --json
+```
+
+Verify the document graph by version:
+
+```bash
+neodev doc graph show --product-name <product_name> --version-name <version_name> --json
+```
+
+Expected evidence is `status=ready` and a positive `document_count`. Scanner errors for Markdown files without valid front matter are data-quality findings, not necessarily import failure, as long as valid controlled documents were registered/imported.
+
+## DocChange And Impact
+
+DocChange IDs are 40-character Git commit hashes for the imported source document. Business labels are not valid `DocChange-ID` values.
+
+```bash
+neodev doc change register \
+  --document-id <document_id> \
+  --doc-change-id <40_char_document_commit_hash> \
+  --source-commit <40_char_document_commit_hash> \
+  --summary "<summary>" \
+  --json
+
+neodev graph impact --doc-change-id <doc_change_id> --json
+```
+
+Low-confidence impact results are acceptable when the only evidence is document relations and no code links exist. Report that as a data/evidence limitation rather than a CLI failure.
+
+## Controlled Documents
+
+Controlled Markdown documents must live under one docs root. Open that root as the Obsidian vault when graph visibility matters.
+
+Standard top-level directories:
+
+- `prd/`
+- `prototype/`
+- `tech-design/`
+- `neosuperpower/`
+- product-domain directories such as `<domain>/`
+
+NeoSuperpower documents live under:
+
+- `neosuperpower/plans/`
+- `neosuperpower/specs/`
+- `neosuperpower/skills/<skill_name>/`
+- `neosuperpower/reports/`
+- `neosuperpower/templates/`
+
+Do not create `docs/superpowers/` or generate controlled docs outside the docs root.
+
+When migrating older Superpowers references, move new controlled workflow output to `docs/neosuperpower/` paths and update tags, aliases, and relation text to use `neosuperpower`. Do not preserve parallel `superpowers` and `neosuperpower` document trees.
+
+Before import or DocChange registration, validate:
 
 ```bash
 python plugins/neodev-rd-knowledge/sync_obsidian_links.py <docs_path>
-```
-
-校验文档：
-
-```bash
 python plugins/neodev-rd-knowledge/validate_mvp_docs.py <docs_path>
 python plugins/neodev-rd-knowledge/validate_obsidian_docs.py <docs_path>
 ```
 
-## 常用流程
+## Completion Evidence
 
-1. 登记仓库：`neodev project create --name <project_name> --repo-url <repo_url> --json`
-2. 绑定产品版本分支：`neodev product version bind-branch --product-code <product_code> --version-name <version_name> --project-id <project_id> --branch <branch> --json`
-3. 创建文档仓库绑定：`neodev doc binding create --product-code <product_code> --project-id <doc_project_id> --branch <branch> --json`
-4. 查询文档仓库绑定：`neodev doc binding list --product-code <product_code> --json`
-5. 导入文档：`neodev doc import --doc-binding-id <id> --json`
-6. 登记文档变更：`neodev doc change register --document-id <document_id> --json`
-7. 查询文档影响：`neodev graph impact --doc-change-id <doc_change_id> --json`
-8. 重建代码分支图谱：`neodev project refresh-graph --project-id <project_id> --branch <branch> --json`
+For a full NeoDev self-test through the local CLI client, capture at least:
 
-## 边界
-
-- 文档关系写入先维护源文件，再通过 CLI import 验证并写入文档 Git commit。
-- `doc import` 返回轻量文档摘要，并由服务投影 `Project -[:HAS_DOCUMENT]-> Document` 归属关系。
-- 日常导入不要使用 `--force`；只有确认需要重建已有 chunk embedding 时才加 `--force`。
-- 导入文档前先通过 `doc binding list` 获取 `doc_binding_id`；若产品没有 active 文档绑定，使用 `doc binding create` 创建，不要直接写数据库。
-- DocChange-ID 默认使用文档 Git commit hash；提交代码时 `DocChange-ID` trailer 也应填写该 40 位 commit hash。
-- 代码图谱刷新只使用 `project refresh-graph --branch`。
-- 远程数据库直连只用于定位 CLI/API 与存储层不一致的问题。
+- product/version/project identifiers
+- branch binding from `product version show`
+- code graph `node_count` and `edge_count`
+- `graph get-chain` or `graph entity-context` returning nodes with version fields
+- `doc binding list` showing `product_version_id`
+- `doc scan` / `doc import` counts
+- `doc graph show` returning `status=ready`
+- optional `doc change register` and `graph impact` output
