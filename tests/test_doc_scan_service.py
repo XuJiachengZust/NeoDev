@@ -34,6 +34,16 @@ def _create_version(conn, product_id: int, version_name: str) -> int:
         return cur.fetchone()[0]
 
 
+def _create_doc_binding(conn, product_id: int, repo_path: Path | str) -> dict:
+    product_version_id = _create_version(conn, product_id, f"V-{uuid.uuid4().hex[:8]}")
+    return doc_binding_repository.create(
+        conn,
+        product_id=product_id,
+        product_version_id=product_version_id,
+        repo_path=str(repo_path),
+    )
+
+
 def _write_doc(path: Path, front_matter: str, body: str = "content") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"---\n{front_matter}\n---\n\n{body}\n", encoding="utf-8")
@@ -75,11 +85,7 @@ def _assert_doc_scan_registers_valid_markdown_across_docs_root(metadata_db_case,
     token = uuid.uuid4().hex[:8]
     product_code = f"DOCSCAN-{token}"
     product_id = _create_product(metadata_db_case, product_code)
-    binding = doc_binding_repository.create(
-        metadata_db_case,
-        product_id=product_id,
-        repo_path=str(tmp_path),
-    )
+    binding = _create_doc_binding(metadata_db_case, product_id, tmp_path)
     _write_doc(
         tmp_path / "prd" / "overview.md",
         f"""
@@ -147,11 +153,7 @@ def _assert_doc_scan_records_invalid_front_matter_without_registering_doc(
     token = uuid.uuid4().hex[:8]
     product_code = f"DOCBAD-{token}"
     product_id = _create_product(metadata_db_case, product_code)
-    binding = doc_binding_repository.create(
-        metadata_db_case,
-        product_id=product_id,
-        repo_path=str(tmp_path),
-    )
+    binding = _create_doc_binding(metadata_db_case, product_id, tmp_path)
     _write_doc(
         tmp_path / "tech-design" / "missing-relations.md",
         f"""
@@ -262,11 +264,7 @@ def _assert_doc_scan_rejects_invalid_doc_type_and_status(metadata_db_case, tmp_p
     token = uuid.uuid4().hex[:8]
     product_code = f"DOCTYPE-{token}"
     product_id = _create_product(metadata_db_case, product_code)
-    binding = doc_binding_repository.create(
-        metadata_db_case,
-        product_id=product_id,
-        repo_path=str(tmp_path),
-    )
+    binding = _create_doc_binding(metadata_db_case, product_id, tmp_path)
     _write_doc(
         tmp_path / "prd" / "invalid-type.md",
         f"""
@@ -319,11 +317,7 @@ def _assert_doc_scan_updates_existing_document_on_rescan(metadata_db_case, tmp_p
     token = uuid.uuid4().hex[:8]
     product_code = f"DOCUP-{token}"
     product_id = _create_product(metadata_db_case, product_code)
-    binding = doc_binding_repository.create(
-        metadata_db_case,
-        product_id=product_id,
-        repo_path=str(tmp_path),
-    )
+    binding = _create_doc_binding(metadata_db_case, product_id, tmp_path)
     doc_path = tmp_path / "prototype" / "flow.md"
     _write_doc(
         doc_path,
@@ -379,11 +373,7 @@ def _assert_doc_scan_requires_obsidian_properties(metadata_db_case, tmp_path):
     token = uuid.uuid4().hex[:8]
     product_code = f"DOC-OB-{token}"
     product_id = _create_product(metadata_db_case, product_code)
-    binding = doc_binding_repository.create(
-        metadata_db_case,
-        product_id=product_id,
-        repo_path=str(tmp_path),
-    )
+    binding = _create_doc_binding(metadata_db_case, product_id, tmp_path)
     _write_doc(
         tmp_path / "prd" / "missing-ob.md",
         f"""
@@ -424,11 +414,7 @@ def _assert_doc_scan_accepts_obsidian_crlf_front_matter(metadata_db_case, tmp_pa
     token = uuid.uuid4().hex[:8]
     product_code = f"DOCCRLF-{token}"
     product_id = _create_product(metadata_db_case, product_code)
-    binding = doc_binding_repository.create(
-        metadata_db_case,
-        product_id=product_id,
-        repo_path=str(tmp_path),
-    )
+    binding = _create_doc_binding(metadata_db_case, product_id, tmp_path)
     _write_doc_crlf(
         tmp_path / "tech-design" / "crlf.md",
         f"""
@@ -456,11 +442,7 @@ def test_doc_scan_includes_docs_directory(metadata_db_case):
         token = uuid.uuid4().hex[:8]
         product_code = f"DOCDIR-{token}"
         product_id = _create_product(metadata_db_case, product_code)
-        binding = doc_binding_repository.create(
-            metadata_db_case,
-            product_id=product_id,
-            repo_path=str(doc_repo),
-        )
+        binding = _create_doc_binding(metadata_db_case, product_id, doc_repo)
         _write_doc(
             doc_repo / "docs" / "guide.md",
             f"""
@@ -491,11 +473,7 @@ def test_doc_scan_skips_hidden_markdown(metadata_db_case):
         token = uuid.uuid4().hex[:8]
         product_code = f"DOCHIDDEN-{token}"
         product_id = _create_product(metadata_db_case, product_code)
-        binding = doc_binding_repository.create(
-            metadata_db_case,
-            product_id=product_id,
-            repo_path=str(doc_repo),
-        )
+        binding = _create_doc_binding(metadata_db_case, product_id, doc_repo)
         _write_doc(
             doc_repo / ".obsidian" / "workspace.md",
             f"""

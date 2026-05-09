@@ -49,6 +49,21 @@ def _create_product(conn, code: str) -> int:
     return product_id
 
 
+def _create_version(conn, product_id: int, version_name: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO product_versions (product_id, version_name)
+            VALUES (%s, %s)
+            RETURNING id
+            """,
+            (product_id, version_name),
+        )
+        version_id = cur.fetchone()[0]
+    conn.commit()
+    return version_id
+
+
 def _create_project(conn, product_id: int, name: str, repo_path: str, repo_url: str | None = None) -> int:
     with conn.cursor() as cur:
         cur.execute(
@@ -66,14 +81,17 @@ def _create_project(conn, product_id: int, name: str, repo_path: str, repo_url: 
 
 def _create_doc_binding_and_document(conn, code: str) -> tuple[dict, dict]:
     product_id = _create_product(conn, code)
+    product_version_id = _create_version(conn, product_id, f"V-{code}")
     binding = doc_binding_repository.create(
         conn,
         product_id=product_id,
+        product_version_id=product_version_id,
         repo_path=f"/tmp/doc-cli-{code}",
     )
     document = document_repository.create(
         conn,
         doc_binding_id=binding["id"],
+        product_version_id=product_version_id,
         doc_id=f"DOC-CLI-{code}",
         relative_path="prd/overview.md",
         doc_type="prd",
@@ -98,6 +116,7 @@ def test_doc_binding_create_cli_uses_project_source_and_returns_import_command(p
     token = uuid.uuid4().hex[:8]
     product_code = f"BINDCLI-{token}"
     product_id = _create_product(pg_conn, product_code)
+    product_version_id = _create_version(pg_conn, product_id, f"V-{token}")
     project_id = _create_project(
         pg_conn,
         product_id,
@@ -111,6 +130,8 @@ def test_doc_binding_create_cli_uses_project_source_and_returns_import_command(p
         "create",
         "--product-code",
         product_code,
+        "--version-id",
+        str(product_version_id),
         "--project-id",
         str(project_id),
         "--branch",
@@ -136,9 +157,11 @@ def test_doc_binding_list_cli_returns_active_bindings(pg_conn):
     token = uuid.uuid4().hex[:8]
     product_code = f"BINDLIST-{token}"
     product_id = _create_product(pg_conn, product_code)
+    product_version_id = _create_version(pg_conn, product_id, f"V-{token}")
     binding = doc_binding_repository.create(
         pg_conn,
         product_id=product_id,
+        product_version_id=product_version_id,
         repo_path=f"/tmp/docs/{token}",
         repo_url=f"https://example.invalid/docs/{token}.git",
         default_branch="main",
@@ -166,9 +189,11 @@ def test_doc_scan_cli_scans_binding_and_returns_summary(pg_conn):
     repo_path = _make_doc_repo()
     try:
         product_id = _create_product(pg_conn, f"DOCCLI-{token}")
+        product_version_id = _create_version(pg_conn, product_id, f"V-{token}")
         binding = doc_binding_repository.create(
             pg_conn,
             product_id=product_id,
+            product_version_id=product_version_id,
             repo_path=str(repo_path),
         )
         pg_conn.commit()

@@ -1,5 +1,8 @@
 """Doc binding aggregate: PG CRUD."""
 
+from urllib.parse import urlsplit, urlunsplit
+
+import psycopg2
 from psycopg2.extras import RealDictCursor
 
 
@@ -11,50 +14,88 @@ _COLUMNS = (
 def create(
     conn,
     product_id: int,
-    product_version_id: int | None = None,
+    product_version_id: int,
     repo_path: str = "",
     repo_url: str = "",
     default_branch: str = "main",
     is_active: bool = True,
 ) -> dict:
+    if product_version_id is None:
+        raise ValueError("doc binding must be scoped to a product version")
+    normalized_default_branch = _normalized_default_branch(default_branch)
+    git_source_key = _normalized_git_source_key(repo_url=repo_url, repo_path=repo_path)
+    if is_active:
+        _raise_if_git_source_bound_to_other_version(
+            conn,
+            product_version_id=product_version_id,
+            git_source_key=git_source_key,
+            default_branch=normalized_default_branch,
+        )
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
-        has_product_version_id = _has_column(conn, "doc_bindings", "product_version_id")
-        version_column = ", product_version_id" if has_product_version_id else ""
-        version_value = ", %s" if has_product_version_id else ""
         if _has_column(conn, "doc_bindings", "binding_name"):
             cur.execute(
                 f"""INSERT INTO doc_bindings (
-                     product_id{version_column}, binding_name, repo_path, repo_url, default_branch, is_active
+                     product_id, product_version_id, binding_name, repo_path, repo_url, default_branch, is_active, git_source_key
                  )
-                 VALUES (%s{version_value}, %s, %s, %s, %s, %s)
+                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                  RETURNING {_COLUMNS}""",
-                _insert_params(
+                (
                     product_id,
                     product_version_id,
-                    has_product_version_id,
                     f"product-{product_id}-docs",
                     repo_path,
                     repo_url,
-                    default_branch,
+                    normalized_default_branch,
                     is_active,
+                    git_source_key,
                 ),
             )
         else:
             cur.execute(
-                f"""INSERT INTO doc_bindings (product_id{version_column}, repo_path, repo_url, default_branch, is_active)
-                 VALUES (%s{version_value}, %s, %s, %s, %s)
+                f"""INSERT INTO doc_bindings (product_id, product_version_id, repo_path, repo_url, default_branch, is_active, git_source_key)
+                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                  RETURNING {_COLUMNS}""",
-                _insert_params(
+                (
                     product_id,
                     product_version_id,
-                    has_product_version_id,
                     repo_path,
                     repo_url,
-                    default_branch,
+                    normalized_default_branch,
                     is_active,
+                    git_source_key,
                 ),
             )
         return dict(cur.fetchone())
+
+
+def _raise_if_git_source_bound_to_other_version(
+    conn,
+    *,
+    product_version_id: int,
+    git_source_key: str,
+    default_branch: str,
+) -> None:
+    if not git_source_key:
+        return
+    params: list = [product_version_id, default_branch, git_source_key]
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT id, product_version_id, repo_path, repo_url, default_branch
+             FROM doc_bindings
+             WHERE is_active = true
+               AND product_version_id <> %s
+               AND default_branch = %s
+               AND git_source_key = %s
+             LIMIT 1
+            """,
+            tuple(params),
+        )
+        conflict = cur.fetchone()
+    if conflict:
+        raise psycopg2.IntegrityError(
+            "doc binding git source is already bound to another product version"
+        )
 
 
 def find_by_id(conn, binding_id: int) -> dict | None:
@@ -96,11 +137,56 @@ def _has_column(conn, table_name: str, column_name: str) -> bool:
         return bool(cur.fetchone()[0])
 
 
-def _insert_params(
-    product_id: int,
-    product_version_id: int | None,
-    has_product_version_id: bool,
-    *tail,
-) -> tuple:
-    head = (product_id, product_version_id) if has_product_version_id else (product_id,)
-    return (*head, *tail)
+def _normalized_default_branch(value: str) -> str:
+    return (value or "").strip() or "main"
+
+
+def _normalized_git_source_key(*, repo_url: str, repo_path: str) -> str:
+    for candidate in (repo_url, repo_path):
+        normalized = _normalized_git_source_value(candidate)
+        if normalized:
+            return normalized
+    return ""
+
+
+def _normalized_git_source_value(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    text = _trim_git_suffix(_trim_trailing_separators(text.replace("\\", "/")))
+    url = urlsplit(text)
+    if url.scheme and url.netloc:
+        netloc = _normalized_netloc(url.netloc)
+        return urlunsplit(
+            (
+                url.scheme.lower(),
+                netloc,
+                _trim_git_suffix(_trim_trailing_separators(url.path.replace("\\", "/"))),
+                url.query,
+                url.fragment,
+            )
+        )
+    if _looks_like_scp_git_source(text):
+        user_host, path = text.split(":", 1)
+        user, host = user_host.split("@", 1)
+        return f"{user}@{host.lower()}:{_trim_git_suffix(_trim_trailing_separators(path))}"
+    return text
+
+
+def _normalized_netloc(value: str) -> str:
+    if "@" in value:
+        user_info, host = value.rsplit("@", 1)
+        return f"{user_info}@{host.lower()}"
+    return value.lower()
+
+
+def _looks_like_scp_git_source(value: str) -> bool:
+    return "@" in value and ":" in value and "://" not in value and "/" in value.split(":", 1)[1]
+
+
+def _trim_trailing_separators(value: str) -> str:
+    return value.rstrip("/")
+
+
+def _trim_git_suffix(value: str) -> str:
+    return value[:-4] if value.lower().endswith(".git") else value

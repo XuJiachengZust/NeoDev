@@ -46,6 +46,21 @@ def _make_project(conn, name: str) -> int:
     return project_id
 
 
+def _make_version(conn, product_id: int, version_name: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO product_versions (product_id, version_name)
+            VALUES (%s, %s)
+            RETURNING id
+            """,
+            (product_id, version_name),
+        )
+        version_id = cur.fetchone()[0]
+    conn.commit()
+    return version_id
+
+
 def test_graph_impact_rejects_unknown_doc_change(pg_conn):
     impact = _run_cli(
         "graph",
@@ -77,10 +92,12 @@ def test_graph_impact_returns_docchange_scope(pg_conn):
     )
     assert create_product.returncode == 0, create_product.stderr
     product_id = _payload(create_product)["data"]["product"]["id"]
+    product_version_id = _make_version(pg_conn, product_id, f"V-{token}")
 
     binding = doc_binding_repository.create(
         pg_conn,
         product_id=product_id,
+        product_version_id=product_version_id,
         repo_path=f"/tmp/neodev-docs/{token}",
         repo_url=f"https://example.test/docs/{token}.git",
         default_branch="main",
@@ -88,6 +105,7 @@ def test_graph_impact_returns_docchange_scope(pg_conn):
     document = document_repository.create(
         pg_conn,
         doc_binding_id=binding["id"],
+        product_version_id=product_version_id,
         doc_id=f"REQ-{token}",
         relative_path=f"requirements/{token}.md",
         front_matter_json={

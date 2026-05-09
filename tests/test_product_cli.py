@@ -319,7 +319,7 @@ def test_product_cli_rejects_multiple_product_locators(pg_conn):
     assert payload["errors"][0]["category"] == "invalid_argument"
 
 
-def test_product_version_show_supports_version_id(pg_conn):
+def test_product_version_show_rejects_version_id(pg_conn):
     token = uuid.uuid4().hex[:8]
     product_code = f"VID-{token}"
     create_product = _run_cli(
@@ -347,11 +347,11 @@ def test_product_version_show_supports_version_id(pg_conn):
     version_id = _payload(create_version)["data"]["version"]["id"]
 
     show_proc = _run_cli("product", "version", "show", "--version-id", str(version_id), "--json")
-    assert show_proc.returncode == 0, show_proc.stderr
+    assert show_proc.returncode == 2
     payload = _payload(show_proc)
-    assert payload["data"]["version"]["id"] == version_id
-    assert payload["data"]["version"]["version_name"] == "V-ID"
-    assert payload["data"]["branches"] == []
+    assert payload["ok"] is False
+    assert payload["errors"][0]["category"] == "invalid_argument"
+    assert "--version-id" in payload["errors"][0]["message"]
 
 
 def test_product_version_bind_branch_rejects_ambiguous_project_name(pg_conn):
@@ -399,7 +399,7 @@ def test_product_version_bind_branch_rejects_ambiguous_project_name(pg_conn):
     )
     assert proc.returncode == 4
     payload = _payload(proc)
-    assert payload["errors"][0]["category"] == "conflict"
+    assert payload["errors"][0]["category"] == "ambiguous_name"
     assert payload["errors"][0]["details"]["project_name"] == project_name
 
 
@@ -486,7 +486,7 @@ def test_product_version_bind_branch_rejects_project_bound_to_other_product(pg_c
     assert payload["errors"][0]["category"] == "conflict"
 
 
-def test_product_version_create_duplicate_name_returns_conflict(pg_conn):
+def test_product_version_create_duplicate_name_returns_name_conflict(pg_conn):
     token = uuid.uuid4().hex[:8]
     product_code = f"VDUP-{token}"
     product = _run_cli(
@@ -523,7 +523,197 @@ def test_product_version_create_duplicate_name_returns_conflict(pg_conn):
         "--json",
     )
     assert second.returncode == 4
-    assert _payload(second)["errors"][0]["category"] == "conflict"
+    assert _payload(second)["errors"][0]["category"] == "name_conflict"
+
+
+def test_product_version_show_branch_lookup_supports_product_filter(pg_conn):
+    token = uuid.uuid4().hex[:8]
+    project_name = f"branch-lookup-{token}"
+    _make_project(pg_conn, project_name)
+
+    alpha_code = f"BLA-{token}"
+    beta_code = f"BLB-{token}"
+    for name, code in (("Alpha Product", alpha_code), ("Beta Product", beta_code)):
+        create_product = _run_cli(
+            "product",
+            "create",
+            "--name",
+            f"{name} {token}",
+            "--product-code",
+            code,
+            "--json",
+        )
+        assert create_product.returncode == 0, create_product.stderr
+        create_version = _run_cli(
+            "product",
+            "version",
+            "create",
+            "--product-code",
+            code,
+            "--version-name",
+            "V1",
+            "--json",
+        )
+        assert create_version.returncode == 0, create_version.stderr
+        bind_proc = _run_cli(
+            "product",
+            "version",
+            "bind-branch",
+            "--product-code",
+            code,
+            "--version-name",
+            "V1",
+            "--project-name",
+            project_name,
+            "--branch",
+            "main",
+            "--json",
+        )
+        assert bind_proc.returncode == 0, bind_proc.stderr
+
+    show_proc = _run_cli(
+        "product",
+        "version",
+        "show",
+        "--project-name",
+        project_name,
+        "--branch-name",
+        "main",
+        "--product-code",
+        beta_code,
+        "--json",
+    )
+    assert show_proc.returncode == 0, show_proc.stderr
+    payload = _payload(show_proc)
+    resolved_versions = payload["data"]["resolved_versions"]
+    assert len(resolved_versions) == 1
+    assert resolved_versions[0]["product"]["code"] == beta_code
+    assert resolved_versions[0]["query_params"] == {
+        "product_name": f"Beta Product {token}",
+        "version_name": "V1",
+        "project_name": project_name,
+        "branch_name": "main",
+    }
+
+
+def test_product_version_show_branch_lookup_returns_all_matching_versions(pg_conn):
+    token = uuid.uuid4().hex[:8]
+    project_name = f"branch-multi-lookup-{token}"
+    _make_project(pg_conn, project_name)
+
+    expected_products = []
+    for prefix in ("Alpha Multi", "Beta Multi"):
+        code = f"BML-{prefix[0]}-{token}"
+        create_product = _run_cli(
+            "product",
+            "create",
+            "--name",
+            f"{prefix} {token}",
+            "--product-code",
+            code,
+            "--json",
+        )
+        assert create_product.returncode == 0, create_product.stderr
+        create_version = _run_cli(
+            "product",
+            "version",
+            "create",
+            "--product-code",
+            code,
+            "--version-name",
+            "V1",
+            "--json",
+        )
+        assert create_version.returncode == 0, create_version.stderr
+        bind_proc = _run_cli(
+            "product",
+            "version",
+            "bind-branch",
+            "--product-code",
+            code,
+            "--version-name",
+            "V1",
+            "--project-name",
+            project_name,
+            "--branch",
+            "main",
+            "--json",
+        )
+        assert bind_proc.returncode == 0, bind_proc.stderr
+        expected_products.append(f"{prefix} {token}")
+
+    show_proc = _run_cli(
+        "product",
+        "version",
+        "show",
+        "--project-name",
+        project_name,
+        "--branch-name",
+        "main",
+        "--json",
+    )
+    assert show_proc.returncode == 0, show_proc.stderr
+    payload = _payload(show_proc)
+    resolved_versions = payload["data"]["resolved_versions"]
+    assert [item["product"]["name"] for item in resolved_versions] == expected_products
+    assert [item["query_params"]["branch_name"] for item in resolved_versions] == ["main", "main"]
+
+
+def test_product_version_show_branch_lookup_returns_empty_result_for_unbound_branch(pg_conn):
+    token = uuid.uuid4().hex[:8]
+    project_name = f"branch-empty-lookup-{token}"
+    _make_project(pg_conn, project_name)
+
+    show_proc = _run_cli(
+        "product",
+        "version",
+        "show",
+        "--project-name",
+        project_name,
+        "--branch-name",
+        "missing",
+        "--json",
+    )
+    assert show_proc.returncode == 0, show_proc.stderr
+    payload = _payload(show_proc)
+    assert payload["ok"] is True
+    assert payload["data"]["resolved_versions"] == []
+
+
+def test_product_version_show_branch_lookup_rejects_ambiguous_product_name(pg_conn):
+    token = uuid.uuid4().hex[:8]
+    product_name = f"shared-product-{token}"
+    for code in (f"AMBPA-{token}", f"AMBPB-{token}"):
+        create_product = _run_cli(
+            "product",
+            "create",
+            "--name",
+            product_name,
+            "--product-code",
+            code,
+            "--json",
+        )
+        assert create_product.returncode == 0, create_product.stderr
+
+    project_name = f"lookup-project-{token}"
+    _make_project(pg_conn, project_name)
+
+    proc = _run_cli(
+        "product",
+        "version",
+        "show",
+        "--project-name",
+        project_name,
+        "--branch-name",
+        "main",
+        "--product-name",
+        product_name,
+        "--json",
+    )
+    assert proc.returncode == 4
+    payload = _payload(proc)
+    assert payload["errors"][0]["category"] == "ambiguous_name"
+    assert payload["errors"][0]["details"]["product_name"] == product_name
 
 
 def test_product_version_name_locator_requires_product_locator(pg_conn):

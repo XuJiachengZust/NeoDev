@@ -77,20 +77,38 @@ def _make_product(conn, code: str) -> int:
     return product_id
 
 
+def _make_version(conn, product_id: int, version_name: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO product_versions (product_id, version_name)
+            VALUES (%s, %s)
+            RETURNING id
+            """,
+            (product_id, version_name),
+        )
+        version_id = cur.fetchone()[0]
+    conn.commit()
+    return version_id
+
+
 def test_git_verify_doc_change_creates_link_and_updates_status(pg_conn):
     token = uuid.uuid4().hex[:8]
     doc_commit = "d" * 40
     with closing(_connect_fresh()) as conn:
         project_id = _make_project(conn, f"git-verify-project-{token}")
         product_id = _make_product(conn, f"GITVERIFY-{token}")
+        product_version_id = _make_version(conn, product_id, f"V-{token}")
         binding = doc_binding_repository.create(
             conn,
             product_id=product_id,
+            product_version_id=product_version_id,
             repo_path=f"/tmp/neodev-docs/{token}",
         )
         document = document_repository.create(
             conn,
             doc_binding_id=binding["id"],
+            product_version_id=product_version_id,
             doc_id=f"REQ-GIT-{token}",
             relative_path=f"requirements/git-{token}.md",
         )

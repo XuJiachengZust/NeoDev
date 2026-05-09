@@ -291,6 +291,15 @@ def test_project_refresh_graph_command_is_registered():
 
 
 def test_product_version_code_fact_commands_are_registered():
+    show = _run("neodev.py", "product", "version", "show", "--help")
+    assert show.returncode == 0
+    assert "--product-name" in show.stdout
+    assert "--product-code" in show.stdout
+    assert "--version-name" in show.stdout
+    assert "--project-name" in show.stdout
+    assert "--branch-name" in show.stdout
+    assert "--version-id" not in show.stdout
+
     link = _run("neodev.py", "product", "version", "link-code", "--help")
     assert link.returncode == 0
     assert "--doc-id" in link.stdout

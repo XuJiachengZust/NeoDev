@@ -267,7 +267,7 @@ def _with_db(callback):
         raise
     except psycopg2.IntegrityError as exc:
         raise CliError(
-            category="conflict",
+            category="name_conflict",
             message="database constraint conflict",
             details={"database_error": str(exc)},
         ) from exc

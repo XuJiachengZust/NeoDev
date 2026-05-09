@@ -6,7 +6,12 @@ from datetime import datetime, timezone
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
-from service.repositories import product_repository, product_version_repository, project_repository
+from service.repositories import (
+    doc_binding_repository,
+    product_repository,
+    product_version_repository,
+    project_repository,
+)
 
 
 def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, Any]:
@@ -15,6 +20,7 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
         return {"status": "not_configured"}
     project = resolve_document_project(conn, binding)
     scope = _document_version_scope(conn, binding)
+    _ensure_document_version_scope(scope, binding)
     project_name = (project or {}).get("name") if project else None
     driver = _create_driver(config)
     merge_document = _document_merge_clause(binding, "d")
@@ -23,6 +29,28 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
     match_target = _document_match_clause(binding, "target", doc_id_param="target_doc_id")
     try:
         with driver.session(database=database) as session:
+            if scope.get("product_name") and scope.get("version_name"):
+                session.run(
+                    """
+                    MERGE (g:DocumentGraph {
+                        product_name: $product_name,
+                        version_name: $version_name
+                    })
+                    SET g.product_id = $product_id,
+                        g.product_version_id = $product_version_id,
+                        g.doc_binding_id = $doc_binding_id,
+                        g.project_name = $project_name,
+                        g.updated_at = $updated_at
+                    """,
+                    document_id=document["id"],
+                    doc_binding_id=binding["id"],
+                    product_id=binding["product_id"],
+                    product_version_id=binding.get("product_version_id"),
+                    product_name=scope.get("product_name"),
+                    version_name=scope.get("version_name"),
+                    project_name=project_name,
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
             session.run(
                 f"""
                 {merge_document}
@@ -54,6 +82,38 @@ def upsert_document_graph(conn, *, binding: dict, document: dict) -> dict[str, A
                 content_hash=document.get("content_hash") or "",
                 updated_at=datetime.now(timezone.utc).isoformat(),
             )
+            if scope.get("product_name") and scope.get("version_name"):
+                session.run(
+                    f"""
+                    MATCH (g:DocumentGraph {{
+                        product_name: $product_name,
+                        version_name: $version_name
+                    }})
+                    {match_document}
+                    MERGE (g)-[r:CONTAINS_DOCUMENT {{
+                        doc_binding_id: $doc_binding_id,
+                        doc_id: $doc_id
+                    }}]->(d)
+                    SET r.product_id = $product_id,
+                        r.document_id = $document_id,
+                        r.product_version_id = $product_version_id,
+                        r.product_name = $product_name,
+                        r.version_name = $version_name,
+                        r.project_name = $project_name,
+                        r.relative_path = $relative_path,
+                        r.updated_at = $updated_at
+                    """,
+                    document_id=document["id"],
+                    doc_binding_id=binding["id"],
+                    product_id=binding["product_id"],
+                    product_version_id=binding.get("product_version_id"),
+                    product_name=scope.get("product_name"),
+                    version_name=scope.get("version_name"),
+                    project_name=project_name,
+                    doc_id=document["doc_id"],
+                    relative_path=document.get("relative_path") or "",
+                    updated_at=datetime.now(timezone.utc).isoformat(),
+                )
             if project:
                 session.run(
                     f"""
@@ -135,7 +195,9 @@ def document_graph_summary(*, product_name: str, version_name: str) -> dict[str,
         with driver.session(database=database) as session:
             result = session.run(
                 """
-                MATCH (d:Document {product_name: $product_name, version_name: $version_name})
+                MATCH (g:DocumentGraph {product_name: $product_name, version_name: $version_name})
+                OPTIONAL MATCH (g)-[:CONTAINS_DOCUMENT]->(d:Document)
+                WHERE d IS NOT NULL
                 RETURN d.doc_id AS doc_id,
                        d.title AS title,
                        d.relative_path AS relative_path,
@@ -169,38 +231,54 @@ def _document_match_clause(binding: dict, alias: str, *, doc_id_param: str = "do
 
 
 def _document_key(binding: dict, *, doc_id_param: str = "doc_id") -> str:
-    parts = [f"doc_id: ${doc_id_param}", "product_id: $product_id"]
-    if binding.get("product_version_id") is not None:
-        parts.append("product_version_id: $product_version_id")
-    return ", ".join(parts)
+    if binding.get("product_version_id") is None:
+        raise ValueError(
+            f"document key requires product_version_id for binding {binding.get('id')}"
+        )
+    return f"doc_id: ${doc_id_param}, product_id: $product_id, product_version_id: $product_version_id"
 
 
 def _document_version_scope(conn, binding: dict) -> dict[str, str | None]:
-    try:
-        product = product_repository.find_by_id(conn, binding["product_id"])
-        version = None
-        if binding.get("product_version_id") is not None:
-            version = product_version_repository.find_by_id(conn, binding["product_version_id"])
-    except Exception:
-        product = None
-        version = None
+    product = product_repository.find_by_id(conn, binding["product_id"])
+    if not product or not product.get("name"):
+        raise ValueError(
+            f"document graph version scope requires product name for binding {binding.get('id')}"
+        )
+    product_version_id = binding.get("product_version_id")
+    if product_version_id is None:
+        raise ValueError(
+            f"document graph version scope requires product_version_id for binding {binding.get('id')}"
+        )
+    version = product_version_repository.find_by_id(conn, product_version_id)
+    if not version or not version.get("version_name"):
+        raise ValueError(
+            f"document graph version scope requires version name for binding {binding.get('id')}"
+        )
     return {
-        "product_name": (product or {}).get("name"),
-        "version_name": (version or {}).get("version_name"),
+        "product_name": product.get("name"),
+        "version_name": version.get("version_name"),
     }
+
+
+def _ensure_document_version_scope(scope: dict[str, str | None], binding: dict) -> None:
+    if scope.get("product_name") and scope.get("version_name"):
+        return
+    raise ValueError(
+        f"document graph version scope is incomplete for binding {binding.get('id')}"
+    )
 
 
 def resolve_document_project(conn, binding: dict) -> dict | None:
     binding_product_id = binding.get("product_id")
-    binding_repo_url = _normalized_text(binding.get("repo_url"))
-    binding_repo_path = _normalized_text(binding.get("repo_path"))
-    binding_repo_name = _repo_name(binding_repo_path)
+    binding_repo_url = doc_binding_repository._normalized_git_source_value(binding.get("repo_url") or "")
+    binding_repo_path = doc_binding_repository._normalized_git_source_value(binding.get("repo_path") or "")
+    binding_repo_name = _repo_name(binding.get("repo_path") or binding.get("repo_url") or "")
     candidates = project_repository.list_all(conn)
     for project in candidates:
         if binding_product_id is not None and project.get("product_id") != binding_product_id:
             continue
-        project_repo_url = _normalized_text(project.get("repo_url"))
-        project_repo_path = _normalized_text(project.get("repo_path"))
+        project_repo_url = doc_binding_repository._normalized_git_source_value(project.get("repo_url") or "")
+        project_repo_path = doc_binding_repository._normalized_git_source_value(project.get("repo_path") or "")
         if binding_repo_url and binding_repo_url in {project_repo_url, project_repo_path}:
             return project
         if binding_repo_path and binding_repo_path in {project_repo_url, project_repo_path}:

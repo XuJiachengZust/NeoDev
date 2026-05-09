@@ -41,11 +41,36 @@ def _create_project(conn) -> int:
         return cur.fetchone()[0]
 
 
+def _create_version(conn, product_id: int, version_name: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO product_versions (product_id, version_name)
+            VALUES (%s, %s)
+            RETURNING id
+            """,
+            (product_id, version_name),
+        )
+        return cur.fetchone()[0]
+
+
+def _create_scoped_doc_binding(conn, product_id: int, **kwargs) -> dict:
+    version_id = _create_version(conn, product_id, f"DOCS-{uuid.uuid4().hex[:8]}")
+    return doc_binding_repository.create(
+        conn,
+        product_id=product_id,
+        product_version_id=version_id,
+        **kwargs,
+    )
+
+
 def test_doc_binding_create_and_find_round_trip(metadata_db_case):
     product_id = _create_product(metadata_db_case)
+    product_version_id = _create_version(metadata_db_case, product_id, "V1")
     created = doc_binding_repository.create(
         metadata_db_case,
         product_id=product_id,
+        product_version_id=product_version_id,
         repo_path="/workspace/docs",
         repo_url="https://example.com/repo.git",
         default_branch="main",
@@ -56,6 +81,7 @@ def test_doc_binding_create_and_find_round_trip(metadata_db_case):
 
     assert found is not None
     assert found["product_id"] == product_id
+    assert found["product_version_id"] == product_version_id
     assert found["repo_path"] == "/workspace/docs"
     assert found["repo_url"] == "https://example.com/repo.git"
     assert found["default_branch"] == "main"
@@ -64,11 +90,163 @@ def test_doc_binding_create_and_find_round_trip(metadata_db_case):
     assert active[0]["id"] == created["id"]
 
 
+def test_doc_binding_requires_product_version_scope(metadata_db_case):
+    product_id = _create_product(metadata_db_case)
+
+    with pytest.raises(ValueError, match="product version"):
+        doc_binding_repository.create(
+            metadata_db_case,
+            product_id=product_id,
+            product_version_id=None,
+            repo_path="/workspace/docs",
+        )
+
+
+def test_doc_binding_rejects_same_git_source_across_versions(metadata_db_case):
+    product_id = _create_product(metadata_db_case)
+    first_version_id = _create_version(metadata_db_case, product_id, "V1")
+    second_version_id = _create_version(metadata_db_case, product_id, "V2")
+    doc_binding_repository.create(
+        metadata_db_case,
+        product_id=product_id,
+        product_version_id=first_version_id,
+        repo_url="https://example.com/docs.git",
+        default_branch="main",
+    )
+
+    with pytest.raises(psycopg2.IntegrityError):
+        doc_binding_repository.create(
+            metadata_db_case,
+            product_id=product_id,
+            product_version_id=second_version_id,
+            repo_url="https://example.com/docs.git",
+            default_branch="main",
+        )
+
+
+def test_doc_binding_rejects_normalized_repo_url_variants_across_versions(metadata_db_case):
+    product_id = _create_product(metadata_db_case)
+    first_version_id = _create_version(metadata_db_case, product_id, "V1")
+    second_version_id = _create_version(metadata_db_case, product_id, "V2")
+    doc_binding_repository.create(
+        metadata_db_case,
+        product_id=product_id,
+        product_version_id=first_version_id,
+        repo_url=" HTTPS://Example.com/Org/Docs.git/ ",
+        default_branch="main",
+    )
+
+    with pytest.raises(psycopg2.IntegrityError):
+        doc_binding_repository.create(
+            metadata_db_case,
+            product_id=product_id,
+            product_version_id=second_version_id,
+            repo_url="https://example.com/Org/Docs",
+            default_branch="main",
+        )
+
+
+def test_doc_binding_rejects_normalized_repo_path_variants_across_versions(metadata_db_case):
+    product_id = _create_product(metadata_db_case)
+    first_version_id = _create_version(metadata_db_case, product_id, "V1")
+    second_version_id = _create_version(metadata_db_case, product_id, "V2")
+    doc_binding_repository.create(
+        metadata_db_case,
+        product_id=product_id,
+        product_version_id=first_version_id,
+        repo_path=" D:\\Repos\\Docs.git\\ ",
+        default_branch="main",
+    )
+
+    with pytest.raises(psycopg2.IntegrityError):
+        doc_binding_repository.create(
+            metadata_db_case,
+            product_id=product_id,
+            product_version_id=second_version_id,
+            repo_path="D:/Repos/Docs",
+            default_branch="main",
+        )
+
+
+def test_doc_binding_rejects_same_normalized_source_across_repo_url_and_repo_path(metadata_db_case):
+    product_id = _create_product(metadata_db_case)
+    first_version_id = _create_version(metadata_db_case, product_id, "V1")
+    second_version_id = _create_version(metadata_db_case, product_id, "V2")
+    doc_binding_repository.create(
+        metadata_db_case,
+        product_id=product_id,
+        product_version_id=first_version_id,
+        repo_url="https://example.com/Org/Docs.git",
+        default_branch="main",
+    )
+
+    with pytest.raises(psycopg2.IntegrityError):
+        doc_binding_repository.create(
+            metadata_db_case,
+            product_id=product_id,
+            product_version_id=second_version_id,
+            repo_path=" https://example.com/Org/Docs/ ",
+            default_branch="main",
+        )
+
+
+def test_doc_binding_allows_distinct_versions_without_git_source(metadata_db_case):
+    product_id = _create_product(metadata_db_case)
+    first_version_id = _create_version(metadata_db_case, product_id, "V1")
+    second_version_id = _create_version(metadata_db_case, product_id, "V2")
+
+    first = doc_binding_repository.create(
+        metadata_db_case,
+        product_id=product_id,
+        product_version_id=first_version_id,
+        repo_path="",
+        repo_url="",
+        default_branch="main",
+    )
+    second = doc_binding_repository.create(
+        metadata_db_case,
+        product_id=product_id,
+        product_version_id=second_version_id,
+        repo_path="",
+        repo_url="",
+        default_branch="main",
+    )
+
+    assert first["id"] != second["id"]
+
+
+def test_doc_binding_allows_reuse_after_old_binding_is_inactive(metadata_db_case):
+    product_id = _create_product(metadata_db_case)
+    first_version_id = _create_version(metadata_db_case, product_id, "V1")
+    second_version_id = _create_version(metadata_db_case, product_id, "V2")
+    first = doc_binding_repository.create(
+        metadata_db_case,
+        product_id=product_id,
+        product_version_id=first_version_id,
+        repo_url="https://example.com/docs.git",
+        default_branch="main",
+    )
+    with metadata_db_case.cursor() as cur:
+        cur.execute(
+            "UPDATE doc_bindings SET is_active = false WHERE id = %s",
+            (first["id"],),
+        )
+
+    second = doc_binding_repository.create(
+        metadata_db_case,
+        product_id=product_id,
+        product_version_id=second_version_id,
+        repo_url="https://example.com/docs.git",
+        default_branch="main",
+    )
+
+    assert second["id"] != first["id"]
+    assert second["product_version_id"] == second_version_id
+
+
 def test_doc_change_id_unique_constraint_is_enforced(metadata_db_case):
     product_id = _create_product(metadata_db_case)
-    binding = doc_binding_repository.create(
-        metadata_db_case, product_id=product_id, repo_path="/docs"
-    )
+    binding = _create_scoped_doc_binding(metadata_db_case, product_id, repo_path="/docs")
     document = document_repository.create(
         metadata_db_case,
         doc_binding_id=binding["id"],
@@ -128,9 +306,7 @@ def test_dangerous_commit_resolve_persists_resolution_fields(metadata_db_case):
 def test_code_change_link_create_and_list_by_doc_change(metadata_db_case):
     product_id = _create_product(metadata_db_case)
     project_id = _create_project(metadata_db_case)
-    binding = doc_binding_repository.create(
-        metadata_db_case, product_id=product_id, repo_path="/docs"
-    )
+    binding = _create_scoped_doc_binding(metadata_db_case, product_id, repo_path="/docs")
     document = document_repository.create(
         metadata_db_case,
         doc_binding_id=binding["id"],
@@ -163,9 +339,7 @@ def test_code_change_link_create_and_list_by_doc_change(metadata_db_case):
 
 def test_document_create_persists_last_scanned_at_and_json(metadata_db_case):
     product_id = _create_product(metadata_db_case)
-    binding = doc_binding_repository.create(
-        metadata_db_case, product_id=product_id, repo_path="/docs"
-    )
+    binding = _create_scoped_doc_binding(metadata_db_case, product_id, repo_path="/docs")
     scan_time = datetime(2026, 4, 24, 12, 0, 0, tzinfo=timezone.utc)
     front_matter = {"owner": "platform", "priority": "p1"}
     relations = {"requires": ["DOC-ROOT"], "blocks": []}
@@ -192,9 +366,7 @@ def test_document_create_persists_last_scanned_at_and_json(metadata_db_case):
 
 def test_replace_document_chunks_preserves_embedding_for_unchanged_content(metadata_db_case):
     product_id = _create_product(metadata_db_case)
-    binding = doc_binding_repository.create(
-        metadata_db_case, product_id=product_id, repo_path="/docs"
-    )
+    binding = _create_scoped_doc_binding(metadata_db_case, product_id, repo_path="/docs")
     document = document_repository.create(
         metadata_db_case,
         doc_binding_id=binding["id"],
@@ -265,9 +437,7 @@ def test_dangerous_commit_resolve_is_idempotent_for_audit_fields(metadata_db_cas
 
 def test_doc_change_mark_implemented_is_idempotent_for_implemented_at(metadata_db_case):
     product_id = _create_product(metadata_db_case)
-    binding = doc_binding_repository.create(
-        metadata_db_case, product_id=product_id, repo_path="/docs"
-    )
+    binding = _create_scoped_doc_binding(metadata_db_case, product_id, repo_path="/docs")
     document = document_repository.create(
         metadata_db_case,
         doc_binding_id=binding["id"],

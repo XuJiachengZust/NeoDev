@@ -324,8 +324,7 @@ CREATE TABLE IF NOT EXISTS product_version_branches (
 
 CREATE INDEX IF NOT EXISTS idx_pvb_version_id ON product_version_branches(product_version_id);
 CREATE INDEX IF NOT EXISTS idx_pvb_project_id ON product_version_branches(project_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_pvb_project_branch
-    ON product_version_branches(project_id, branch_name);
+DROP INDEX IF EXISTS uq_pvb_project_branch;
 CREATE INDEX IF NOT EXISTS idx_product_version_branches_project_branch
     ON product_version_branches(project_id, branch_name);
 
@@ -604,9 +603,10 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS doc_bindings (
     id                  SERIAL PRIMARY KEY,
     product_id          INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-    product_version_id  INTEGER REFERENCES product_versions(id) ON DELETE CASCADE,
+    product_version_id  INTEGER NOT NULL REFERENCES product_versions(id) ON DELETE CASCADE,
     repo_path           TEXT NOT NULL DEFAULT '',
     repo_url            TEXT NOT NULL DEFAULT '',
+    git_source_key      TEXT NOT NULL DEFAULT '',
     default_branch      VARCHAR(255) NOT NULL DEFAULT 'main',
     is_active           BOOLEAN NOT NULL DEFAULT true,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -617,10 +617,12 @@ ALTER TABLE doc_bindings
     ADD COLUMN IF NOT EXISTS product_version_id INTEGER REFERENCES product_versions(id) ON DELETE CASCADE,
     ADD COLUMN IF NOT EXISTS repo_path TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS repo_url TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS git_source_key TEXT NOT NULL DEFAULT '',
     ADD COLUMN IF NOT EXISTS default_branch VARCHAR(255) NOT NULL DEFAULT 'main',
     ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
 
 ALTER TABLE doc_bindings
+    ALTER COLUMN product_version_id SET NOT NULL,
     ALTER COLUMN repo_path SET DEFAULT '',
     ALTER COLUMN repo_url SET DEFAULT '',
     ALTER COLUMN default_branch SET DEFAULT 'main',
@@ -631,23 +633,67 @@ CREATE INDEX IF NOT EXISTS idx_doc_bindings_product_id
 
 DROP INDEX IF EXISTS uq_doc_bindings_active_product;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_product_legacy
-    ON doc_bindings(product_id)
-    WHERE is_active = true AND product_version_id IS NULL;
-
 CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_version
     ON doc_bindings(product_version_id)
-    WHERE is_active = true AND product_version_id IS NOT NULL;
+    WHERE is_active = true;
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM doc_bindings WHERE product_version_id IS NULL
-    ) THEN
-        ALTER TABLE IF EXISTS doc_bindings
-            ALTER COLUMN product_version_id SET NOT NULL;
-    END IF;
-END $$;
+UPDATE doc_bindings
+   SET git_source_key = COALESCE(
+       NULLIF(
+           CASE
+               WHEN btrim(repo_url) <> '' THEN
+                   regexp_replace(
+                       regexp_replace(
+                           regexp_replace(
+                               lower(split_part(btrim(repo_url), '://', 1)) || '://' ||
+                               lower(split_part(split_part(btrim(repo_url), '://', 2), '/', 1)) ||
+                               CASE
+                                   WHEN position('/' in split_part(btrim(repo_url), '://', 2)) > 0
+                                   THEN substring(
+                                       split_part(btrim(repo_url), '://', 2)
+                                       FROM position('/' in split_part(btrim(repo_url), '://', 2))
+                                   )
+                                   ELSE ''
+                               END,
+                               '\.git$',
+                               '',
+                               'i'
+                           ),
+                           '/+$',
+                           ''
+                       ),
+                       '\\',
+                       '/',
+                       'g'
+                   ),
+               ELSE ''
+           END,
+           ''
+       ),
+       NULLIF(
+           regexp_replace(
+               regexp_replace(
+                   regexp_replace(btrim(replace(repo_path, '\', '/')), '\.git$', '', 'i'),
+                   '/+$',
+                   ''
+               ),
+               '\\',
+               '/',
+               'g'
+           ),
+           ''
+       ),
+       ''
+   )
+ WHERE git_source_key = '';
+
+DROP INDEX IF EXISTS uq_doc_bindings_active_repo_url_source;
+DROP INDEX IF EXISTS uq_doc_bindings_active_repo_path_source;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_git_source_key
+    ON doc_bindings(git_source_key, default_branch)
+    WHERE is_active = true
+      AND git_source_key <> '';
 
 
 CREATE TABLE IF NOT EXISTS documents (

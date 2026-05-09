@@ -33,10 +33,19 @@ def _patch_valid_scope(monkeypatch):
     )
 
 
+def _capture_and_return(captured, payload):
+    def _inner(**kwargs):
+        captured["kwargs"] = kwargs
+        return payload
+
+    return _inner
+
+
 def test_entity_context_reads_current_branch_graph_from_neo4j(monkeypatch):
     from service.services import graph_query_service
 
     _patch_valid_scope(monkeypatch)
+    captured = {}
     monkeypatch.setattr(
         graph_query_service.branch_graph_repository,
         "get_by_project_branch",
@@ -56,12 +65,12 @@ def test_entity_context_reads_current_branch_graph_from_neo4j(monkeypatch):
     monkeypatch.setattr(
         graph_query_service.branch_graph_neo4j_service,
         "entity_context",
-        lambda **kwargs: {
+        _capture_and_return(captured, {
             "entity": {"id": "project:11:branch:release/V1.0:node:Function:auth:login", "node_id": "Function:auth:login"},
             "neighbors": [{"id": "project:11:branch:release/V1.0:node:File:auth.py", "node_id": "File:auth.py"}],
             "edges": [{"type": "CONTAINS"}],
             "context_summary": ["Function:auth:login"],
-        },
+        }),
     )
 
     result = graph_query_service.entity_context(
@@ -77,12 +86,17 @@ def test_entity_context_reads_current_branch_graph_from_neo4j(monkeypatch):
     assert result["neighbors"][0]["node_id"] == "File:auth.py"
     assert result["edges"] == [{"type": "CONTAINS"}]
     assert result["degraded_reasons"] == []
+    assert captured["kwargs"]["product_name"] == "UNIT"
+    assert captured["kwargs"]["version_name"] == "V1.0"
+    assert captured["kwargs"]["project_name"] == "api-service"
+    assert captured["kwargs"]["branch_name"] == "release/V1.0"
 
 
 def test_get_chain_reads_current_branch_graph_from_neo4j(monkeypatch):
     from service.services import graph_query_service
 
     _patch_valid_scope(monkeypatch)
+    captured = {}
     monkeypatch.setattr(
         graph_query_service.branch_graph_repository,
         "get_by_project_branch",
@@ -102,12 +116,12 @@ def test_get_chain_reads_current_branch_graph_from_neo4j(monkeypatch):
     monkeypatch.setattr(
         graph_query_service.branch_graph_neo4j_service,
         "get_chain",
-        lambda **kwargs: {
+        _capture_and_return(captured, {
             "start_node": {"id": "project:11:branch:release/V1.0:node:Function:auth:login", "node_id": "Function:auth:login"},
             "nodes": [{"node_id": "Function:auth:login"}],
             "edges": [{"type": "CALLS"}],
             "path_summary": ["Function:auth:login"],
-        },
+        }),
     )
 
     result = graph_query_service.get_chain(
@@ -125,6 +139,10 @@ def test_get_chain_reads_current_branch_graph_from_neo4j(monkeypatch):
     assert result["nodes"] == [{"node_id": "Function:auth:login"}]
     assert result["edges"] == [{"type": "CALLS"}]
     assert result["degraded_reasons"] == []
+    assert captured["kwargs"]["product_name"] == "UNIT"
+    assert captured["kwargs"]["version_name"] == "V1.0"
+    assert captured["kwargs"]["project_name"] == "api-service"
+    assert captured["kwargs"]["branch_name"] == "release/V1.0"
 
 
 def test_get_chain_requires_exactly_one_start_locator(monkeypatch):

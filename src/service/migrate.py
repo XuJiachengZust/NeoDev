@@ -73,7 +73,10 @@ def _run_upgrade_sql(cur) -> None:
     cur.execute(
         """
         ALTER TABLE IF EXISTS doc_bindings
-            ADD COLUMN IF NOT EXISTS product_version_id INTEGER REFERENCES product_versions(id) ON DELETE CASCADE;
+            ADD COLUMN IF NOT EXISTS product_version_id INTEGER REFERENCES product_versions(id) ON DELETE CASCADE,
+            ADD COLUMN IF NOT EXISTS git_source_key TEXT NOT NULL DEFAULT '';
+        ALTER TABLE IF EXISTS doc_bindings
+            ALTER COLUMN product_version_id SET NOT NULL;
 
         ALTER TABLE IF EXISTS documents
             ADD COLUMN IF NOT EXISTS product_version_id INTEGER REFERENCES product_versions(id) ON DELETE CASCADE,
@@ -99,28 +102,77 @@ def _run_upgrade_sql(cur) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_name
             ON projects(name);
 
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_pvb_project_branch
-            ON product_version_branches(project_id, branch_name);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_product_versions_product_name
+            ON product_versions(product_id, version_name);
 
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1 FROM doc_bindings WHERE product_version_id IS NULL
-            ) THEN
-                ALTER TABLE IF EXISTS doc_bindings
-                    ALTER COLUMN product_version_id SET NOT NULL;
-            END IF;
-        END $$;
+        DROP INDEX IF EXISTS uq_pvb_project_branch;
+
+        CREATE INDEX IF NOT EXISTS idx_product_version_branches_project_branch
+            ON product_version_branches(project_id, branch_name);
 
         DROP INDEX IF EXISTS uq_doc_bindings_active_product;
 
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_product_legacy
-            ON doc_bindings(product_id)
-            WHERE is_active = true AND product_version_id IS NULL;
-
         CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_version
             ON doc_bindings(product_version_id)
-            WHERE is_active = true AND product_version_id IS NOT NULL;
+            WHERE is_active = true;
+
+        UPDATE doc_bindings
+           SET git_source_key = COALESCE(
+                NULLIF(
+                    CASE
+                        WHEN btrim(repo_url) <> '' THEN
+                            regexp_replace(
+                                regexp_replace(
+                                    regexp_replace(
+                                        lower(split_part(btrim(repo_url), '://', 1)) || '://' ||
+                                        lower(split_part(split_part(btrim(repo_url), '://', 2), '/', 1)) ||
+                                        CASE
+                                            WHEN position('/' in split_part(btrim(repo_url), '://', 2)) > 0
+                                            THEN substring(
+                                                split_part(btrim(repo_url), '://', 2)
+                                                FROM position('/' in split_part(btrim(repo_url), '://', 2))
+                                            )
+                                            ELSE ''
+                                        END,
+                                        '\\.git$',
+                                        '',
+                                        'i'
+                                    ),
+                                    '/+$',
+                                    ''
+                                ),
+                               '\\\\',
+                               '/',
+                               'g'
+                            ),
+                        ELSE ''
+                    END,
+                   ''
+               ),
+               NULLIF(
+                   regexp_replace(
+                       regexp_replace(
+                           regexp_replace(btrim(replace(repo_path, '\\', '/')), '\\.git$', '', 'i'),
+                           '/+$',
+                           ''
+                       ),
+                       '\\\\',
+                       '/',
+                       'g'
+                   ),
+                   ''
+               ),
+               ''
+           )
+         WHERE git_source_key = '';
+
+        DROP INDEX IF EXISTS uq_doc_bindings_active_repo_url_source;
+        DROP INDEX IF EXISTS uq_doc_bindings_active_repo_path_source;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_doc_bindings_active_git_source_key
+            ON doc_bindings(git_source_key, default_branch)
+            WHERE is_active = true
+              AND git_source_key <> '';
 
         DROP INDEX IF EXISTS uq_documents_doc_id;
         DROP INDEX IF EXISTS uq_documents_doc_version;

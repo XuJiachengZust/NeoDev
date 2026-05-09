@@ -58,6 +58,7 @@ The import service chunks documents.
         lambda conn, doc_binding_id: {
             "id": doc_binding_id,
             "product_id": 7,
+            "product_version_id": 17,
             "repo_path": str(repo_path),
             "repo_url": "",
             "default_branch": "main",
@@ -143,6 +144,7 @@ relations:
         lambda conn, doc_binding_id: {
             "id": doc_binding_id,
             "product_id": 7,
+            "product_version_id": 17,
             "repo_path": str(repo_path),
             "repo_url": "",
             "default_branch": "main",

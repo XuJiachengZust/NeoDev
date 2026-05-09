@@ -598,7 +598,7 @@ def _resolve_product(conn, args) -> dict:
         matches = product_service.find_products_by_name(conn, product_name)
         if len(matches) > 1:
             raise CliError(
-                category="conflict",
+                category="ambiguous_name",
                 message="product name is ambiguous",
                 details={"product_name": product_name, "matches": [row["id"] for row in matches]},
             )
@@ -656,7 +656,7 @@ def _resolve_project(conn, args) -> dict:
         raise CliError(category="not_found", message="project not found")
     if len(matches) > 1:
         raise CliError(
-            category="conflict",
+            category="ambiguous_name",
             message="project name is ambiguous",
             details={"project_name": project_name, "matches": [row["id"] for row in matches]},
         )

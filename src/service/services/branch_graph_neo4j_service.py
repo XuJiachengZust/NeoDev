@@ -195,6 +195,9 @@ def entity_context(
     config: dict[str, Any],
     database: str | None,
     project_id: int,
+    product_name: str | None,
+    version_name: str | None,
+    project_name: str | None,
     branch_name: str,
     entity_id: str,
     depth: int,
@@ -205,16 +208,27 @@ def entity_context(
             result = session.run(
                 f"""
                 MATCH (entity {{project_id: $project_id, branch_name: $branch_name}})
-                WHERE entity.id = $scoped_id OR entity.node_id = $entity_id
+                WHERE entity.product_name = $product_name
+                  AND entity.version_name = $version_name
+                  AND entity.project_name = $project_name
+                  AND entity.branch_name = $branch_name
+                  AND (entity.id = $scoped_id OR entity.node_id = $entity_id)
                 OPTIONAL MATCH path = (entity)-[rel*1..{int(depth)}]-(neighbor)
                 WHERE all(r IN rel WHERE r.project_id IS NULL OR (
-                    r.project_id = $project_id AND r.branch_name = $branch_name
+                    r.project_id = $project_id
+                    AND r.product_name = $product_name
+                    AND r.version_name = $version_name
+                    AND r.project_name = $project_name
+                    AND r.branch_name = $branch_name
                 ))
                 RETURN entity,
                        labels(entity) AS entity_labels,
                        collect(path) AS paths
                 """,
                 project_id=project_id,
+                product_name=product_name,
+                version_name=version_name,
+                project_name=project_name,
                 branch_name=branch_name,
                 entity_id=entity_id,
                 scoped_id=_scoped_id(project_id, branch_name, entity_id),
@@ -231,6 +245,9 @@ def get_chain(
     config: dict[str, Any],
     database: str | None,
     project_id: int,
+    product_name: str | None,
+    version_name: str | None,
+    project_name: str | None,
     branch_name: str,
     locator: dict[str, str],
     depth: int,
@@ -242,18 +259,27 @@ def get_chain(
                 f"""
                 MATCH (start {{project_id: $project_id, branch_name: $branch_name}})
                 WHERE
-                    ($locator_type = 'start_node' AND (start.id = $scoped_start_id OR start.node_id = $locator_value))
-                    OR ($locator_type = 'file_path' AND (
-                        start.filePath = $locator_value OR start.file_path = $locator_value OR start.path = $locator_value
-                    ))
-                    OR ($locator_type = 'symbol' AND (
-                        start.name = $locator_value OR start.qualifiedName = $locator_value
-                        OR start.qualified_name = $locator_value OR start.node_id CONTAINS $locator_value
-                    ))
-                    OR ($locator_type = 'commit_sha' AND start.head_commit = $locator_value)
+                    start.product_name = $product_name
+                    AND start.version_name = $version_name
+                    AND start.project_name = $project_name
+                    AND start.branch_name = $branch_name
+                    AND (
+                        ($locator_type = 'start_node' AND (start.id = $scoped_start_id OR start.node_id = $locator_value))
+                        OR ($locator_type = 'file_path' AND start.file_path = $locator_value)
+                        OR ($locator_type = 'symbol' AND (
+                            start.name = $locator_value
+                            OR start.qualified_name = $locator_value
+                            OR start.node_id CONTAINS $locator_value
+                        ))
+                        OR ($locator_type = 'commit_sha' AND start.head_commit = $locator_value)
+                    )
                 OPTIONAL MATCH path = (start)-[rel*1..{int(depth)}]-(neighbor)
                 WHERE all(r IN rel WHERE r.project_id IS NULL OR (
-                    r.project_id = $project_id AND r.branch_name = $branch_name
+                    r.project_id = $project_id
+                    AND r.product_name = $product_name
+                    AND r.version_name = $version_name
+                    AND r.project_name = $project_name
+                    AND r.branch_name = $branch_name
                 ))
                 RETURN start,
                        labels(start) AS start_labels,
@@ -261,6 +287,9 @@ def get_chain(
                 LIMIT 1
                 """,
                 project_id=project_id,
+                product_name=product_name,
+                version_name=version_name,
+                project_name=project_name,
                 branch_name=branch_name,
                 locator_type=locator["type"],
                 locator_value=locator["value"],
@@ -356,15 +385,32 @@ def _ensure_constraints(driver, database: str | None) -> None:
             "CREATE CONSTRAINT branch_graph_graph_id IF NOT EXISTS FOR (n:BranchGraph) REQUIRE n.graph_id IS UNIQUE",
             "CREATE INDEX branch_graph_branch IF NOT EXISTS FOR (n:BranchGraph) ON (n.project_id, n.branch_name)",
             "CREATE INDEX branch_graph_version IF NOT EXISTS FOR (n:BranchGraph) ON (n.product_version_id, n.project_name, n.branch_name)",
+            "CREATE INDEX branch_graph_name_scope IF NOT EXISTS FOR (n:BranchGraph) ON (n.product_name, n.version_name, n.project_name, n.branch_name)",
             "CREATE CONSTRAINT code_node_id IF NOT EXISTS FOR (n:CodeNode) REQUIRE n.id IS UNIQUE",
             "CREATE INDEX code_node_branch IF NOT EXISTS FOR (n:CodeNode) ON (n.project_id, n.branch_name)",
             "CREATE INDEX code_node_version IF NOT EXISTS FOR (n:CodeNode) ON (n.product_version_id, n.project_name, n.branch_name)",
+            "CREATE INDEX code_node_name_scope IF NOT EXISTS FOR (n:CodeNode) ON (n.product_name, n.version_name, n.project_name, n.branch_name)",
+            "CREATE INDEX code_node_scope_file_path IF NOT EXISTS FOR (n:CodeNode) ON (n.product_name, n.version_name, n.project_name, n.branch_name, n.file_path)",
+            "CREATE INDEX code_node_scope_name IF NOT EXISTS FOR (n:CodeNode) ON (n.product_name, n.version_name, n.project_name, n.branch_name, n.name)",
+            "CREATE INDEX code_node_scope_qualified_name IF NOT EXISTS FOR (n:CodeNode) ON (n.product_name, n.version_name, n.project_name, n.branch_name, n.qualified_name)",
             *[
                 f"CREATE CONSTRAINT code_{label.lower()}_id IF NOT EXISTS FOR (n:{label}) REQUIRE n.id IS UNIQUE"
                 for label in sorted(_NODE_LABELS)
             ],
             *[
                 f"CREATE INDEX code_{label.lower()}_branch IF NOT EXISTS FOR (n:{label}) ON (n.project_id, n.branch_name)"
+                for label in sorted(_NODE_LABELS)
+            ],
+            *[
+                f"CREATE INDEX code_{label.lower()}_scope_file_path IF NOT EXISTS FOR (n:{label}) ON (n.product_name, n.version_name, n.project_name, n.branch_name, n.file_path)"
+                for label in sorted(_NODE_LABELS)
+            ],
+            *[
+                f"CREATE INDEX code_{label.lower()}_scope_name IF NOT EXISTS FOR (n:{label}) ON (n.product_name, n.version_name, n.project_name, n.branch_name, n.name)"
+                for label in sorted(_NODE_LABELS)
+            ],
+            *[
+                f"CREATE INDEX code_{label.lower()}_scope_qualified_name IF NOT EXISTS FOR (n:{label}) ON (n.product_name, n.version_name, n.project_name, n.branch_name, n.qualified_name)"
                 for label in sorted(_NODE_LABELS)
             ],
         ]:
@@ -863,6 +909,17 @@ def _node_row(
 ) -> dict[str, Any]:
     node_id = str(node["id"])
     props = _props_for_neo4j(node.get("properties") or {})
+    props["file_path"] = str(
+        props.get("file_path")
+        or props.get("filePath")
+        or props.get("path")
+        or ""
+    )
+    props["qualified_name"] = str(
+        props.get("qualified_name")
+        or props.get("qualifiedName")
+        or ""
+    )
     props.update(
         {
             "id": _scoped_id(project_id, branch_name, node_id),

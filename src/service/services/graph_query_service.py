@@ -39,6 +39,9 @@ def entity_context(
         config=neo4j_config,
         database=neo4j_database,
         project_id=project_id,
+        product_name=_product_name(context["product"]),
+        version_name=context["version"].get("version_name") or context["version"].get("name"),
+        project_name=context["project"].get("name"),
         branch_name=context["branch"],
         entity_id=entity_id,
         depth=depth,
@@ -85,6 +88,9 @@ def get_chain(
         config=neo4j_config,
         database=neo4j_database,
         project_id=project_id,
+        product_name=_product_name(context["product"]),
+        version_name=context["version"].get("version_name") or context["version"].get("name"),
+        project_name=context["project"].get("name"),
         branch_name=context["branch"],
         locator=locator,
         depth=depth,
@@ -228,3 +234,7 @@ def _load_neo4j_config(project: dict[str, Any]) -> tuple[dict[str, Any], str | N
             details={"project_id": project.get("id")},
         )
     return neo4j_config, neo4j_database
+
+
+def _product_name(product: dict[str, Any]) -> str | None:
+    return product.get("name") or product.get("code")

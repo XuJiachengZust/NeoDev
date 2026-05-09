@@ -28,6 +28,8 @@ _EXIT_CODES = {
     "invalid_scope": 2,
     "not_found": 3,
     "conflict": 4,
+    "name_conflict": 4,
+    "ambiguous_name": 4,
     "not_ready": 5,
     "version_mismatch": 6,
     "internal_error": 10,

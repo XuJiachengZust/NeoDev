@@ -30,8 +30,9 @@ class FakeTx:
 
 
 class FakeSession:
-    def __init__(self):
+    def __init__(self, row=None):
         self.calls = []
+        self.row = row
 
     def __enter__(self):
         return self
@@ -41,19 +42,20 @@ class FakeSession:
 
     def run(self, query, **kwargs):
         self.calls.append((query, kwargs))
-        return FakeResult()
+        return FakeResult(self.row)
 
     def execute_write(self, fn, **kwargs):
         return fn(FakeTx(self), **kwargs)
 
 
 class FakeDriver:
-    def __init__(self):
+    def __init__(self, row=None):
         self.sessions = []
         self.closed = False
+        self.row = row
 
     def session(self, database=None):
-        session = FakeSession()
+        session = FakeSession(self.row)
         self.sessions.append(session)
         return session
 
@@ -118,6 +120,10 @@ def test_replace_branch_graph_scopes_nodes_by_project_branch(monkeypatch):
     rel_calls = [call for call in all_calls if "UNWIND $rels AS rel" in call[0]]
     all_queries = "\n".join(call[0] for call in all_calls)
 
+    assert "ON (n.product_name, n.version_name, n.project_name, n.branch_name)" in all_queries
+    assert "CREATE INDEX code_node_scope_file_path IF NOT EXISTS FOR (n:CodeNode) ON (n.product_name, n.version_name, n.project_name, n.branch_name, n.file_path)" in all_queries
+    assert "CREATE INDEX code_node_scope_name IF NOT EXISTS FOR (n:CodeNode) ON (n.product_name, n.version_name, n.project_name, n.branch_name, n.name)" in all_queries
+    assert "CREATE INDEX code_node_scope_qualified_name IF NOT EXISTS FOR (n:CodeNode) ON (n.product_name, n.version_name, n.project_name, n.branch_name, n.qualified_name)" in all_queries
     assert delete_call[1] == {"project_id": 3, "branch_name": "release/V1"}
     assert "MATCH (n:Folder {project_id: $project_id, branch_name: $branch_name})" in all_queries
     assert "MATCH (n:File {project_id: $project_id, branch_name: $branch_name})" in all_queries
@@ -155,6 +161,7 @@ def test_replace_branch_graph_scopes_nodes_by_project_branch(monkeypatch):
     assert node_props["project:3:branch:release/V1:node:File:src/app.py"]["version_name"] == "V1"
     assert node_props["project:3:branch:release/V1:node:File:src/app.py"]["project_name"] == "NeoDev"
     rel_rows = [row for call in rel_calls for row in call[1]["rels"]]
+    assert rel_rows[0]["props"]["branch_name"] == "release/V1"
     assert rel_rows[0]["props"]["product_version_id"] == 23
     assert rel_rows[0]["props"]["product_name"] == "NeoDev SP"
     assert rel_rows[0]["props"]["version_name"] == "V1"
@@ -197,6 +204,88 @@ def test_replace_branch_graph_scopes_nodes_by_project_branch(monkeypatch):
     assert result["nodes_written"] == 3
     assert result["relationships_written"] == 3
     assert driver.closed is True
+
+
+def test_entity_context_filters_by_name_scope(monkeypatch):
+    from service.services import branch_graph_neo4j_service
+
+    driver = FakeDriver(
+        {
+            "entity": {"id": "project:3:branch:release/V1:node:Function:src/app.py:main", "node_id": "Function:src/app.py:main"},
+            "entity_labels": ["CodeNode", "Function"],
+            "paths": [],
+        }
+    )
+    monkeypatch.setattr(branch_graph_neo4j_service, "_create_driver", lambda config: driver)
+
+    branch_graph_neo4j_service.entity_context(
+        config={"neo4j_uri": "bolt://neo4j:7687"},
+        database=None,
+        project_id=3,
+        project_name="NeoDev",
+        branch_name="release/V1",
+        product_name="NeoDev SP",
+        version_name="V1",
+        entity_id="Function:src/app.py:main",
+        depth=2,
+    )
+
+    query, params = driver.sessions[0].calls[0]
+    assert "MATCH (entity {" in query
+    assert "entity.product_name = $product_name" in query
+    assert "entity.version_name = $version_name" in query
+    assert "entity.project_name = $project_name" in query
+    assert "entity.branch_name = $branch_name" in query
+    assert "r.product_name = $product_name" in query
+    assert "r.version_name = $version_name" in query
+    assert "r.project_name = $project_name" in query
+    assert "r.branch_name = $branch_name" in query
+    assert params["product_name"] == "NeoDev SP"
+    assert params["version_name"] == "V1"
+    assert params["project_name"] == "NeoDev"
+    assert params["branch_name"] == "release/V1"
+    assert params["project_id"] == 3
+
+
+def test_get_chain_filters_by_name_scope(monkeypatch):
+    from service.services import branch_graph_neo4j_service
+
+    driver = FakeDriver(
+        {
+            "start": {"id": "project:3:branch:release/V1:node:Function:src/app.py:main", "node_id": "Function:src/app.py:main"},
+            "start_labels": ["CodeNode", "Function"],
+            "paths": [],
+        }
+    )
+    monkeypatch.setattr(branch_graph_neo4j_service, "_create_driver", lambda config: driver)
+
+    branch_graph_neo4j_service.get_chain(
+        config={"neo4j_uri": "bolt://neo4j:7687"},
+        database=None,
+        project_id=3,
+        project_name="NeoDev",
+        branch_name="release/V1",
+        product_name="NeoDev SP",
+        version_name="V1",
+        locator={"type": "symbol", "value": "main"},
+        depth=2,
+    )
+
+    query, params = driver.sessions[0].calls[0]
+    assert "MATCH (start {" in query
+    assert "start.product_name = $product_name" in query
+    assert "start.version_name = $version_name" in query
+    assert "start.project_name = $project_name" in query
+    assert "start.branch_name = $branch_name" in query
+    assert "r.product_name = $product_name" in query
+    assert "r.version_name = $version_name" in query
+    assert "r.project_name = $project_name" in query
+    assert "r.branch_name = $branch_name" in query
+    assert params["product_name"] == "NeoDev SP"
+    assert params["version_name"] == "V1"
+    assert params["project_name"] == "NeoDev"
+    assert params["branch_name"] == "release/V1"
+    assert params["project_id"] == 3
 
 
 def test_rebuild_doc_code_links_targets_real_nodes(monkeypatch):

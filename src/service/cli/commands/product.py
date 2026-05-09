@@ -63,7 +63,7 @@ def register(subparsers) -> None:
     )
 
     version_show_parser = version_subparsers.add_parser("show")
-    _add_version_locator(version_show_parser)
+    _add_version_show_locator(version_show_parser)
     version_show_parser.add_argument("--project-name")
     version_show_parser.add_argument("--branch-name")
     version_show_parser.add_argument("--json", action="store_true", dest="json_output")
@@ -170,6 +170,11 @@ def _add_version_locator(parser) -> None:
     parser.add_argument("--version-name")
 
 
+def _add_version_show_locator(parser) -> None:
+    _add_product_locator(parser)
+    parser.add_argument("--version-name")
+
+
 def _add_project_locator(parser, prefix: str = "") -> None:
     parser.add_argument(f"--{prefix}project-id", type=int, dest=f"{prefix.replace('-', '_')}project_id")
     parser.add_argument(f"--{prefix}project-name", dest=f"{prefix.replace('-', '_')}project_name")
@@ -201,7 +206,7 @@ def _with_db(callback):
         ) from exc
     except psycopg2.IntegrityError as exc:
         raise CliError(
-            category="conflict",
+            category=_integrity_error_category(exc),
             message="database constraint conflict",
             details={"database_error": str(exc)},
         ) from exc
@@ -276,6 +281,11 @@ def handle_version_create(args) -> dict:
 def handle_version_show(args) -> dict:
     def run(conn):
         if getattr(args, "project_name", None) or getattr(args, "branch_name", None):
+            if getattr(args, "version_name", None):
+                raise CliError(
+                    category="invalid_argument",
+                    message="do not combine --version-name with --project-name/--branch-name",
+                )
             return build_success_payload(args.command_name, _show_versions_by_branch(conn, args))
         version = _resolve_version(conn, args)
         product = product_service.get_product(conn, version["product_id"])
@@ -295,11 +305,23 @@ def _show_versions_by_branch(conn, args) -> dict:
             message="provide both --project-name and --branch-name for branch lookup",
         )
     project = _resolve_project(conn, SimpleArgs(project_name=args.project_name, project_id=None))
+    product_filter = None
+    if _has_product_locator(args):
+        product_filter = _resolve_product(
+            conn,
+            SimpleArgs(
+                product_id=getattr(args, "product_id", None),
+                product_code=getattr(args, "product_code", None),
+                product_name=getattr(args, "product_name", None),
+            ),
+        )
     rows = product_version_service.list_versions_by_project_branch(
         conn,
         project_id=project["id"],
         branch_name=args.branch_name,
     )
+    if product_filter is not None:
+        rows = [row for row in rows if row["product_id"] == product_filter["id"]]
     resolved_versions = []
     for row in rows:
         product = {
@@ -338,6 +360,29 @@ def _show_versions_by_branch(conn, args) -> dict:
         "branch_name": args.branch_name,
         "resolved_versions": resolved_versions,
     }
+
+
+def _has_product_locator(args) -> bool:
+    return any(
+        getattr(args, name, None) not in (None, "")
+        for name in ("product_id", "product_code", "product_name")
+    )
+
+
+def _integrity_error_category(exc: psycopg2.IntegrityError) -> str:
+    constraint = str(getattr(getattr(exc, "diag", None), "constraint_name", "") or "")
+    message = str(exc)
+    name_constraints = (
+        "uq_products_name",
+        "uq_projects_name",
+        "uq_product_versions_product_name",
+        "product_versions_product_id_version_name_key",
+        "uq_pvb_project_branch",
+        "product_version_branches_product_version_id_project_id_key",
+    )
+    if any(name in constraint or name in message for name in name_constraints):
+        return "name_conflict"
+    return "conflict"
 
 
 def _version_show_payload(product: dict, version: dict, branches: list[dict]) -> dict:
@@ -773,7 +818,7 @@ def _resolve_product(conn, args) -> dict:
         matches = product_service.find_products_by_name(conn, product_name)
         if len(matches) > 1:
             raise CliError(
-                category="conflict",
+                category="ambiguous_name",
                 message="product name is ambiguous",
                 details={"product_name": product_name, "matches": [row["id"] for row in matches]},
             )
@@ -833,7 +878,7 @@ def _resolve_project(conn, args) -> dict:
         raise CliError(category="not_found", message="project not found")
     if len(matches) > 1:
         raise CliError(
-            category="conflict",
+            category="ambiguous_name",
             message="project name is ambiguous",
             details={"project_name": project_name, "matches": [row["id"] for row in matches]},
         )
