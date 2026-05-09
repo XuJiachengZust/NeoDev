@@ -1,7 +1,7 @@
 {
   "name": "neodev-rd-knowledge",
   "version": "0.2.0",
-  "description": "NeoSuperpower workflow plugin for local neodev CLI orchestration, version-branch navigation, controlled document import, DocChange verification, graph refresh, planning, TDD, debugging, and completion verification.",
+  "description": "NeoSuperpower workflow plugin for local neodev CLI orchestration, version-branch navigation, controlled document import, DocChange verification, graph refresh, planning, TDD, debugging, browser acceptance testing, and completion verification.",
   "author": {
     "name": "NeoDev",
     "email": "neodev@example.invalid",
@@ -24,13 +24,15 @@
     "debugging",
     "verification",
     "requirements",
-    "prd"
+    "prd",
+    "browser-acceptance",
+    "acceptance-testing"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "NeoDev RD Knowledge",
-    "shortDescription": "Run NeoSuperpower workflows for NeoDev CLI work, planning, TDD, debugging, and verification.",
-    "longDescription": "Official NeoSuperpower workflow layer for NeoDev RD knowledge operations. It embeds the former Superpowers planning, test-first implementation, systematic debugging, code-review, delegation, and completion-verification skill bodies under NeoSuperpower skill names, while keeping product/version discovery, version-scoped document import, DocChange registration, graph impact analysis, branch graph refresh, and Git verification behind the configured local neodev CLI client.",
+    "shortDescription": "Run NeoSuperpower workflows for NeoDev CLI work, planning, browser acceptance testing, TDD, debugging, and verification.",
+    "longDescription": "Official NeoSuperpower workflow layer for NeoDev RD knowledge operations. It embeds the former Superpowers planning, test-first implementation, systematic debugging, code-review, delegation, and completion-verification skill bodies under NeoSuperpower skill names, plus strict browser acceptance testing. Product/version discovery, version-scoped document import, DocChange registration, graph impact analysis, branch graph refresh, and Git verification stay behind the configured local neodev CLI client.",
     "developerName": "NeoDev",
     "category": "Developer Tools",
     "capabilities": [
@@ -45,6 +47,7 @@
       "Systematic debugging",
       "Code review and completion verification",
       "Requirements and PRD refinement",
+      "Browser acceptance testing with evidence artifacts",
       "NeoDev controlled document validation"
     ],
     "defaultPrompt": [
@@ -53,7 +56,8 @@
       "Use NeoDev to inspect this product version and branch context.",
       "Use NeoDev to import the controlled docs for this version.",
       "Use NeoDev to register the DocChange and estimate implementation impact.",
-      "Use NeoDev to refresh and verify the branch graph after push."
+      "Use NeoDev to refresh and verify the branch graph after push.",
+      "Use browser acceptance testing to validate this page with screenshots, network evidence, and a report."
     ],
     "brandColor": "#2563EB"
   },

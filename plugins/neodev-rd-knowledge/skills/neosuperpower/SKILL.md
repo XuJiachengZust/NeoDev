@@ -16,6 +16,7 @@ Former Superpowers workflows are embedded as NeoSuperpower skills in this reposi
 - Implementation: prefer small, testable changes; use test-first discipline for behavior changes; keep NeoDev facts and state changes behind the local `neodev` CLI client.
 - Failure investigation: find root cause before fixes; gather evidence across CLI, API, database, graph, and file layers when needed.
 - Review: check requirement fit, code quality, stale docs, and direct cleanup after implementation.
+- Browser acceptance testing: when page behavior must be verified from the user perspective, keep test plan, test cases, browser evidence, diagnostics, report, and user confirmation gates traceable.
 - Completion: verify with fresh commands before claiming success, committing, pushing, or deploying.
 
 ## Integrated Superpowers Discipline
@@ -36,6 +37,7 @@ NeoSuperpower owns the local skill names for the former Superpowers process skil
 | using-git-worktrees | `neosuperpower-using-git-worktrees` | `neosuperpower:workspace-isolation` |
 | writing-skills | `neosuperpower-writing-skills` | `neosuperpower:skill-maintenance` |
 | requirement-refiner | `neosuperpower-requirement-refiner` | `neosuperpower:requirements-or-design` |
+| browser-acceptance-testing | `browser-acceptance-testing` | `neosuperpower:browser-acceptance-testing` |
 
 When a workflow document, generated plan, report, command, or plugin capability would previously say `superpowers`, write `neosuperpower` instead. Preserve upstream Superpowers terminology only when explaining migration compatibility, third-party attribution, or searching existing references.
 

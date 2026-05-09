@@ -13,6 +13,8 @@ Shared workflow contracts live in `plugins/neodev-rd-knowledge/workflows/core-wo
 
 NeoSuperpower is the plugin-owned workflow layer. Former Superpowers planning, test-first implementation, systematic debugging, code-review, delegation, verification, and branch-completion workflows are embedded as `neosuperpower-*` skills and represented with `neosuperpower:*` phase names in this plugin. Treat `superpowers` as a migration/search keyword and third-party attribution term only.
 
+`browser-acceptance-testing` is also embedded in this plugin for strict page acceptance workflows. Use it when a task requires browser-driven user-perspective validation with a test plan, user-confirmed detailed cases, screenshots, network evidence, diagnostics, and a final report.
+
 Workflow weak orchestration lives in `core-workflows.json` as `neosuperpower.weak_orchestration` plus per-workflow `neosuperpower_awareness`. These fields make agents aware of relevant phases, suggested embedded skills, and evidence focus without changing the explicit CLI `steps`. Use them as soft routing and verification hints; do not treat them as extra mandatory CLI commands.
 
 ## Session Checks

@@ -59,6 +59,7 @@
     "failure_investigation": "neosuperpower:failure-investigation",
     "review": "neosuperpower:review",
     "delegated_execution": "neosuperpower:delegated-execution",
+    "browser_acceptance_testing": "neosuperpower:browser-acceptance-testing",
     "completion_commit_push": "neosuperpower:verification-before-completion",
     "branch_completion": "neosuperpower:branch-completion",
     "embedded_skills": {
@@ -76,7 +77,8 @@
       "verification_before_completion": "neosuperpower-verification-before-completion",
       "writing_plans": "neosuperpower-writing-plans",
       "writing_skills": "neosuperpower-writing-skills",
-      "requirement_refiner": "neosuperpower-requirement-refiner"
+      "requirement_refiner": "neosuperpower-requirement-refiner",
+      "browser_acceptance_testing": "browser-acceptance-testing"
     },
     "superpowers_compatibility": {
       "brainstorming": "neosuperpower-brainstorming",
@@ -93,7 +95,8 @@
       "using-superpowers": "neosuperpower-using-neosuperpower",
       "using-git-worktrees": "neosuperpower-using-git-worktrees",
       "writing-skills": "neosuperpower-writing-skills",
-      "requirement-refiner": "neosuperpower-requirement-refiner"
+      "requirement-refiner": "neosuperpower-requirement-refiner",
+      "browser-acceptance-testing": "browser-acceptance-testing"
     },
     "weak_orchestration": {
       "mode": "advisory",
@@ -529,6 +532,77 @@
           "id": "verify_branch_version_lookup",
           "type": "cli",
           "command": "neodev product version show --project-name <project_name> --branch-name <branch> --json"
+        }
+      ]
+    },
+    "browser_acceptance_testing": {
+      "goal": "Run strict browser-page acceptance testing with test plan, user-confirmed test cases, step-by-step screenshots, network evidence, optional database/log/code evidence, and a final test report.",
+      "neosuperpower_awareness": {
+        "phase_hooks": [
+          "neosuperpower:requirements-or-design",
+          "neosuperpower:delegated-execution",
+          "neosuperpower:browser-acceptance-testing",
+          "neosuperpower:verification-before-completion"
+        ],
+        "suggested_skills": [
+          "browser-acceptance-testing",
+          "neosuperpower-dispatching-parallel-agents",
+          "neosuperpower-verification-before-completion"
+        ],
+        "evidence_focus": [
+          "test plan confirmed by the user before detailed cases",
+          "detailed test cases confirmed by the user before browser execution",
+          "per-step screenshots and network evidence",
+          "database, log, and code-location evidence for failed cases when applicable",
+          "test report confirmed by the user before final closure"
+        ],
+        "non_blocking": false
+      },
+      "steps": [
+        {
+          "id": "define_scope_environment_and_data",
+          "type": "manual",
+          "command": "Clarify page scope, environment, account, data batch, in-scope and out-of-scope behavior."
+        },
+        {
+          "id": "write_test_plan",
+          "type": "skill",
+          "command": "Use browser-acceptance-testing test-plan-template.md to create the test plan under <product-root>/acceptance-artifacts/<feature>-<yyyymmdd>/."
+        },
+        {
+          "id": "user_confirmation_1_test_plan",
+          "type": "user-confirmation",
+          "command": "测试方案已整理完成，请确认测试范围、环境、数据批次和判定标准是否正确，确认后我再进入详细测试用例设计。"
+        },
+        {
+          "id": "write_detailed_test_cases",
+          "type": "skill",
+          "command": "After user confirmation, use browser-acceptance-testing test-case-template.md to create detailed test cases."
+        },
+        {
+          "id": "user_confirmation_2_test_cases",
+          "type": "user-confirmation",
+          "command": "详细测试用例已整理完成，请确认是否按这套用例开始执行页面测试；如需增删资源类型、样本或验证点，请在这里调整。"
+        },
+        {
+          "id": "execute_browser_steps_and_capture_evidence",
+          "type": "browser",
+          "command": "Execute browser steps serially. Capture at least one screenshot and corresponding network evidence for each step; record when no business request is triggered."
+        },
+        {
+          "id": "collect_failure_diagnostics",
+          "type": "diagnostic",
+          "command": "For failed cases, collect failure screenshot, key network response, service logs, database state, and likely code location before writing conclusions."
+        },
+        {
+          "id": "write_test_report",
+          "type": "skill",
+          "command": "Use browser-acceptance-testing test-report-template.md to create or update the formal test report."
+        },
+        {
+          "id": "user_confirmation_3_test_report",
+          "type": "user-confirmation",
+          "command": "测试报告已更新完成，请确认当前结论、失败定位和证据是否满足要求；如需补测、重跑或补充报告结构，我再继续调整。"
         }
       ]
     }
