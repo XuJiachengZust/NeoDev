@@ -108,6 +108,35 @@ def find_by_id(conn, binding_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+def find_active_by_id(conn, binding_id: int) -> dict | None:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"SELECT {_COLUMNS} FROM doc_bindings WHERE id = %s AND is_active = true",
+            (binding_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def archive_binding_data(conn, binding_id: int) -> dict | None:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""UPDATE doc_bindings
+             SET repo_path = '',
+                 repo_url = '',
+                 git_source_key = '',
+                 default_branch = '',
+                 is_active = false,
+                 updated_at = now()
+             WHERE id = %s
+               AND is_active = true
+             RETURNING {_COLUMNS}""",
+            (binding_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 def list_active_by_product(conn, product_id: int) -> list[dict]:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(

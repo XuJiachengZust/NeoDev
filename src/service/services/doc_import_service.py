@@ -25,7 +25,7 @@ from service.services.doc_validation_service import validate_front_matter
 
 
 def import_binding(conn, doc_binding_id: int, *, force: bool = False) -> dict[str, Any]:
-    binding = doc_binding_repository.find_by_id(conn, doc_binding_id)
+    binding = doc_binding_repository.find_active_by_id(conn, doc_binding_id)
     if not binding:
         raise CliError(category="not_found", message="doc binding not found")
     _sync_git_repo(binding)

@@ -253,6 +253,16 @@ def test_doc_binding_commands_are_registered():
     assert "--product-code" in list_proc.stdout
     assert "--product-id" in list_proc.stdout
 
+    switch = _run("neodev.py", "doc", "binding", "switch", "--help")
+    assert switch.returncode == 0
+    assert "--doc-binding-id" in switch.stdout
+    assert "--version-id" in switch.stdout
+    assert "--version-name" in switch.stdout
+    assert "--repo-path" in switch.stdout
+    assert "--repo-url" in switch.stdout
+    assert "--branch" in switch.stdout
+    assert "--json" in switch.stdout
+
 
 def test_git_verify_doc_change_command_is_registered():
     proc = _run("neodev.py", "git", "verify-doc-change", "--help")

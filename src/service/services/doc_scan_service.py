@@ -16,7 +16,7 @@ IGNORED_MARKDOWN_PATH_PARTS = {".git", ".obsidian", "__pycache__"}
 
 
 def scan_binding(conn, doc_binding_id: int) -> dict:
-    binding = doc_binding_repository.find_by_id(conn, doc_binding_id)
+    binding = doc_binding_repository.find_active_by_id(conn, doc_binding_id)
     if not binding:
         raise ValueError(f"doc binding not found: {doc_binding_id}")
 

@@ -52,6 +52,21 @@ def register(subparsers) -> None:
         command_name="doc binding list",
     )
 
+    binding_switch_parser = binding_subparsers.add_parser("switch")
+    binding_switch_parser.add_argument("--doc-binding-id", type=int, required=True)
+    switch_version = binding_switch_parser.add_mutually_exclusive_group(required=True)
+    switch_version.add_argument("--version-id", type=int)
+    switch_version.add_argument("--version-name")
+    switch_source = binding_switch_parser.add_mutually_exclusive_group(required=True)
+    switch_source.add_argument("--repo-url")
+    switch_source.add_argument("--repo-path")
+    binding_switch_parser.add_argument("--branch", default="main")
+    binding_switch_parser.add_argument("--json", action="store_true", dest="json_output")
+    binding_switch_parser.set_defaults(
+        handler=handle_doc_binding_switch,
+        command_name="doc binding switch",
+    )
+
     graph_parser = doc_subparsers.add_parser("graph")
     graph_subparsers = graph_parser.add_subparsers(dest="graph_command", required=True)
     graph_show_parser = graph_subparsers.add_parser("show")
@@ -188,9 +203,55 @@ def handle_doc_binding_list(args) -> dict:
     return _with_db(run)
 
 
+def handle_doc_binding_switch(args) -> dict:
+    def run(conn):
+        old_binding = doc_binding_repository.find_active_by_id(conn, args.doc_binding_id)
+        if not old_binding:
+            raise CliError(category="not_found", message="doc binding not found")
+        product = product_repository.find_by_id(conn, old_binding["product_id"])
+        if not product:
+            raise CliError(category="not_found", message="product not found")
+        version = _resolve_version(conn, product, args)
+        if not version:
+            raise CliError(
+                category="invalid_argument",
+                message="doc binding switch must target a product version",
+            )
+        source_repo_url = _first_text(args.repo_url)
+        source_repo_path = _first_text(args.repo_path)
+        repo_path = source_repo_path or _default_doc_repo_path(product, None, source_repo_url)
+
+        archived = doc_binding_repository.archive_binding_data(conn, old_binding["id"])
+        if not archived:
+            raise CliError(category="not_found", message="doc binding not found")
+        binding = doc_binding_repository.create(
+            conn,
+            product_id=product["id"],
+            product_version_id=version["id"],
+            repo_path=repo_path,
+            repo_url=source_repo_url,
+            default_branch=args.branch,
+            is_active=True,
+        )
+        return build_success_payload(
+            args.command_name,
+            {
+                "product": product,
+                "version": version,
+                "deleted_binding_id": old_binding["id"],
+                "deleted_binding": archived,
+                "binding": binding,
+                "scan_command": f"neodev doc scan --doc-binding-id {binding['id']} --json",
+                "import_command": f"neodev doc import --doc-binding-id {binding['id']} --json",
+            },
+        )
+
+    return _with_db(run)
+
+
 def handle_doc_scan(args) -> dict:
     def run(conn):
-        binding = doc_binding_repository.find_by_id(conn, args.doc_binding_id)
+        binding = doc_binding_repository.find_active_by_id(conn, args.doc_binding_id)
         if not binding:
             raise CliError(category="not_found", message="doc binding not found")
         result = doc_scan_service.scan_binding(conn, args.doc_binding_id)
@@ -201,7 +262,7 @@ def handle_doc_scan(args) -> dict:
 
 def handle_doc_import(args) -> dict:
     def run(conn):
-        binding = doc_binding_repository.find_by_id(conn, args.doc_binding_id)
+        binding = doc_binding_repository.find_active_by_id(conn, args.doc_binding_id)
         if not binding:
             raise CliError(category="not_found", message="doc binding not found")
         result = doc_import_service.import_binding(
