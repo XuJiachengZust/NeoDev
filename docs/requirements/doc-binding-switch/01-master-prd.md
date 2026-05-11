@@ -44,7 +44,7 @@ relations:
 
 ### 2.1 背景
 
-NeoDev 已具备产品版本、文档绑定、文档扫描、文档导入和版本文档图能力。现有绑定创建能力要求文档绑定指向 `ProductVersion`，并在文档扫描和导入时把 `product_version_id` 写入文档记录和文档图。用户新增需求是：文档和产品版本之间需要支持“切换绑定”。用户已确认切换语义采用“旧绑定需要删除”，即切换不是软删除、复制绑定或覆盖更新。（SRC-U-001, SRC-U-002, SRC-C-001, SRC-C-004, SRC-C-005）
+NeoDev 已具备产品版本、文档绑定、文档扫描、文档导入和版本文档图能力。现有绑定创建能力要求文档绑定指向 `ProductVersion`，并在文档扫描和导入时把 `product_version_id` 写入文档记录和文档图。用户新增需求是：文档和产品版本之间需要支持“切换绑定”。用户已确认切换语义采用“旧绑定需要删除”，并进一步确认本期不做权限模型、命令使用实现方选择的合适命名、只清理绑定数据字段、不自动导入。（SRC-U-001, SRC-U-002, SRC-U-004, SRC-C-001, SRC-C-004, SRC-C-005）
 
 ### 2.2 目标
 
@@ -52,16 +52,17 @@ NeoDev 已具备产品版本、文档绑定、文档扫描、文档导入和版�
 | --- | --- | --- |
 | R-001 | 支持把一个产品版本的文档绑定切换到新的文档来源或目标产品版本。 | SRC-U-001 |
 | R-002 | 切换绑定时必须删除旧绑定，再建立新的目标绑定。 | SRC-U-002, SRC-U-003 |
-| R-003 | CLI/API 层必须提供可验证的切换入口或等价命令组合，不能要求用户手工操作数据库。 | SRC-U-001, SRC-C-002, SRC-A-001 |
-| R-004 | 切换完成后，旧版本不再拥有旧绑定文档范围，新版本或新来源可按版本作用域扫描、导入和查询文档图。 | SRC-D-003, SRC-C-003, SRC-C-006 |
+| R-003 | CLI 层新增 `doc binding switch` 作为文档绑定切换入口，不能要求用户手工操作数据库。 | SRC-U-001, SRC-U-004, SRC-C-002, SRC-A-001 |
+| R-004 | 切换完成后，旧版本不再拥有旧绑定文档范围，新版本或新来源可按版本作用域由用户显式扫描、导入和查询文档图。 | SRC-D-003, SRC-U-004, SRC-C-003, SRC-C-006 |
 | R-005 | 切换过程必须避免同一 active 文档来源同时归属多个产品版本。 | SRC-D-003, SRC-C-001, SRC-A-002 |
+| R-006 | 本期不新增权限模型，沿用现有 CLI/API 访问边界。 | SRC-U-004 |
 
 ### 2.3 非目标
 
-- 不新增文档 UI 页面或审批流。（SRC-P-001）
-- 不设计数据库表结构细节，表结构调整进入后续技术设计或实现计划。（Q-103）
+- 不新增文档 UI 页面、权限模型或审批流。（SRC-P-001, SRC-U-004）
+- 不设计数据库表结构细节；切换命令只要求清理绑定数据字段，不额外清理旧 documents、chunks、scan errors 或 Neo4j 文档图关系。（SRC-U-004）
 - 不在本需求中改变 DocChange 状态机或 Git trailer 规则。（SRC-D-001, SRC-D-002）
-- 不要求切换命令自动执行文档导入，是否自动导入作为待确认实现策略。（Q-104）
+- 不要求切换命令自动执行文档扫描或导入。（SRC-U-004）
 
 ## 3. 范围
 
@@ -70,12 +71,15 @@ NeoDev 已具备产品版本、文档绑定、文档扫描、文档导入和版�
 - 产品版本与文档绑定的显式切换能力。（R-001）
 - 切换时删除旧绑定并创建目标绑定。（R-002）
 - 切换前的产品、版本、文档来源、分支和冲突校验。（R-003, R-005）
-- 切换后的文档扫描、导入和文档图版本范围验收。（R-004）
+- 切换后由用户显式执行文档扫描、导入和文档图版本范围验收。（R-004）
 
 ### 3.2 不纳入范围
 
 - 文档 UI。
+- 新增权限模型。
 - 自动迁移 DocChange 历史状态。
+- 自动执行文档扫描或导入。
+- 额外清理旧 documents、chunks、scan errors 或 Neo4j 文档图关系。
 - 自动生成或提交文档仓库 Git commit。
 - 手工数据库修复脚本。
 
@@ -83,8 +87,8 @@ NeoDev 已具备产品版本、文档绑定、文档扫描、文档导入和版�
 
 | 角色编号 | 角色名称 | 定义 | 主要诉求 | 权限边界 |
 | --- | --- | --- | --- | --- |
-| U-001 | 研发负责人 | 管理产品、版本、项目和文档范围的人 | 在版本迭代时把文档来源切到正确产品版本 | 权限模型待确认，当前需求只确认能力边界（Q-101） |
-| U-002 | 开发者或插件使用者 | 通过 CLI/插件触发 NeoDev 文档工作流的人 | 用结构化命令完成切换、扫描、导入和图查询 | 具体 CLI 命令名待确认（Q-102） |
+| U-001 | 研发负责人 | 管理产品、版本、项目和文档范围的人 | 在版本迭代时把文档来源切到正确产品版本 | 本期不新增权限模型 |
+| U-002 | 开发者或插件使用者 | 通过 CLI/插件触发 NeoDev 文档工作流的人 | 用 `doc binding switch` 完成切换，再显式扫描、导入和图查询 | 本期不新增权限模型 |
 
 ## 5. 业务对象、属性、术语统一
 
@@ -95,7 +99,7 @@ NeoDev 已具备产品版本、文档绑定、文档扫描、文档导入和版�
 | BO-001 | Product | 产品 | NeoDev 组织研发文档和代码事实的业务容器 | 产品版本 | `product_id`, `product_key` | 已有 | 包含 ProductVersion | SRC-D-001 | 已确认 |
 | BO-002 | ProductVersion | 产品版本 | 承载版本级代码分支和文档范围的作用域 | 产品版本 | `product_version_id`, `version_name` | 已有 | 绑定 DocBinding | SRC-D-001, SRC-D-003 | 已确认 |
 | BO-003 | DocBinding | 文档绑定 | 产品版本指向文档 Git 来源和分支的绑定关系 | 文档闭环 | `doc_binding_id` | 创建、切换删除、重新创建 | 关联 ProductVersion 和 Document | SRC-U-001, SRC-U-002, SRC-C-001 | 已确认 |
-| BO-004 | Document | 受控文档 | 文档仓库中的单篇受控 Markdown 文档 | 文档闭环 | `document_id`, `doc_id`, `product_version_id` | scan/import 创建或更新，删除策略待确认 | 属于 DocBinding 和 ProductVersion | SRC-C-003, SRC-C-004 | 部分确认 |
+| BO-004 | Document | 受控文档 | 文档仓库中的单篇受控 Markdown 文档 | 文档闭环 | `document_id`, `doc_id`, `product_version_id` | scan/import 创建或更新；切换命令不额外清理 Document | 属于 DocBinding 和 ProductVersion | SRC-C-003, SRC-C-004, SRC-U-004 | 已确认 |
 | BO-005 | DocumentGraph | 版本文档图 | 以产品版本为范围的文档节点和关系图 | 文档图 | `product_name`, `version_name`, `doc_id` | import 后可查询 | 来源于 Document | SRC-C-006 | 已确认 |
 
 ### 5.2 业务对象属性字典
@@ -137,7 +141,7 @@ flowchart LR
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | BO-003 | 已创建 | DocBinding 已指向某个产品版本和文档来源 | 创建绑定或切换创建目标绑定 | 被切换删除 | scan/import/list | SRC-C-001, SRC-C-002 | 已确认 |
 | BO-003 | 已删除 | 旧 DocBinding 不再存在于有效绑定集合 | 执行文档绑定切换 | 不恢复，恢复需重新创建 | 不可 scan/import | SRC-U-002 | 已确认 |
-| BO-004 | 有效 | 文档记录属于当前版本绑定范围 | scan/import 成功 | 旧绑定删除后的清理策略待确认 | 查询、图谱写入 | SRC-C-003, Q-103 | 部分确认 |
+| BO-004 | 有效 | 文档记录属于当前版本绑定范围 | scan/import 成功 | 切换命令不负责额外清理 Document | 查询、图谱写入 | SRC-C-003, SRC-U-004 | 已确认 |
 
 ## 6. 功能地图与拆分
 
@@ -162,7 +166,9 @@ flowchart TB
 | BR-G-02 | 文档绑定切换必须删除旧 DocBinding，再创建目标 DocBinding。 | BO-003 | F001 | 无 | AC-G-02 | SRC-U-002, SRC-U-003 | 已确认 |
 | BR-G-03 | 切换后旧绑定不可再作为 scan/import/list 的有效对象。 | BO-003, BO-004 | F001 | 已删除绑定的错误分类待实现确认 | AC-G-03 | SRC-U-002, SRC-C-002 | 已确认 |
 | BR-G-04 | 同一 active 文档 Git 来源和分支不能同时绑定到多个产品版本。 | BO-003 | F001 | 空来源的兼容边界待实现确认 | AC-G-04 | SRC-D-003, SRC-C-001, SRC-A-002 | 已确认 |
-| BR-G-05 | 目标绑定创建后，后续 scan/import 必须按目标 `product_version_id` 写入文档和文档图。 | BO-004, BO-005 | F001 | 是否由切换命令自动 scan/import 待确认 | AC-G-05 | SRC-C-004, SRC-C-005, SRC-C-006, Q-104 | 部分确认 |
+| BR-G-05 | 目标绑定创建后，切换命令不得自动 scan/import；用户后续显式执行 scan/import 时必须按目标 `product_version_id` 写入文档和文档图。 | BO-004, BO-005 | F001 | 无 | AC-G-05 | SRC-U-004, SRC-C-004, SRC-C-005, SRC-C-006 | 已确认 |
+| BR-G-06 | 本期不新增权限模型，`doc binding switch` 沿用现有 CLI/API 访问边界。 | U-001, U-002 | F001 | 无 | AC-G-06 | SRC-U-004 | 已确认 |
+| BR-G-07 | 删除旧绑定时，切换命令只清理绑定数据字段，不额外清理旧 documents、chunks、scan errors 或 Neo4j 文档图关系。 | BO-003, BO-004, BO-005 | F001 | 现有数据库约束导致的行为需在实现中如实处理 | AC-G-07 | SRC-U-004 | 已确认 |
 
 ## 8. 跨功能数据流图
 
@@ -171,8 +177,8 @@ flowchart LR
   User[U-001 研发负责人] --> Switch[F001 文档绑定切换]
   Switch --> DeleteOld[删除旧 DocBinding]
   Switch --> CreateNew[创建目标 DocBinding]
-  CreateNew --> ScanImport[后续 scan/import 待确认是否自动触发]
-  ScanImport --> VersionDocs[目标 ProductVersion 文档范围]
+  CreateNew --> ManualScanImport[用户显式执行 scan/import]
+  ManualScanImport --> VersionDocs[目标 ProductVersion 文档范围]
 ```
 
 ## 9. 跨功能主时序图
@@ -180,7 +186,7 @@ flowchart LR
 ```mermaid
 sequenceDiagram
   actor User as U-001 研发负责人
-  participant CLI as CLI/API 切换入口待确认
+  participant CLI as doc binding switch
   participant Binding as DocBinding
   participant Docs as Version-scoped Documents
   User->>CLI: 提交产品、目标版本、文档来源和分支
@@ -188,7 +194,7 @@ sequenceDiagram
   CLI->>Binding: 删除旧 DocBinding
   CLI->>Binding: 创建目标 DocBinding
   CLI-->>User: 返回目标绑定和后续 scan/import 命令
-  User->>Docs: 后续执行 scan/import 或由命令自动触发待确认
+  User->>Docs: 后续显式执行 scan/import
 ```
 
 ## 10. 非功能需求
@@ -203,7 +209,7 @@ sequenceDiagram
 
 ### 11.1 权限规则
 
-权限模型当前未在代码事实和用户输入中确认，本需求仅要求切换入口属于产品版本与文档绑定管理能力；具体权限角色进入 Q-101。
+本期不新增权限模型，`doc binding switch` 沿用现有 CLI/API 访问边界。（SRC-U-004）
 
 ### 11.2 安全约束
 
@@ -224,10 +230,12 @@ sequenceDiagram
 | AC-G-03 | 使用旧 `doc_binding_id` 执行 scan/import 返回 not_found 或等价错误。 | F001 | BR-G-03 | SRC-U-002 | CLI 测试 |
 | AC-G-04 | 当目标文档来源和分支已被其他产品版本 active 绑定占用时，切换被拒绝且不删除旧绑定。 | F001 | BR-G-04 | SRC-C-001 | 事务/服务测试 |
 | AC-G-05 | 切换后对目标绑定执行 scan/import，文档和文档图写入目标产品版本作用域。 | F001 | BR-G-05 | SRC-C-004, SRC-C-005, SRC-C-006 | 服务和图谱测试 |
+| AC-G-06 | `doc binding switch` 不要求额外权限参数或权限状态。 | F001 | BR-G-06 | SRC-U-004 | CLI 契约测试 |
+| AC-G-07 | `doc binding switch` 不自动清理旧 documents、chunks、scan errors 或 Neo4j 文档图关系，也不自动导入。 | F001 | BR-G-05, BR-G-07 | SRC-U-004 | 服务/CLI 测试 |
 
 ## 13. 待确认问题索引
 
-详见 `99-open-questions.md`。当前无阻塞问题；非阻塞问题包括权限、命令命名、关联数据清理深度和自动导入策略。
+详见 `99-open-questions.md`。当前无阻塞问题，无非阻塞问题；Q-101 至 Q-104 已由用户确认。
 
 ## 关联文档
 - [[requirements/doc-binding-switch/README|文档绑定切换 PRD 产物索引]]
