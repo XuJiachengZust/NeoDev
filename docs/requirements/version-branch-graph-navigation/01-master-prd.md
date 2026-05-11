@@ -15,8 +15,8 @@ product_key: NEODEV
 status: draft
 related:
   - "[[00-source-index|Version Branch Graph Navigation Source Index]]"
-  - "[[features/F001-version-show-graph-navigation|F001 Version Show Graph Navigation PRD]]"
-  - "[[features/F002-query-oriented-graph-node-fields|F002 Query Oriented Graph Node Fields PRD]]"
+  - "[[requirements/version-branch-graph-navigation/features/F001-version-show-graph-navigation|F001 Version Show Graph Navigation PRD]]"
+  - "[[requirements/version-branch-graph-navigation/features/F002-query-oriented-graph-node-fields|F002 Query Oriented Graph Node Fields PRD]]"
   - "[[99-open-questions|Version Branch Graph Navigation Open Questions]]"
 relations:
   target:
@@ -186,6 +186,6 @@ flowchart LR
 ## 相关文档
 
 - [[00-source-index|Version Branch Graph Navigation Source Index]]
-- [[features/F001-version-show-graph-navigation|F001 Version Show Graph Navigation PRD]]
-- [[features/F002-query-oriented-graph-node-fields|F002 Query Oriented Graph Node Fields PRD]]
+- [[requirements/version-branch-graph-navigation/features/F001-version-show-graph-navigation|F001 Version Show Graph Navigation PRD]]
+- [[requirements/version-branch-graph-navigation/features/F002-query-oriented-graph-node-fields|F002 Query Oriented Graph Node Fields PRD]]
 - [[99-open-questions|Version Branch Graph Navigation Open Questions]]

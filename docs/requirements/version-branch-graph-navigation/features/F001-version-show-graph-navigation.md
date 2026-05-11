@@ -15,7 +15,7 @@ product_key: NEODEV
 status: draft
 related:
   - "[[01-master-prd|Version Branch Graph Navigation Master PRD]]"
-  - "[[features/F002-query-oriented-graph-node-fields|F002 Query Oriented Graph Node Fields PRD]]"
+  - "[[requirements/version-branch-graph-navigation/features/F002-query-oriented-graph-node-fields|F002 Query Oriented Graph Node Fields PRD]]"
 relations:
   target:
     - NEODEV-DOC-REQUIREMENTS-VERSION-BRANCH-GRAPH-NAVIGATION-MASTER-PRD
@@ -120,4 +120,4 @@ relations:
 ## 相关文档
 
 - [[01-master-prd|Version Branch Graph Navigation Master PRD]]
-- [[features/F002-query-oriented-graph-node-fields|F002 Query Oriented Graph Node Fields PRD]]
+- [[requirements/version-branch-graph-navigation/features/F002-query-oriented-graph-node-fields|F002 Query Oriented Graph Node Fields PRD]]

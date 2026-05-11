@@ -15,7 +15,7 @@ product_key: NEODEV
 status: draft
 related:
   - "[[01-master-prd|Version Branch Graph Navigation Master PRD]]"
-  - "[[features/F001-version-show-graph-navigation|F001 Version Show Graph Navigation PRD]]"
+  - "[[requirements/version-branch-graph-navigation/features/F001-version-show-graph-navigation|F001 Version Show Graph Navigation PRD]]"
 relations:
   target:
     - NEODEV-DOC-REQUIREMENTS-VERSION-BRANCH-GRAPH-NAVIGATION-MASTER-PRD
@@ -113,4 +113,4 @@ ID 可作为内部追踪字段保留，但不能成为用户侧唯一查询入�
 ## 相关文档
 
 - [[01-master-prd|Version Branch Graph Navigation Master PRD]]
-- [[features/F001-version-show-graph-navigation|F001 Version Show Graph Navigation PRD]]
+- [[requirements/version-branch-graph-navigation/features/F001-version-show-graph-navigation|F001 Version Show Graph Navigation PRD]]
