@@ -8,6 +8,7 @@ from datetime import date, datetime
 from typing import Any
 
 from service.repositories import doc_code_link_repository
+from service.repositories import graph_management_repository
 
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _NODE_LABELS = {
@@ -344,6 +345,15 @@ def replace_branch_graph(
             batch_size=batch_size,
             rel_batch_size=rel_batch_size,
         )
+        manual_write = _write_manual_graph_facts(
+            conn,
+            driver,
+            database=database,
+            project_id=project_id,
+            branch_name=branch_name,
+            graph_id=graph_id,
+            version_scope=scope,
+        )
         doc_links_written = _rebuild_doc_code_links(
             conn,
             driver,
@@ -359,6 +369,8 @@ def replace_branch_graph(
         "status": "updated",
         "nodes_written": nodes_written,
         "relationships_written": rels_written,
+        "manual_nodes_written": manual_write["nodes_written"],
+        "manual_relationships_written": manual_write["relationships_written"],
         "doc_code_links_written": doc_links_written,
     }
 
@@ -697,6 +709,60 @@ def _rebuild_doc_code_links(
     return written
 
 
+def _write_manual_graph_facts(
+    conn,
+    driver,
+    *,
+    database: str | None,
+    project_id: int,
+    branch_name: str,
+    graph_id: int,
+    version_scope: dict[str, Any],
+) -> dict[str, int]:
+    nodes = graph_management_repository.list_active_nodes_for_branch(conn, project_id, branch_name)
+    edges = graph_management_repository.list_active_edges_for_branch(conn, project_id, branch_name)
+    nodes_written = 0
+    relationships_written = 0
+
+    with driver.session(database=database) as session:
+        for label, node_batch in _group_by(nodes, "type_key").items():
+            rows = [
+                _manual_node_row(
+                    node,
+                    branch_name=branch_name,
+                    graph_id=graph_id,
+                    version_scope=version_scope,
+                )
+                for node in node_batch
+            ]
+            if not rows:
+                continue
+            session.execute_write(_write_nodes, labels=_labels_for_node(label), rows=rows)
+            nodes_written += len(rows)
+
+        rel_rows = [
+            _manual_relationship_row(
+                edge,
+                branch_name=branch_name,
+                graph_id=graph_id,
+                version_scope=version_scope,
+            )
+            for edge in edges
+        ]
+        for rel_key, rel_batch in _group_relationship_rows(rel_rows).items():
+            relationship_type, source_label, target_label = rel_key
+            written = session.execute_write(
+                _write_relationships,
+                relationship_type=relationship_type,
+                source_label=source_label,
+                target_label=target_label,
+                rows=rel_batch,
+            )
+            relationships_written += int(written or 0)
+
+    return {"nodes_written": nodes_written, "relationships_written": relationships_written}
+
+
 def _write_doc_code_links(tx, *, code_label: str, rows: list[dict[str, Any]]) -> int:
     result = tx.run(
         """
@@ -937,6 +1003,46 @@ def _node_row(
     return {"id": props["id"], "props": props}
 
 
+def _manual_node_row(
+    node: dict[str, Any],
+    *,
+    branch_name: str,
+    graph_id: int,
+    version_scope: dict[str, Any],
+) -> dict[str, Any]:
+    project_id = int(node["project_id"])
+    node_id = str(node["node_id"])
+    props = _props_for_neo4j(node.get("properties") or {})
+    props["file_path"] = str(
+        props.get("file_path")
+        or props.get("filePath")
+        or node.get("file_path")
+        or ""
+    )
+    props["qualified_name"] = str(
+        props.get("qualified_name")
+        or props.get("qualifiedName")
+        or ""
+    )
+    props.update(
+        {
+            "id": _scoped_id(project_id, branch_name, node_id),
+            "node_id": node_id,
+            "fact_id": node_id,
+            "project_id": project_id,
+            "branch_name": branch_name,
+            "branch": branch_name,
+            "graph_id": graph_id,
+            "label": str(node.get("type_key") or ""),
+            "name": str(node.get("name") or ""),
+            "source": node.get("source") or "manual",
+            "status": node.get("status") or "active",
+            **version_scope,
+        }
+    )
+    return {"id": props["id"], "props": props}
+
+
 def _relationship_row(
     relationship: dict[str, Any],
     *,
@@ -972,6 +1078,47 @@ def _relationship_row(
         "relationship_type": relationship_type,
         "source_label": source_label,
         "target_label": target_label,
+        "props": props,
+    }
+
+
+def _manual_relationship_row(
+    edge: dict[str, Any],
+    *,
+    branch_name: str,
+    graph_id: int,
+    version_scope: dict[str, Any],
+) -> dict[str, Any]:
+    edge_id = str(edge["edge_id"])
+    type_key = str(edge.get("type_key") or "")
+    from_project_id = int(edge["from_project_id"])
+    to_project_id = int(edge["to_project_id"])
+    from_node_id = str(edge["from_node_id"])
+    to_node_id = str(edge["to_node_id"])
+    props = _props_for_neo4j(edge.get("properties") or {})
+    props.update(
+        {
+            "relationship_id": edge_id,
+            "edge_id": edge_id,
+            "project_id": int(edge["project_id"]),
+            "from_project_id": from_project_id,
+            "to_project_id": to_project_id,
+            "branch_name": branch_name,
+            "branch": branch_name,
+            "graph_id": graph_id,
+            "type": type_key,
+            "source": "manual",
+            "status": edge.get("status") or "active",
+            **version_scope,
+        }
+    )
+    return {
+        "id": _scoped_id(int(edge["project_id"]), branch_name, edge_id),
+        "source_id": _scoped_id(from_project_id, branch_name, from_node_id),
+        "target_id": _scoped_id(to_project_id, branch_name, to_node_id),
+        "relationship_type": _safe_identifier(type_key, fallback="RELATED_TO"),
+        "source_label": _label_from_node_id(from_node_id),
+        "target_label": _label_from_node_id(to_node_id),
         "props": props,
     }
 

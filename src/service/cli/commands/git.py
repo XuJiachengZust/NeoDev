@@ -50,17 +50,19 @@ def register(subparsers) -> None:
 def _with_db(callback):
     try:
         with closing(psycopg2.connect(get_database_url())) as conn:
-            result = callback(conn)
+            try:
+                result = callback(conn)
+            except git_consistency_service.GitConsistencyError as exc:
+                conn.commit()
+                raise CliError(
+                    category=exc.category,
+                    message=exc.message,
+                    details=exc.details,
+                ) from exc
             conn.commit()
             return result
     except CliError:
         raise
-    except git_consistency_service.GitConsistencyError as exc:
-        raise CliError(
-            category=exc.category,
-            message=exc.message,
-            details=exc.details,
-        ) from exc
     except psycopg2.Error as exc:
         raise CliError(
             category="internal_error",

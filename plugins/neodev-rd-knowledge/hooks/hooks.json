@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python plugins/neodev-rd-knowledge/validate_mvp_docs.py docs"
+            "command": "python -c \"import os,runpy,sys;from pathlib import Path;name=sys.argv[1];args=sys.argv[2:];roots=[];env=os.environ.get('NEODEV_RD_KNOWLEDGE_PLUGIN_ROOT');roots += [Path(env)] if env else [];home=Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex');cache=home/'plugins'/'cache';roots += [p.parent for p in sorted(cache.glob('*/neodev-rd-knowledge/*/'+name), key=lambda p: p.stat().st_mtime, reverse=True)];roots.append(Path.cwd()/'plugins'/'neodev-rd-knowledge');script=next((r/name for r in roots if (r/name).is_file()), None);assert script, 'NeoDev plugin script not found: '+name;sys.argv=[str(script), *args];runpy.run_path(str(script), run_name='__main__')\" validate_mvp_docs.py docs"
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo \"After push, run neodev project refresh-graph --project-id <project_id> --branch <branch> --json\""
+            "command": "echo \"After push, run neodev project refresh-graph --project-name <project_name> --branch <branch> --json, then verify with neodev product version show --project-name <project_name> --branch-name <branch> --json\""
           }
         ]
       }
@@ -26,7 +26,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python plugins/neodev-rd-knowledge/check_neodev_environment.py"
+            "command": "python -c \"import os,runpy,sys;from pathlib import Path;name=sys.argv[1];args=sys.argv[2:];roots=[];env=os.environ.get('NEODEV_RD_KNOWLEDGE_PLUGIN_ROOT');roots += [Path(env)] if env else [];home=Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex');cache=home/'plugins'/'cache';roots += [p.parent for p in sorted(cache.glob('*/neodev-rd-knowledge/*/'+name), key=lambda p: p.stat().st_mtime, reverse=True)];roots.append(Path.cwd()/'plugins'/'neodev-rd-knowledge');script=next((r/name for r in roots if (r/name).is_file()), None);assert script, 'NeoDev plugin script not found: '+name;sys.argv=[str(script), *args];runpy.run_path(str(script), run_name='__main__')\" ensure_git_guard.py --json"
+          },
+          {
+            "type": "command",
+            "command": "python -c \"import os,runpy,sys;from pathlib import Path;name=sys.argv[1];args=sys.argv[2:];roots=[];env=os.environ.get('NEODEV_RD_KNOWLEDGE_PLUGIN_ROOT');roots += [Path(env)] if env else [];home=Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex');cache=home/'plugins'/'cache';roots += [p.parent for p in sorted(cache.glob('*/neodev-rd-knowledge/*/'+name), key=lambda p: p.stat().st_mtime, reverse=True)];roots.append(Path.cwd()/'plugins'/'neodev-rd-knowledge');script=next((r/name for r in roots if (r/name).is_file()), None);assert script, 'NeoDev plugin script not found: '+name;sys.argv=[str(script), *args];runpy.run_path(str(script), run_name='__main__')\" check_neodev_environment.py"
           }
         ]
       },
@@ -35,11 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python plugins/neodev-rd-knowledge/check_git_commit_scope.py"
-          },
-          {
-            "type": "command",
-            "command": "python plugins/neodev-rd-knowledge/check_docchange_trailer.py --message-file .git/COMMIT_EDITMSG --skip-document-only"
+            "command": "python -c \"import os,runpy,sys;from pathlib import Path;name=sys.argv[1];args=sys.argv[2:];roots=[];env=os.environ.get('NEODEV_RD_KNOWLEDGE_PLUGIN_ROOT');roots += [Path(env)] if env else [];home=Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex');cache=home/'plugins'/'cache';roots += [p.parent for p in sorted(cache.glob('*/neodev-rd-knowledge/*/'+name), key=lambda p: p.stat().st_mtime, reverse=True)];roots.append(Path.cwd()/'plugins'/'neodev-rd-knowledge');script=next((r/name for r in roots if (r/name).is_file()), None);assert script, 'NeoDev plugin script not found: '+name;sys.argv=[str(script), *args];runpy.run_path(str(script), run_name='__main__')\" check_git_commit_scope.py"
           }
         ]
       },
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python plugins/neodev-rd-knowledge/validate_mvp_docs.py docs # before neodev doc import"
+            "command": "python -c \"import os,runpy,sys;from pathlib import Path;name=sys.argv[1];args=sys.argv[2:];roots=[];env=os.environ.get('NEODEV_RD_KNOWLEDGE_PLUGIN_ROOT');roots += [Path(env)] if env else [];home=Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex');cache=home/'plugins'/'cache';roots += [p.parent for p in sorted(cache.glob('*/neodev-rd-knowledge/*/'+name), key=lambda p: p.stat().st_mtime, reverse=True)];roots.append(Path.cwd()/'plugins'/'neodev-rd-knowledge');script=next((r/name for r in roots if (r/name).is_file()), None);assert script, 'NeoDev plugin script not found: '+name;sys.argv=[str(script), *args];runpy.run_path(str(script), run_name='__main__')\" validate_mvp_docs.py docs"
           }
         ]
       }

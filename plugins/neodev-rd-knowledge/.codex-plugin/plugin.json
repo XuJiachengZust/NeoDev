@@ -70,7 +70,10 @@
       "./generate_mvp_doc.py",
       "./check_docchange_trailer.py",
       "./check_neodev_environment.py",
-      "./check_git_commit_scope.py"
+      "./check_git_commit_scope.py",
+      "./ensure_git_guard.py",
+      "./git_guard_commit_msg.py",
+      "./git_guard_pre_push.py"
     ],
     "contract": "Remote-service CLI orchestration for Codex, Claude Code, and Cursor. Local clients install/configure neodev and use the remote NeoDev service for facts and state changes; direct database access is diagnostic only.",
     "third_party": [

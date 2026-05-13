@@ -99,8 +99,7 @@ def _run_upgrade_sql(cur) -> None:
         CREATE UNIQUE INDEX IF NOT EXISTS uq_products_name
             ON products(name);
 
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_name
-            ON projects(name);
+        DROP INDEX IF EXISTS uq_projects_name;
 
         CREATE UNIQUE INDEX IF NOT EXISTS uq_product_versions_product_name
             ON product_versions(product_id, version_name);
@@ -144,7 +143,7 @@ def _run_upgrade_sql(cur) -> None:
                                '\\\\',
                                '/',
                                'g'
-                            ),
+                            )
                         ELSE ''
                     END,
                    ''

@@ -24,7 +24,7 @@ def test_runtime_upgrade_sql_backfills_version_scoped_document_metadata():
     assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_documents_binding_path" in sql
 
 
-def test_runtime_upgrade_sql_enforces_name_lookup_uniqueness():
+def test_runtime_upgrade_sql_enforces_product_and_version_name_uniqueness_only():
     cursor = _FakeCursor()
 
     migrate._run_upgrade_sql(cursor)
@@ -32,8 +32,8 @@ def test_runtime_upgrade_sql_enforces_name_lookup_uniqueness():
     sql = cursor.statements[0][0]
     assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_products_name" in sql
     assert "ON products(name);" in sql
-    assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_name" in sql
-    assert "ON projects(name);" in sql
+    assert "DROP INDEX IF EXISTS uq_projects_name" in sql
+    assert "ON projects(name);" not in sql
     assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_product_versions_product_name" in sql
     assert "ON product_versions(product_id, version_name);" in sql
 

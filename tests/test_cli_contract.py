@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -116,6 +117,19 @@ def test_build_error_payload_does_not_alias_nested_error_details():
     assert payload["errors"][0]["details"]["meta"]["arg"] == "--json"
 
 
+def test_build_error_payload_converts_datetime_details_to_json_ready_strings():
+    err = CliError(
+        category="conflict",
+        message="dangerous commit",
+        details={"created_at": datetime(2026, 5, 11, 7, 30, 0)},
+    )
+
+    payload = build_error_payload(command="git verify-doc-change", error=err)
+
+    assert payload["errors"][0]["details"]["created_at"] == "2026-05-11T07:30:00"
+    json.dumps(payload)
+
+
 def test_cli_error_copies_details_at_construction_time():
     source = {"meta": {"arg": "--json"}}
     err = CliError(category="invalid_argument", message="missing --json", details=source)
@@ -134,8 +148,8 @@ def test_root_entrypoint_returns_version_check_json():
     assert isinstance(payload["timestamp"], str)
     assert isinstance(payload["data"], dict)
     assert payload["data"]["cli_version"]
-    assert payload["data"]["plugin_version"] == "0.1.0"
-    assert payload["data"]["skill_version"] == "0.1.0"
+    assert payload["data"]["plugin_version"] == "0.2.0"
+    assert payload["data"]["skill_version"] == "0.2.0"
     assert payload["data"]["compatible"] is True
     assert payload["data"]["update_available"] is False
     assert payload["data"]["target_version"]

@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS versions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_versions_project_id ON versions(project_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_projects_name ON projects(name);
+DROP INDEX IF EXISTS uq_projects_name;
 
 -- requirements (Requirement aggregate root)
 CREATE TABLE IF NOT EXISTS requirements (
@@ -665,7 +665,7 @@ UPDATE doc_bindings
                        '\\',
                        '/',
                        'g'
-                   ),
+                   )
                ELSE ''
            END,
            ''

@@ -3,6 +3,28 @@ import pytest
 from service.services import git_consistency_service
 
 
+def _stub_dangerous_commit(monkeypatch):
+    created = []
+
+    monkeypatch.setattr(
+        git_consistency_service.dangerous_commit_repository,
+        "find_open_by_identity",
+        lambda conn, project_id, branch, commit_sha: None,
+    )
+
+    def fake_create(conn, **kwargs):
+        row = {"id": 91, **kwargs}
+        created.append(row)
+        return row
+
+    monkeypatch.setattr(
+        git_consistency_service.dangerous_commit_repository,
+        "create",
+        fake_create,
+    )
+    return created
+
+
 def test_verify_doc_change_creates_link_and_moves_to_in_implementation(monkeypatch):
     doc_commit = "d" * 40
     change = {
@@ -68,6 +90,7 @@ def test_verify_doc_change_creates_link_and_moves_to_in_implementation(monkeypat
 
 
 def test_verify_doc_change_rejects_unknown_doc_change(monkeypatch):
+    created = _stub_dangerous_commit(monkeypatch)
     monkeypatch.setattr(
         git_consistency_service.doc_change_repository,
         "find_by_doc_change_id",
@@ -84,9 +107,43 @@ def test_verify_doc_change_rejects_unknown_doc_change(monkeypatch):
         )
 
     assert raised.value.category == "not_found"
+    assert raised.value.details["dangerous_commit"]["id"] == 91
+    assert created[0]["reason"] == "doc change not found"
+
+
+def test_verify_doc_change_registers_dangerous_commit_for_missing_trailer(monkeypatch):
+    created = _stub_dangerous_commit(monkeypatch)
+
+    with pytest.raises(git_consistency_service.GitConsistencyError) as raised:
+        git_consistency_service.verify_doc_change(
+            object(),
+            project_id=11,
+            branch="main",
+            commit_sha="b" * 40,
+            commit_message="fix: missing trailer",
+        )
+
+    assert raised.value.category == "invalid_argument"
+    assert raised.value.details["dangerous_commit"]["id"] == 91
+    assert created == [
+        {
+            "id": 91,
+            "project_id": 11,
+            "branch": "main",
+            "commit_sha": "b" * 40,
+            "risk_level": "high",
+            "reason": "DocChange-ID trailer is required",
+            "extra_json": {
+                "category": "invalid_argument",
+                "details": {},
+                "commit_message": "fix: missing trailer",
+            },
+        }
+    ]
 
 
 def test_verify_doc_change_rejects_implemented_doc_change(monkeypatch):
+    created = _stub_dangerous_commit(monkeypatch)
     monkeypatch.setattr(
         git_consistency_service.doc_change_repository,
         "find_by_doc_change_id",
@@ -107,6 +164,8 @@ def test_verify_doc_change_rejects_implemented_doc_change(monkeypatch):
         )
 
     assert raised.value.category == "conflict"
+    assert raised.value.details["dangerous_commit"]["id"] == 91
+    assert created[0]["reason"] == "doc change is already implemented"
 
 
 def test_list_dangerous_commits_returns_open_records(monkeypatch):

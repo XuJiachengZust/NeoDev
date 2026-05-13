@@ -42,6 +42,23 @@ def find_by_id(conn, record_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+def find_open_by_identity(conn, project_id: int, branch: str, commit_sha: str) -> dict | None:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            f"""SELECT {_COLUMNS}
+             FROM dangerous_commit_records
+             WHERE status = 'open'
+               AND project_id = %s
+               AND branch = %s
+               AND commit_sha = %s
+             ORDER BY created_at DESC, id DESC
+             LIMIT 1""",
+            (project_id, branch, commit_sha),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 def list_open(conn, project_id: int | None = None) -> list[dict]:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         if project_id is not None:

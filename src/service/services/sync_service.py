@@ -14,6 +14,7 @@ from gitnexus_parser.ingestion.repo_resolve import ensure_repo_from_url, resolve
 from service import git_ops
 from service.path_allowlist import ensure_path_allowed
 from service.repositories import branch_graph_repository as branch_graph_repo
+from service.repositories import graph_management_repository
 from service.repositories import project_repository as project_repo
 from service.services import branch_graph_neo4j_service
 from service.services import neo4j_config_service
@@ -145,11 +146,27 @@ def refresh_graph_for_branch(conn, project_id: int, branch: str) -> dict | None:
                     version_scope=version_scope,
                 ),
             )
+        has_manual_graph_operations = False
         if (
             existing_graph
             and existing_graph.get("status") == "ready"
             and existing_graph.get("head_commit") == head
             and has_existing_neo4j_graph
+        ):
+            has_manual_graph_operations = timed(
+                "manual_graph_operation_check",
+                lambda: graph_management_repository.has_operations_for_branch(
+                    conn,
+                    project_id,
+                    normalized_branch,
+                ),
+            )
+        if (
+            existing_graph
+            and existing_graph.get("status") == "ready"
+            and existing_graph.get("head_commit") == head
+            and has_existing_neo4j_graph
+            and not has_manual_graph_operations
         ):
             logger.info(
                 "branch graph refresh skipped project_id=%s branch=%s timings=%s",

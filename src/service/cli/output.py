@@ -38,7 +38,7 @@ def build_error_payload(command: str, error: CliError) -> dict:
         "command": command,
         "timestamp": _timestamp(),
         "data": None,
-        "errors": [error.to_dict()],
+        "errors": [_json_ready(error.to_dict())],
     }
 
 

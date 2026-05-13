@@ -1,16 +1,50 @@
 # /neodev-doc-scan
 
-通过本地 `neodev` CLI 调用已配置的远程 NeoDev 服务，导入受控 PRD、原型和技术设计文档，并可靠写入文档 Git commit。
+Use the local `neodev` CLI client to scan/import controlled documents through the configured remote NeoDev service.
 
-必要边界：
+Required checks:
 
-- 远程 CLI 工作流开始前，先执行 `python plugins/neodev-rd-knowledge/check_neodev_environment.py`。
-- 导入前执行 `python plugins/neodev-rd-knowledge/validate_mvp_docs.py <docs_path>` 和 `python plugins/neodev-rd-knowledge/validate_obsidian_docs.py <docs_path>`。
-- 如果校验返回 `ok=false`，停止后续流程。
-- 使用 `neodev config show` 确认本地客户端配置。
-- 先执行 `neodev doc binding list --product-code <product_code> --json` 获取 active `doc_binding_id`。
-- 如果没有 active 文档绑定，执行 `neodev doc binding create --product-code <product_code> --project-id <doc_project_id> --branch <branch> --json` 创建绑定。
-- 只使用 `neodev doc import --doc-binding-id <doc_binding_id> --json` 做日常导入；返回文档摘要中的 `last_seen_commit` 是后续 DocChange-ID 的事实来源。
-- 只有确认需要重建已有 chunk embedding 时才加 `--force`。
-- 导入成功后，图谱中应由服务投影 `Project -[:HAS_DOCUMENT]-> Document`，不要手工写关系。
-- 不允许绕过远程 NeoDev 服务直接写 PostgreSQL 或图数据库。
+```bash
+python plugins/neodev-rd-knowledge/check_neodev_environment.py
+neodev config show
+neodev cli version-check --json
+python plugins/neodev-rd-knowledge/validate_mvp_docs.py <docs_path>
+python plugins/neodev-rd-knowledge/validate_obsidian_docs.py <docs_path>
+```
+
+Resolve or create a version-scoped binding:
+
+```bash
+neodev doc binding list --product-code <product_code> --json
+neodev doc binding create \
+  --product-code <product_code> \
+  --version-name <version_name> \
+  --project-name <project_name> \
+  --repo-path <repo_path> \
+  --branch <branch> \
+  --json
+```
+
+Scan and import:
+
+```bash
+neodev doc scan --doc-binding-id <doc_binding_id> --json
+neodev doc import --doc-binding-id <doc_binding_id> --json
+```
+
+Use `--force` only when intentionally rebuilding existing document chunks/embeddings.
+
+Verify:
+
+```bash
+neodev doc graph show --product-name <product_name> --version-name <version_name> --json
+```
+
+Expected evidence:
+
+- `doc binding list` shows `product_version_id`.
+- `doc scan` registers controlled documents and reports invalid front matter as scan errors.
+- `doc import` returns positive `imported_count` or `updated_count`.
+- `doc graph show` returns `status=ready` and `document_count > 0`.
+
+Do not write PostgreSQL or Neo4j directly in the normal workflow.

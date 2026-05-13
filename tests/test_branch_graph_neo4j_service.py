@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from gitnexus_parser.graph import create_knowledge_graph
 
 
@@ -92,6 +94,16 @@ def test_replace_branch_graph_scopes_nodes_by_project_branch(monkeypatch):
     monkeypatch.setattr(
         branch_graph_neo4j_service.doc_code_link_repository,
         "list_active_for_branch",
+        lambda conn, project_id, branch_name: [],
+    )
+    monkeypatch.setattr(
+        branch_graph_neo4j_service.graph_management_repository,
+        "list_active_nodes_for_branch",
+        lambda conn, project_id, branch_name: [],
+    )
+    monkeypatch.setattr(
+        branch_graph_neo4j_service.graph_management_repository,
+        "list_active_edges_for_branch",
         lambda conn, project_id, branch_name: [],
     )
 
@@ -204,6 +216,96 @@ def test_replace_branch_graph_scopes_nodes_by_project_branch(monkeypatch):
     assert result["nodes_written"] == 3
     assert result["relationships_written"] == 3
     assert driver.closed is True
+
+
+def test_replace_branch_graph_projects_manual_cross_project_edges(monkeypatch):
+    from service.services import branch_graph_neo4j_service
+
+    driver = FakeDriver()
+    graph = create_knowledge_graph()
+    monkeypatch.setattr(branch_graph_neo4j_service, "_create_driver", lambda config: driver)
+    monkeypatch.setattr(
+        branch_graph_neo4j_service.doc_code_link_repository,
+        "list_active_for_branch",
+        lambda conn, project_id, branch_name: [],
+    )
+    monkeypatch.setattr(
+        branch_graph_neo4j_service,
+        "graph_management_repository",
+        SimpleNamespace(
+            list_active_nodes_for_branch=lambda conn, project_id, branch_name: [
+                {
+                    "project_id": 9,
+                    "node_id": "Function:src/views/business/tagManage/api.ts:addTag",
+                    "type_key": "Function",
+                    "name": "addTag",
+                    "properties": {
+                        "api_id": "CreateTag",
+                        "file_path": "src/views/business/tagManage/api.ts",
+                    },
+                    "source": "manual",
+                    "file_path": None,
+                    "status": "active",
+                }
+            ],
+            list_active_edges_for_branch=lambda conn, project_id, branch_name: [
+                {
+                    "project_id": 9,
+                    "edge_id": "calls_tag_addTag_add",
+                    "from_node_id": "Function:src/views/business/tagManage/api.ts:addTag",
+                    "to_node_id": "Method:src/main/java/com/dbapp/dsc/controller/TagController.java:add",
+                    "from_project_id": 9,
+                    "to_project_id": 8,
+                    "type_key": "CALLS",
+                    "properties": {
+                        "api_id": "CreateTag",
+                        "http_path": "/webapi/tag/add",
+                        "http_method": "POST",
+                        "gateway_json": "api/apis/CreateTag.json",
+                    },
+                    "status": "active",
+                }
+            ],
+        ),
+        raising=False,
+    )
+
+    result = branch_graph_neo4j_service.replace_branch_graph(
+        conn=object(),
+        config={"neo4j_uri": "bolt://neo4j:7687"},
+        database=None,
+        graph=graph,
+        project_id=9,
+        branch_name="release/V2.0R26C01",
+        graph_id=77,
+        head_commit="abc",
+        version_scope={
+            "product_version_id": 23,
+            "product_name": "DSC",
+            "version_name": "V2.0R26C01",
+            "project_name": "dsc-front",
+        },
+    )
+
+    all_calls = [call for session in driver.sessions for call in session.calls]
+    node_rows = [row for call in all_calls if "UNWIND $nodes AS row" in call[0] for row in call[1]["nodes"]]
+    rel_rows = [row for call in all_calls if "UNWIND $rels AS rel" in call[0] for row in call[1]["rels"]]
+
+    manual_node = next(row for row in node_rows if row["props"].get("source") == "manual")
+    manual_rel = next(row for row in rel_rows if row["id"] == "project:9:branch:release/V2.0R26C01:node:calls_tag_addTag_add")
+
+    assert manual_node["id"] == "project:9:branch:release/V2.0R26C01:node:Function:src/views/business/tagManage/api.ts:addTag"
+    assert manual_node["props"]["name"] == "addTag"
+    assert manual_node["props"]["file_path"] == "src/views/business/tagManage/api.ts"
+    assert manual_node["props"]["api_id"] == "CreateTag"
+    assert manual_rel["source_id"] == "project:9:branch:release/V2.0R26C01:node:Function:src/views/business/tagManage/api.ts:addTag"
+    assert manual_rel["target_id"] == "project:8:branch:release/V2.0R26C01:node:Method:src/main/java/com/dbapp/dsc/controller/TagController.java:add"
+    assert manual_rel["relationship_type"] == "CALLS"
+    assert manual_rel["props"]["api_id"] == "CreateTag"
+    assert manual_rel["props"]["http_path"] == "/webapi/tag/add"
+    assert manual_rel["props"]["gateway_json"] == "api/apis/CreateTag.json"
+    assert result["manual_nodes_written"] == 1
+    assert result["manual_relationships_written"] == 1
 
 
 def test_entity_context_filters_by_name_scope(monkeypatch):

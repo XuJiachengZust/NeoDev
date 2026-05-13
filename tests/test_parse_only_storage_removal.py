@@ -161,6 +161,11 @@ def test_refresh_graph_for_branch_skips_unchanged_existing_neo4j_graph(monkeypat
         return True
 
     monkeypatch.setattr(sync_service.branch_graph_neo4j_service, "branch_has_graph", fake_branch_has_graph)
+    monkeypatch.setattr(
+        sync_service.graph_management_repository,
+        "has_operations_for_branch",
+        lambda conn, project_id, branch_name: False,
+    )
     monkeypatch.setattr(pipeline, "run_pipeline", lambda *args, **kwargs: calls.setdefault("pipeline", True))
 
     conn = FakeConn()
@@ -173,6 +178,85 @@ def test_refresh_graph_for_branch_skips_unchanged_existing_neo4j_graph(monkeypat
     assert calls["branch_has_graph"]["version_scope"]["product_name"] == "NeoDev SP"
     assert "pipeline" not in calls
     assert conn.commits == 0
+
+
+def test_refresh_graph_for_branch_replaces_when_manual_graph_operations_exist(monkeypatch):
+    from gitnexus_parser.ingestion import pipeline
+    from service.services import sync_service
+
+    calls = {}
+    head = "c" * 40
+    graph = object()
+
+    monkeypatch.setattr(
+        sync_service.project_repo,
+        "find_by_id",
+        lambda conn, project_id: {"id": project_id, "repo_path": "D:/repo"},
+    )
+    monkeypatch.setattr(sync_service, "_resolve_local_repo", lambda project, project_id: "D:/repo")
+    monkeypatch.setattr(sync_service.git_ops, "fetch_repo", lambda local_root: calls.setdefault("fetch", local_root))
+    monkeypatch.setattr(sync_service.git_ops, "get_head_commit", lambda local_root, branch: head)
+    monkeypatch.setattr(sync_service, "_git_checkout", lambda local_root, branch: "main")
+    monkeypatch.setattr(sync_service, "_restore_checkout", lambda local_root, previous_branch, current_branch: calls.setdefault("restore", current_branch))
+    monkeypatch.setattr(
+        sync_service.branch_graph_repo,
+        "get_by_project_branch",
+        lambda conn, project_id, branch_name: {
+            "id": 9,
+            "project_id": project_id,
+            "branch_name": branch_name,
+            "status": "ready",
+            "head_commit": head,
+            "node_count": 4,
+            "edge_count": 3,
+        },
+    )
+    monkeypatch.setattr(
+        sync_service.neo4j_config_service,
+        "load_neo4j_config",
+        lambda project: ({"neo4j_uri": "bolt://neo4j:7687", "neo4j_user": "neo4j", "neo4j_password": "pw"}, None),
+    )
+    monkeypatch.setattr(
+        sync_service.product_version_service,
+        "list_versions_by_project_branch",
+        lambda conn, project_id, branch_name: [
+            {
+                "id": 23,
+                "product_name": "NeoDev SP",
+                "version_name": "V1",
+                "project_name": "NeoDev",
+            }
+        ],
+    )
+    monkeypatch.setattr(sync_service.branch_graph_neo4j_service, "branch_has_graph", lambda **kwargs: True)
+    monkeypatch.setattr(
+        sync_service,
+        "graph_management_repository",
+        SimpleNamespace(has_operations_for_branch=lambda conn, project_id, branch_name: True),
+        raising=False,
+    )
+    monkeypatch.setattr(sync_service.branch_graph_repo, "upsert", lambda conn, **kwargs: {"id": 9, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "start_refresh_run", lambda conn, **kwargs: {"id": 17, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "mark_ready", lambda conn, **kwargs: {"id": kwargs["graph_id"], "status": "ready"})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "complete_refresh_run", lambda conn, **kwargs: calls.setdefault("complete_run", kwargs))
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "replace_branch_graph",
+        lambda **kwargs: calls.setdefault("neo4j_replace", kwargs) or {"status": "updated", "nodes_written": 4, "relationships_written": 3},
+    )
+    def fake_run_pipeline(local_root, config, **kwargs):
+        calls["pipeline"] = kwargs
+        return SimpleNamespace(node_count=4, relationship_count=3, file_count=2, graph=graph)
+
+    monkeypatch.setattr(pipeline, "run_pipeline", fake_run_pipeline)
+
+    conn = FakeConn()
+    result = sync_service.refresh_graph_for_branch(conn, project_id=3, branch="main")
+
+    assert result["graph_action"] == "full_replace"
+    assert calls["pipeline"]["write_neo4j"] is True
+    assert calls["neo4j_replace"]["graph"] is graph
+    assert conn.commits == 1
 
 
 def test_refresh_graph_for_branch_rejects_ambiguous_version_scope(monkeypatch):

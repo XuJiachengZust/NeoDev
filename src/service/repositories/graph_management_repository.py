@@ -204,6 +204,34 @@ def list_nodes(conn, project_id: int, type_key: str | None = None) -> list[dict]
         return [dict(row) for row in cur.fetchall()]
 
 
+def list_active_nodes_for_branch(conn, project_id: int, branch_name: str) -> list[dict]:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            WITH latest AS (
+                SELECT DISTINCT ON (object_id)
+                       object_id, operation
+                FROM graph_operation_logs
+                WHERE project_id = %s
+                  AND branch_name = %s
+                  AND object_kind = 'node'
+                ORDER BY object_id, created_at DESC, id DESC
+            )
+            SELECT n.id, n.project_id, n.node_id, n.type_key, n.name,
+                   n.properties, n.source, n.file_path, n.content_hash, n.status
+            FROM latest l
+            JOIN graph_nodes n
+              ON n.project_id = %s
+             AND n.node_id = l.object_id
+            WHERE l.operation <> 'archive'
+              AND n.status = 'active'
+            ORDER BY n.node_id
+            """,
+            (project_id, branch_name, project_id),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
 def get_node_by_any_project(conn, node_id: str) -> dict | None:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(
@@ -384,6 +412,53 @@ def list_edges(conn, project_id: int, node_id: str | None = None, type_key: str 
             args,
         )
         return [dict(row) for row in cur.fetchall()]
+
+
+def list_active_edges_for_branch(conn, project_id: int, branch_name: str) -> list[dict]:
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(
+            """
+            WITH latest AS (
+                SELECT DISTINCT ON (object_id)
+                       object_id, operation
+                FROM graph_operation_logs
+                WHERE project_id = %s
+                  AND branch_name = %s
+                  AND object_kind = 'edge'
+                ORDER BY object_id, created_at DESC, id DESC
+            )
+            SELECT e.id, e.project_id, e.edge_id, e.from_node_id, e.to_node_id,
+                   e.from_project_id, e.to_project_id, e.type_key,
+                   e.properties, e.status
+            FROM latest l
+            JOIN graph_edges e
+              ON e.project_id = %s
+             AND e.edge_id = l.object_id
+            WHERE l.operation <> 'archive'
+              AND e.status = 'active'
+            ORDER BY e.edge_id
+            """,
+            (project_id, branch_name, project_id),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def has_operations_for_branch(conn, project_id: int, branch_name: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM graph_operation_logs
+                WHERE project_id = %s
+                  AND branch_name = %s
+                LIMIT 1
+            )
+            """,
+            (project_id, branch_name),
+        )
+        row = cur.fetchone()
+        return bool(row and row[0])
 
 
 def update_edge(conn, *, project_id: int, edge_id: str, updates: dict) -> dict | None:

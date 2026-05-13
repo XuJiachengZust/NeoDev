@@ -76,5 +76,5 @@ def test_environment_hook_accepts_configured_cli(monkeypatch):
     payload = json.loads(proc.stdout)
     assert payload["ok"] is True
     calls = marker.read_text(encoding="utf-8")
-    assert "config show" in calls
+    assert "config show --json" in calls
     assert "cli version-check --json" in calls

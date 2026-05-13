@@ -32,6 +32,10 @@ def test_codex_plugin_manifest_references_shared_hooks_and_scripts():
         "./generate_mvp_doc.py",
         "./check_docchange_trailer.py",
         "./check_neodev_environment.py",
+        "./check_git_commit_scope.py",
+        "./ensure_git_guard.py",
+        "./git_guard_commit_msg.py",
+        "./git_guard_pre_push.py",
     }
     assert "Remote-service CLI" in neodev["contract"]
     assert "remote NeoDev service" in neodev["contract"]
@@ -74,11 +78,16 @@ def test_claude_plugin_contains_commands_agent_and_hook_schema():
         for entry in entries
         for hook in entry["hooks"]
     )
+    all_matchers = "\n".join(
+        entry["matcher"] for entries in hooks["hooks"].values() for entry in entries
+    )
     assert "validate_mvp_docs.py" in all_commands
-    assert "check_docchange_trailer.py" in all_commands
+    assert "ensure_git_guard.py" in all_commands
+    assert "python plugins/neodev-rd-knowledge/" not in all_commands
+    assert "git_guard_commit_msg.py" not in all_commands
     assert "project refresh-graph" in all_commands
     assert "project refresh-commit-graph" not in all_commands
-    assert "neodev doc import" in all_commands
+    assert "neodev doc import" in all_matchers
 
 
 def test_cursor_rules_exist_at_project_root_and_plugin_distribution_copy():
@@ -104,3 +113,34 @@ def test_cursor_rules_exist_at_project_root_and_plugin_distribution_copy():
         assert parsed["description"]
         assert parsed["globs"] == front_matter["globs"]
         assert parsed["alwaysApply"] is front_matter["alwaysApply"]
+
+
+def test_manual_graph_operations_skill_documents_cli_boundaries():
+    skill_path = (
+        PLUGIN_ROOT
+        / "skills"
+        / "neodev-manual-graph-operations"
+        / "SKILL.md"
+    )
+    text = skill_path.read_text(encoding="utf-8")
+    assert text.startswith("---\n")
+
+    front_matter = yaml.safe_load(text[4 : text.find("\n---", 4)])
+    assert front_matter["name"] == "neodev-manual-graph-operations"
+    assert front_matter["description"].startswith("Use when ")
+
+    for expected in [
+        "neodev config show",
+        "neodev cli version-check --json",
+        "neodev graph type node list --project-id <project_id> --json",
+        "neodev graph type edge list --project-id <project_id> --json",
+        "`id: null` means a built-in type",
+        "allowed type vocabulary",
+        "not an observed Neo4j branch graph inventory",
+        "neodev graph node add",
+        "neodev graph edge add",
+        "edge owner project must match either endpoint project",
+        "neodev graph get-chain",
+        "neodev graph entity-context",
+    ]:
+        assert expected in text

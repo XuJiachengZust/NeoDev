@@ -66,7 +66,7 @@ def main() -> int:
             "NeoDev CLI 未安装；请先运行 GitHub 一行安装命令 scripts/install-neodev-client.ps1。",
         )
 
-    config_rc, config_payload, config_stderr = _run(cli, ["config", "show"])
+    config_rc, config_payload, config_stderr = _run(cli, ["config", "show", "--json"])
     if config_rc != 0 or not config_payload or not config_payload.get("ok"):
         return _error(
             "not_ready",

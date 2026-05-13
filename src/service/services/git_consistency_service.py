@@ -37,24 +37,39 @@ def verify_doc_change(
     try:
         parsed = commit_message_parser.parse_doc_change_id(commit_message)
     except commit_message_parser.CommitMessageParseError as exc:
-        raise GitConsistencyError(
+        _raise_dangerous_commit(
+            conn,
+            project_id=project_id,
+            branch=normalized_branch,
+            commit_sha=normalized_sha,
             category=exc.category,
             message=exc.message,
             details=exc.details,
-        ) from exc
+            commit_message=commit_message,
+        )
 
     change = doc_change_repository.find_by_doc_change_id(conn, parsed["doc_change_id"])
     if not change:
-        raise GitConsistencyError(
+        _raise_dangerous_commit(
+            conn,
+            project_id=project_id,
+            branch=normalized_branch,
+            commit_sha=normalized_sha,
             category="not_found",
             message="doc change not found",
             details={"doc_change_id": parsed["doc_change_id"]},
+            commit_message=commit_message,
         )
     if change.get("status") == "implemented":
-        raise GitConsistencyError(
+        _raise_dangerous_commit(
+            conn,
+            project_id=project_id,
+            branch=normalized_branch,
+            commit_sha=normalized_sha,
             category="conflict",
             message="doc change is already implemented",
             details={"doc_change_id": parsed["doc_change_id"], "status": "implemented"},
+            commit_message=commit_message,
         )
 
     link = code_change_link_repository.create(
@@ -118,3 +133,70 @@ def _required_text(value: str | None, field_name: str) -> str:
             details={"field": field_name},
         )
     return text
+
+
+def _raise_dangerous_commit(
+    conn,
+    *,
+    project_id: int,
+    branch: str,
+    commit_sha: str,
+    category: str,
+    message: str,
+    details: dict[str, Any],
+    commit_message: str,
+) -> None:
+    dangerous = _ensure_dangerous_commit(
+        conn,
+        project_id=project_id,
+        branch=branch,
+        commit_sha=commit_sha,
+        reason=message,
+        category=category,
+        details=details,
+        commit_message=commit_message,
+    )
+    raise GitConsistencyError(
+        category=category,
+        message=message,
+        details={
+            **details,
+            "dangerous_commit": dangerous,
+            "dangerous_commit_required": True,
+            "risk_level": "high",
+        },
+    )
+
+
+def _ensure_dangerous_commit(
+    conn,
+    *,
+    project_id: int,
+    branch: str,
+    commit_sha: str,
+    reason: str,
+    category: str,
+    details: dict[str, Any],
+    commit_message: str,
+) -> dict:
+    existing = dangerous_commit_repository.find_open_by_identity(
+        conn,
+        project_id=project_id,
+        branch=branch,
+        commit_sha=commit_sha,
+    )
+    if existing:
+        return existing
+    return dangerous_commit_repository.create(
+        conn,
+        project_id=project_id,
+        branch=branch,
+        commit_sha=commit_sha,
+        risk_level="high",
+        reason=reason,
+        extra_json={
+            "category": category,
+            "details": details,
+            "commit_message": commit_message,
+        },
+    )

@@ -1,12 +1,15 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
+import urllib.parse
 import uuid
 from contextlib import closing
 from pathlib import Path
 
 import psycopg2
+import pytest
 
 from service.repositories import code_change_link_repository
 from service.repositories import dangerous_commit_repository
@@ -16,6 +19,8 @@ from service.repositories import document_repository
 
 
 ROOT = Path(__file__).resolve().parent.parent
+PRE_PUSH_GUARD = ROOT / "plugins" / "neodev-rd-knowledge" / "git_guard_pre_push.py"
+INIT_SQL = ROOT / "docker" / "init.sql"
 
 
 def _database_url() -> str:
@@ -25,12 +30,63 @@ def _database_url() -> str:
     )
 
 
+def _base_database_url() -> str:
+    return os.environ.get(
+        "DATABASE_URL",
+        "postgresql://postgres:postgres@localhost:5432/neodev",
+    )
+
+
+def _scoped_database_url(base_url: str, schema_name: str) -> str:
+    options = urllib.parse.quote(f"-c search_path={schema_name},public", safe="")
+    separator = "&" if "?" in base_url else "?"
+    return f"{base_url}{separator}options={options}"
+
+
 def _connect_fresh():
     return psycopg2.connect(_database_url())
 
 
+@pytest.fixture(autouse=True)
+def git_cli_db_env(monkeypatch):
+    base_url = _base_database_url()
+    schema_name = f"tmp_git_cli_{uuid.uuid4().hex[:8]}"
+    scoped_url = _scoped_database_url(base_url, schema_name)
+    admin_conn = psycopg2.connect(base_url)
+    admin_conn.autocommit = True
+    try:
+        with admin_conn.cursor() as cur:
+            cur.execute(f'CREATE SCHEMA "{schema_name}"')
+        scoped_conn = psycopg2.connect(scoped_url)
+        try:
+            with scoped_conn.cursor() as cur:
+                cur.execute(INIT_SQL.read_text(encoding="utf-8"))
+            scoped_conn.commit()
+        finally:
+            scoped_conn.close()
+        monkeypatch.setenv("TEST_DATABASE_URL", scoped_url)
+        yield
+    finally:
+        with admin_conn.cursor() as cur:
+            cur.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
+        admin_conn.close()
+
+
+def _tmp_git_repo(name: str) -> Path:
+    root = ROOT / ".test-tmp" / f"{name}-{uuid.uuid4().hex[:8]}"
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir(parents=True)
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
+    subprocess.run(["git", "config", "user.email", "tests@example.invalid"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "NeoDev Tests"], cwd=root, check=True)
+    return root
+
+
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
+    env["NEODEV_CONFIG_DIR"] = str(ROOT / ".test-tmp" / "git-cli-config")
+    env.pop("NEODEV_API_URL", None)
     env.setdefault("DATABASE_URL", env.get("TEST_DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/neodev"))
     return subprocess.run(
         [sys.executable, "neodev.py", *args],
@@ -92,9 +148,55 @@ def _make_version(conn, product_id: int, version_name: str) -> int:
     return version_id
 
 
-def test_git_verify_doc_change_creates_link_and_updates_status(pg_conn):
+def _make_bound_doc_change(conn, token: str, doc_commit: str, *, status: str = "pending_implementation") -> dict:
+    product_id = _make_product(conn, f"GITDOC-{token}")
+    product_version_id = _make_version(conn, product_id, f"V-{token}")
+    binding = doc_binding_repository.create(
+        conn,
+        product_id=product_id,
+        product_version_id=product_version_id,
+        repo_path=f"/tmp/neodev-docs/{token}",
+    )
+    document = document_repository.create(
+        conn,
+        doc_binding_id=binding["id"],
+        product_version_id=product_version_id,
+        doc_id=f"REQ-GIT-{token}",
+        relative_path=f"requirements/git-{token}.md",
+    )
+    change = doc_change_repository.create(
+        conn,
+        document_id=document["id"],
+        doc_change_id=doc_commit,
+        source_commit=doc_commit,
+        status=status,
+    )
+    conn.commit()
+    return change
+
+
+def _assert_single_dangerous_record(project_id: int, *, commit_sha: str, reason: str) -> dict:
+    list_proc = _run_cli(
+        "git",
+        "dangerous-commit",
+        "list",
+        "--project-id",
+        str(project_id),
+        "--json",
+    )
+    assert list_proc.returncode == 0, list_proc.stderr
+    list_payload = _payload(list_proc)
+    assert list_payload["data"]["count"] == 1
+    row = list_payload["data"]["dangerous_commits"][0]
+    assert row["commit_sha"] == commit_sha
+    assert row["reason"] == reason
+    return row
+
+
+def test_git_verify_doc_change_creates_link_and_updates_status():
     token = uuid.uuid4().hex[:8]
-    doc_commit = "d" * 40
+    doc_commit = f"{uuid.uuid4().hex}{uuid.uuid4().hex}"[:40]
+    commit_sha = f"{uuid.uuid4().hex}{uuid.uuid4().hex}"[:40]
     with closing(_connect_fresh()) as conn:
         project_id = _make_project(conn, f"git-verify-project-{token}")
         product_id = _make_product(conn, f"GITVERIFY-{token}")
@@ -121,7 +223,6 @@ def test_git_verify_doc_change_creates_link_and_updates_status(pg_conn):
         conn.commit()
 
     commit_message = f"feat: implement git verification\n\nDocChange-ID: {doc_commit}\n"
-    commit_sha = "a" * 40
     proc = _run_cli(
         "git",
         "verify-doc-change",
@@ -156,12 +257,16 @@ def test_git_verify_doc_change_creates_link_and_updates_status(pg_conn):
     assert links[0]["commit_sha"] == commit_sha
 
 
-def test_git_verify_doc_change_rejects_missing_trailer(pg_conn):
+def test_git_verify_doc_change_rejects_missing_trailer():
+    token = uuid.uuid4().hex[:8]
+    with closing(_connect_fresh()) as conn:
+        project_id = _make_project(conn, f"git-dangerous-missing-{token}")
+
     proc = _run_cli(
         "git",
         "verify-doc-change",
         "--project-id",
-        "1",
+        str(project_id),
         "--branch",
         "main",
         "--commit-sha",
@@ -176,9 +281,127 @@ def test_git_verify_doc_change_rejects_missing_trailer(pg_conn):
     assert payload["ok"] is False
     assert payload["command"] == "git verify-doc-change"
     assert payload["errors"][0]["category"] == "invalid_argument"
+    assert payload["errors"][0]["details"]["dangerous_commit"]["project_id"] == project_id
+
+    _assert_single_dangerous_record(
+        project_id,
+        commit_sha="b" * 40,
+        reason="DocChange-ID trailer is required",
+    )
 
 
-def test_git_dangerous_commit_list_and_resolve(pg_conn):
+def test_git_verify_doc_change_rejects_unknown_doc_change_and_records_dangerous():
+    token = uuid.uuid4().hex[:8]
+    doc_commit = f"{uuid.uuid4().hex}{uuid.uuid4().hex}"[:40]
+    commit_sha = f"{uuid.uuid4().hex}{uuid.uuid4().hex}"[:40]
+    with closing(_connect_fresh()) as conn:
+        project_id = _make_project(conn, f"git-dangerous-unknown-{token}")
+
+    proc = _run_cli(
+        "git",
+        "verify-doc-change",
+        "--project-id",
+        str(project_id),
+        "--branch",
+        "main",
+        "--commit-sha",
+        commit_sha,
+        "--commit-message",
+        f"feat: unknown doc change\n\nDocChange-ID: {doc_commit}\n",
+        "--json",
+    )
+
+    assert proc.returncode == 3
+    payload = _payload(proc)
+    assert payload["errors"][0]["category"] == "not_found"
+    assert payload["errors"][0]["details"]["dangerous_commit_required"] is True
+    _assert_single_dangerous_record(
+        project_id,
+        commit_sha=commit_sha,
+        reason="doc change not found",
+    )
+
+
+def test_git_verify_doc_change_rejects_implemented_doc_change_and_records_dangerous():
+    token = uuid.uuid4().hex[:8]
+    doc_commit = f"{uuid.uuid4().hex}{uuid.uuid4().hex}"[:40]
+    commit_sha = f"{uuid.uuid4().hex}{uuid.uuid4().hex}"[:40]
+    with closing(_connect_fresh()) as conn:
+        project_id = _make_project(conn, f"git-dangerous-implemented-{token}")
+        _make_bound_doc_change(conn, token, doc_commit, status="implemented")
+
+    proc = _run_cli(
+        "git",
+        "verify-doc-change",
+        "--project-id",
+        str(project_id),
+        "--branch",
+        "main",
+        "--commit-sha",
+        commit_sha,
+        "--commit-message",
+        f"feat: already implemented\n\nDocChange-ID: {doc_commit}\n",
+        "--json",
+    )
+
+    assert proc.returncode == 4
+    payload = _payload(proc)
+    assert payload["errors"][0]["category"] == "conflict"
+    assert payload["errors"][0]["details"]["dangerous_commit_required"] is True
+    _assert_single_dangerous_record(
+        project_id,
+        commit_sha=commit_sha,
+        reason="doc change is already implemented",
+    )
+
+
+def test_git_pre_push_guard_records_dangerous_commit_idempotently():
+    token = uuid.uuid4().hex[:8]
+    repo = _tmp_git_repo("git-pre-push-dangerous")
+    try:
+        with closing(_connect_fresh()) as conn:
+            project_id = _make_project(conn, f"git-pre-push-dangerous-{token}")
+
+        (repo / "app.py").write_text("print('dangerous')\n", encoding="utf-8")
+        subprocess.run(["git", "add", "app.py"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-m", "feat: missing docchange", "--no-verify"], cwd=repo, check=True)
+        commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+        stdin = f"refs/heads/master {commit_sha} refs/heads/master {'0' * 40}\n"
+        env = os.environ.copy()
+        env["NEODEV_CLI"] = f"{sys.executable} {ROOT / 'neodev.py'}"
+        env["NEODEV_PROJECT_ID"] = str(project_id)
+        env["NEODEV_CONFIG_DIR"] = str(ROOT / ".test-tmp" / "git-pre-push-config")
+        env["DATABASE_URL"] = _database_url()
+        env.pop("NEODEV_API_URL", None)
+
+        for _ in range(2):
+            proc = subprocess.run(
+                [sys.executable, str(PRE_PUSH_GUARD), "--repo-root", str(repo), "--json"],
+                cwd=repo,
+                input=stdin,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            assert proc.returncode == 1, proc.stderr
+            payload = _payload(proc)
+            assert payload["ok"] is False
+            failed = payload["failed_commits"][0]
+            assert failed["commit_sha"] == commit_sha
+            assert failed["errors"][0]["details"]["dangerous_commit_required"] is True
+
+        _assert_single_dangerous_record(
+            project_id,
+            commit_sha=commit_sha,
+            reason="DocChange-ID trailer is required",
+        )
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+def test_git_dangerous_commit_list_and_resolve():
     token = uuid.uuid4().hex[:8]
     with closing(_connect_fresh()) as conn:
         project_id = _make_project(conn, f"dangerous-project-{token}")
@@ -232,7 +455,7 @@ def test_git_dangerous_commit_list_and_resolve(pg_conn):
     assert after["resolved_by"] == "release-manager"
 
 
-def test_git_dangerous_commit_resolve_rejects_unknown_record(pg_conn):
+def test_git_dangerous_commit_resolve_rejects_unknown_record():
     proc = _run_cli(
         "git",
         "dangerous-commit",
@@ -251,8 +474,8 @@ def test_git_dangerous_commit_resolve_rejects_unknown_record(pg_conn):
     assert payload["errors"][0]["category"] == "not_found"
 
 
-def test_git_post_push_refresh_is_removed(pg_conn):
+def test_git_post_push_refresh_is_removed():
     proc = _run_cli("git", "post-push-refresh", "--help")
 
     assert proc.returncode != 0
-    assert "invalid choice" in proc.stderr
+    assert "invalid choice" in proc.stdout

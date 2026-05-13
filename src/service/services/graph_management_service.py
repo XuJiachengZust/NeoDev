@@ -8,6 +8,71 @@ IDENTITY_FIELDS = frozenset({"id", "project_id", "file_path", "content_hash", "n
 EDGE_IDENTITY_FIELDS = frozenset(
     {"id", "project_id", "edge_id", "from_node_id", "to_node_id", "from_project_id", "to_project_id"}
 )
+BUILTIN_NODE_TYPE_KEYS = tuple(
+    sorted(
+        {
+            "Annotation",
+            "BranchGraph",
+            "Class",
+            "CodeElement",
+            "Community",
+            "Const",
+            "Constructor",
+            "Decorator",
+            "Delegate",
+            "Document",
+            "DocumentGraph",
+            "Enum",
+            "File",
+            "Folder",
+            "Function",
+            "Impl",
+            "Import",
+            "Interface",
+            "Macro",
+            "Method",
+            "Module",
+            "Namespace",
+            "Package",
+            "Process",
+            "Project",
+            "Property",
+            "Record",
+            "Static",
+            "Struct",
+            "Template",
+            "Trait",
+            "Type",
+            "TypeAlias",
+            "Typedef",
+            "Union",
+            "Variable",
+        }
+    )
+)
+BUILTIN_RELATION_TYPE_KEYS = tuple(
+    sorted(
+        {
+            "CALLS",
+            "CONTAINS",
+            "CONTAINS_DOCUMENT",
+            "DECORATES",
+            "DEFINES",
+            "EXTENDS",
+            "HAS_BRANCH_GRAPH",
+            "HAS_DOCUMENT",
+            "IMPLEMENTS",
+            "IMPORTS",
+            "INHERITS",
+            "LINKS_TO_CODE",
+            "MEMBER_OF",
+            "OVERRIDES",
+            "RELATES_TO",
+            "STEP_IN_PROCESS",
+            "USES",
+        }
+    )
+)
 
 
 @dataclass(slots=True)
@@ -38,7 +103,10 @@ def create_node_type(
 
 
 def list_node_types(conn, *, project_id: int) -> dict:
-    rows = repo.list_node_types(conn, project_id)
+    rows = _merge_type_rows(
+        _builtin_node_type_rows(project_id),
+        repo.list_node_types(conn, project_id),
+    )
     return {"node_types": rows, "count": len(rows)}
 
 
@@ -80,7 +148,10 @@ def create_relation_type(
 
 
 def list_relation_types(conn, *, project_id: int) -> dict:
-    rows = repo.list_relation_types(conn, project_id)
+    rows = _merge_type_rows(
+        _builtin_relation_type_rows(project_id),
+        repo.list_relation_types(conn, project_id),
+    )
     return {"edge_types": rows, "count": len(rows)}
 
 
@@ -213,7 +284,7 @@ def create_edge(
     properties: dict | None = None,
 ) -> dict:
     normalized_type = _required_text(type_key, "type_key")
-    relation_type = repo.get_relation_type(conn, project_id, normalized_type)
+    relation_type = _get_relation_type(conn, project_id, normalized_type)
     if not relation_type:
         raise GraphManagementError(
             category="invalid_type",
@@ -307,7 +378,7 @@ def update_edge(conn, *, project_id: int, edge_id: str, updates: dict, branch: s
         )
     normalized_updates = dict(updates)
     if "type_key" in normalized_updates:
-        relation_type = repo.get_relation_type(
+        relation_type = _get_relation_type(
             conn,
             project_id,
             _required_text(normalized_updates["type_key"], "type_key"),
@@ -438,7 +509,7 @@ def _project_edge_to_current_snapshot(
 
 
 def _require_node_type(conn, project_id: int, type_key: str) -> dict:
-    node_type = repo.get_node_type(conn, project_id, type_key)
+    node_type = _get_node_type(conn, project_id, type_key)
     if not node_type:
         raise GraphManagementError(
             category="invalid_type",
@@ -480,7 +551,7 @@ def _normalize_type_list(values: list[str] | None) -> list[str]:
 
 
 def _validate_registered_node_types(conn, project_id: int, type_keys: list[str]) -> None:
-    missing = [type_key for type_key in type_keys if not repo.get_node_type(conn, project_id, type_key)]
+    missing = [type_key for type_key in type_keys if not _get_node_type(conn, project_id, type_key)]
     if missing:
         raise GraphManagementError(
             category="invalid_type",
@@ -514,3 +585,72 @@ def _required_text(value: str | None, field_name: str) -> str:
             details={"field": field_name},
         )
     return text
+
+
+def _get_node_type(conn, project_id: int, type_key: str) -> dict | None:
+    row = repo.get_node_type(conn, project_id, type_key)
+    if row:
+        return row
+    if type_key in BUILTIN_NODE_TYPE_KEYS:
+        return _builtin_node_type_row(project_id, type_key)
+    return None
+
+
+def _get_relation_type(conn, project_id: int, type_key: str) -> dict | None:
+    row = repo.get_relation_type(conn, project_id, type_key)
+    if row:
+        return row
+    if type_key in BUILTIN_RELATION_TYPE_KEYS:
+        return _builtin_relation_type_row(project_id, type_key)
+    return None
+
+
+def _builtin_node_type_rows(project_id: int) -> list[dict]:
+    return [_builtin_node_type_row(project_id, type_key) for type_key in BUILTIN_NODE_TYPE_KEYS]
+
+
+def _builtin_relation_type_rows(project_id: int) -> list[dict]:
+    return [_builtin_relation_type_row(project_id, type_key) for type_key in BUILTIN_RELATION_TYPE_KEYS]
+
+
+def _builtin_node_type_row(project_id: int, type_key: str) -> dict:
+    return {
+        "id": None,
+        "project_id": project_id,
+        "type_key": type_key,
+        "name": type_key,
+        "description": "Built-in graph node type",
+        "status": "active",
+    }
+
+
+def _builtin_relation_type_row(project_id: int, type_key: str) -> dict:
+    return {
+        "id": None,
+        "project_id": project_id,
+        "type_key": type_key,
+        "name": type_key,
+        "description": "Built-in graph relation type",
+        "allowed_from_types": [],
+        "allowed_to_types": [],
+        "cross_project_allowed": True,
+        "status": "active",
+    }
+
+
+def _merge_type_rows(builtin_rows: list[dict], manual_rows: list[dict]) -> list[dict]:
+    rows_by_key = {str(row["type_key"]): dict(row) for row in builtin_rows}
+    for row in manual_rows:
+        type_key = str(row.get("type_key") or "")
+        if not type_key:
+            continue
+        if type_key not in rows_by_key:
+            rows_by_key[type_key] = dict(row)
+            continue
+        if row.get("status") == "active":
+            rows_by_key[type_key] = {
+                **rows_by_key[type_key],
+                **dict(row),
+                "status": "active",
+            }
+    return sorted(rows_by_key.values(), key=lambda item: str(item.get("type_key") or ""))
