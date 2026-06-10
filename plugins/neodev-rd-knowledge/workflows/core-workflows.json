@@ -449,7 +449,7 @@
         {
           "id": "code_commit_route",
           "type": "workflow",
-          "command": "For code scope, require one 40-character DocChange-ID trailer, verify with neodev git verify-doc-change, and refresh the branch graph after push."
+          "command": "For code scope, require one 40-character DocChange-ID trailer, verify before push, and interpret the post-push atomic graph update hook result."
         }
       ]
     },
@@ -495,7 +495,7 @@
       ]
     },
     "project_refresh_graph": {
-      "goal": "After successful push, refresh the impacted branch graph and verify version navigation still resolves.",
+      "goal": "On explicit request, refresh the impacted branch graph and verify version navigation still resolves.",
       "neosuperpower_awareness": {
         "phase_hooks": [
           "neosuperpower:verification-before-completion",

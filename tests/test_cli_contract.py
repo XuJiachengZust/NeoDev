@@ -287,6 +287,38 @@ def test_git_verify_doc_change_command_is_registered():
     assert "--commit-message" in proc.stdout
 
 
+def test_git_post_push_graph_update_command_is_registered():
+    proc = _run("neodev.py", "git", "post-push-graph-update", "--help")
+    assert proc.returncode == 0
+    assert "--payload-file" in proc.stdout
+    assert "--payload-json" in proc.stdout
+    assert "--json" in proc.stdout
+
+
+def test_git_post_push_payload_argument_errors_do_not_need_rollback():
+    from service.cli.commands import git as git_command
+
+    try:
+        git_command._load_post_push_payload(SimpleNamespace(payload_file=None, payload_json=None))
+    except CliError as exc:
+        assert exc.category == "invalid_argument"
+        assert exc.details["rollback_status"] == "not_needed"
+    else:
+        raise AssertionError("expected payload argument error")
+
+
+def test_git_post_push_payload_json_errors_do_not_need_rollback():
+    from service.cli.commands import git as git_command
+
+    try:
+        git_command._load_post_push_payload(SimpleNamespace(payload_file=None, payload_json="{bad"))
+    except CliError as exc:
+        assert exc.category == "invalid_argument"
+        assert exc.details["rollback_status"] == "not_needed"
+    else:
+        raise AssertionError("expected payload JSON error")
+
+
 def test_git_dangerous_commit_commands_are_registered():
     list_proc = _run("neodev.py", "git", "dangerous-commit", "list", "--help")
     assert list_proc.returncode == 0

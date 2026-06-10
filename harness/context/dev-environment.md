@@ -16,6 +16,7 @@
 - `pytest.ini`
 - `src/config.example.json`
 - 用户于 `2026-04-23` 直接提供的远程开发环境信息
+- `2026-05-12` 远端部署验证：远端源码目录、Docker Compose 状态、离线 API 镜像构建与健康检查
 
 ## 使用规则
 
@@ -57,8 +58,13 @@
 - SSH 用户：`root`
 - SSH 密码：`nKP422W[5f#{PPs#0e*r@RDG`
 - 远程开发环境也是 Docker 部署，不按裸机 Python 进程方式维护
+- 远端源码目录：`/root/neodev`
+- 远端 `/root/neodev` 不保证是 Git 工作树，宿主机也不保证安装 `git`；不要依赖 `git pull` 或远端 Git 状态作为部署入口
 - 涉及远端联调或排障时，优先使用 `docker ps`、`docker logs`、`docker exec`、`docker compose ps` 等方式核对运行状态
 - 远端部署、重启或配置校验前，先确认容器名、Compose 项目名、挂载目录和环境变量来源，再执行变更
+- 远端可能无法访问 Docker Hub；构建 API 镜像时若 `python:3.11-slim` 元数据拉取超时，应使用已有 `neodev-api-base:latest` 与离线运行时 Dockerfile 重建 `neodev-api:latest`
+- 离线 API 构建只需要复制 `src/` 与 `docker/init.sql` 到 `/app`，示例基础 Dockerfile 可参考本地 `.deploy/Dockerfile.api.runtime`
+- 远端发布应保留 `/root/neodev/.env` 与 Docker 数据卷，只替换源码目录并重建/重启 `api` 容器；PostgreSQL、Neo4j 和 Web 容器通常不需要重建
 
 ## 当前验证约定
 
@@ -66,3 +72,5 @@
 - 若需要数据库校验，先确认使用的是本地 Compose 环境还是远端环境。
 - 若需要远端部署，先核对远端 Docker / Compose 编排方式，再执行替换、重建或重启动作。
 - 若需要查看远端 API、PostgreSQL 或 Neo4j 状态，优先从容器视角确认，而不是先假设宿主机直接暴露了进程。
+- 远端 API 部署后至少验证：`docker compose ps`、`docker exec neodev-api python -m service.cli.main --json cli version-check`、`curl -fsS http://127.0.0.1/health`
+- 涉及数据库迁移修复时，除健康检查外，还应从容器内检查已部署的 `/app/docker/init.sql` 和 PostgreSQL 实际 schema/index 状态

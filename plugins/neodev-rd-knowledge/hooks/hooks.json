@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import os,runpy,sys;from pathlib import Path;name=sys.argv[1];args=sys.argv[2:];roots=[];env=os.environ.get('NEODEV_RD_KNOWLEDGE_PLUGIN_ROOT');roots += [Path(env)] if env else [];home=Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex');cache=home/'plugins'/'cache';roots += [p.parent for p in sorted(cache.glob('*/neodev-rd-knowledge/*/'+name), key=lambda p: p.stat().st_mtime, reverse=True)];roots.append(Path.cwd()/'plugins'/'neodev-rd-knowledge');script=next((r/name for r in roots if (r/name).is_file()), None);assert script, 'NeoDev plugin script not found: '+name;sys.argv=[str(script), *args];runpy.run_path(str(script), run_name='__main__')\" session_start_hint.py"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
@@ -15,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo \"After push, run neodev project refresh-graph --project-name <project_name> --branch <branch> --json, then verify with neodev product version show --project-name <project_name> --branch-name <branch> --json\""
+            "command": "python -c \"import os,runpy,sys;from pathlib import Path;name=sys.argv[1];args=sys.argv[2:];roots=[];env=os.environ.get('NEODEV_RD_KNOWLEDGE_PLUGIN_ROOT');roots += [Path(env)] if env else [];home=Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex');cache=home/'plugins'/'cache';roots += [p.parent for p in sorted(cache.glob('*/neodev-rd-knowledge/*/'+name), key=lambda p: p.stat().st_mtime, reverse=True)];roots.append(Path.cwd()/'plugins'/'neodev-rd-knowledge');script=next((r/name for r in roots if (r/name).is_file()), None);assert script, 'NeoDev plugin script not found: '+name;sys.argv=[str(script), *args];runpy.run_path(str(script), run_name='__main__')\" post_push_graph_update.py --json"
           }
         ]
       }
@@ -24,10 +35,6 @@
       {
         "matcher": "Bash(neodev *|git commit *|git push *)",
         "hooks": [
-          {
-            "type": "command",
-            "command": "python -c \"import os,runpy,sys;from pathlib import Path;name=sys.argv[1];args=sys.argv[2:];roots=[];env=os.environ.get('NEODEV_RD_KNOWLEDGE_PLUGIN_ROOT');roots += [Path(env)] if env else [];home=Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex');cache=home/'plugins'/'cache';roots += [p.parent for p in sorted(cache.glob('*/neodev-rd-knowledge/*/'+name), key=lambda p: p.stat().st_mtime, reverse=True)];roots.append(Path.cwd()/'plugins'/'neodev-rd-knowledge');script=next((r/name for r in roots if (r/name).is_file()), None);assert script, 'NeoDev plugin script not found: '+name;sys.argv=[str(script), *args];runpy.run_path(str(script), run_name='__main__')\" ensure_git_guard.py --json"
-          },
           {
             "type": "command",
             "command": "python -c \"import os,runpy,sys;from pathlib import Path;name=sys.argv[1];args=sys.argv[2:];roots=[];env=os.environ.get('NEODEV_RD_KNOWLEDGE_PLUGIN_ROOT');roots += [Path(env)] if env else [];home=Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex');cache=home/'plugins'/'cache';roots += [p.parent for p in sorted(cache.glob('*/neodev-rd-knowledge/*/'+name), key=lambda p: p.stat().st_mtime, reverse=True)];roots.append(Path.cwd()/'plugins'/'neodev-rd-knowledge');script=next((r/name for r in roots if (r/name).is_file()), None);assert script, 'NeoDev plugin script not found: '+name;sys.argv=[str(script), *args];runpy.run_path(str(script), run_name='__main__')\" check_neodev_environment.py"

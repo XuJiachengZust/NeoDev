@@ -33,10 +33,15 @@ def test_codex_plugin_manifest_references_shared_hooks_and_scripts():
         "./check_docchange_trailer.py",
         "./check_neodev_environment.py",
         "./check_git_commit_scope.py",
-        "./ensure_git_guard.py",
-        "./git_guard_commit_msg.py",
-        "./git_guard_pre_push.py",
+        "./post_push_graph_update.py",
+        "./session_start_hint.py",
     }
+    for removed_script in [
+        "ensure_git_guard.py",
+        "git_guard_commit_msg.py",
+        "git_guard_pre_push.py",
+    ]:
+        assert not (PLUGIN_ROOT / removed_script).exists()
     assert "Remote-service CLI" in neodev["contract"]
     assert "remote NeoDev service" in neodev["contract"]
 
@@ -71,7 +76,7 @@ def test_claude_plugin_contains_commands_agent_and_hook_schema():
     assert "Neo4j" in agent
 
     hooks = _read_json(PLUGIN_ROOT / "hooks" / "hooks.json")
-    assert set(hooks["hooks"]) == {"PostToolUse", "PreToolUse"}
+    assert set(hooks["hooks"]) == {"SessionStart", "PostToolUse", "PreToolUse"}
     all_commands = "\n".join(
         hook["command"]
         for entries in hooks["hooks"].values()
@@ -79,13 +84,19 @@ def test_claude_plugin_contains_commands_agent_and_hook_schema():
         for hook in entry["hooks"]
     )
     all_matchers = "\n".join(
-        entry["matcher"] for entries in hooks["hooks"].values() for entry in entries
+        entry.get("matcher", "") for entries in hooks["hooks"].values() for entry in entries
     )
+    session_start = hooks["hooks"]["SessionStart"][0]
+    assert session_start["matcher"] == "startup|resume|compact"
+    assert "session_start_hint.py" in session_start["hooks"][0]["command"]
     assert "validate_mvp_docs.py" in all_commands
-    assert "ensure_git_guard.py" in all_commands
+    assert "ensure_git_guard.py" not in all_commands
     assert "python plugins/neodev-rd-knowledge/" not in all_commands
     assert "git_guard_commit_msg.py" not in all_commands
-    assert "project refresh-graph" in all_commands
+    assert "git_guard_pre_push.py" not in all_commands
+    assert "check_git_commit_scope.py" in all_commands
+    assert "post_push_graph_update.py" in all_commands
+    assert "echo \"After push" not in all_commands
     assert "project refresh-commit-graph" not in all_commands
     assert "neodev doc import" in all_matchers
 

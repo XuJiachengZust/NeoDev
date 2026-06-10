@@ -1,5 +1,5 @@
 ---
-description: NeoDev DocChange Git trailer and branch graph refresh workflow.
+description: NeoDev DocChange Git trailer and post-push atomic graph update workflow.
 globs: "**/*"
 alwaysApply: false
 ---
@@ -47,10 +47,12 @@ neodev git verify-doc-change --project-id <project_id> --branch <branch> --commi
 
 Mixed document and code commits are not allowed; split them so the correct workflow is unambiguous.
 
-After a successful code push, refresh the branch graph on the remote NeoDev service:
+After a successful `git push`, do not run separate document import, DocChange registration, code-link, or graph-refresh commands. The post-push hook runs the single server-side atomic update:
 
 ```bash
-neodev project refresh-graph --project-id <project_id> --branch <branch> --json
+neodev git post-push-graph-update --payload-file <local_payload_file> --json
 ```
+
+Interpret the hook result and only report manual recovery when the structured payload says `rollback_status=rollback_failed`.
 
 If verification reports dangerous commits, explain the structured payload and require explicit user confirmation before resolving or continuing.

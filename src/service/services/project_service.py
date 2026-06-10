@@ -148,7 +148,15 @@ def delete_project(conn, project_id: int) -> bool:
     return repo.delete(conn, project_id)
 
 
-def refresh_graph(conn, *, project_id: int, branch: str) -> dict:
+def refresh_graph(
+    conn,
+    *,
+    project_id: int,
+    branch: str,
+    commit: bool = True,
+    commit_failure_state: bool = True,
+    restore_neo4j_on_error: bool = False,
+) -> dict:
     """Fetch the project repository and rebuild graph state for one branch."""
     from service.services import sync_service
 
@@ -161,7 +169,14 @@ def refresh_graph(conn, *, project_id: int, branch: str) -> dict:
             details={"project_id": project_id},
         )
 
-    result = sync_service.refresh_graph_for_branch(conn, project_id, normalized_branch)
+    result = sync_service.refresh_graph_for_branch(
+        conn,
+        project_id,
+        normalized_branch,
+        commit=commit,
+        commit_failure_state=commit_failure_state,
+        restore_neo4j_on_error=restore_neo4j_on_error,
+    )
     if result is None:
         raise ProjectServiceError(
             category="not_found",

@@ -119,6 +119,43 @@ neodev project refresh-graph --project-name <project_name> --branch <branch> --j
 
 A ready graph should return `graph_id`, `head_commit`, `node_count`, and `edge_count`. Nodes and edges written to Neo4j should include version scope fields such as `product_version_id`, `product_name`, `version_name`, `project_name`, and `branch_name`.
 
+## Agent Post-Push Automation
+
+When an Agent `Bash(git push *)` tool call succeeds, the plugin PostToolUse hook runs:
+
+```bash
+post_push_graph_update.py --json
+```
+
+The script, not the hook command, discovers local context from Git, `.neodev/project.json`, `NEODEV_PROJECT_ID`, `NEODEV_PROJECT_NAME`, `NEODEV_DOC_BINDING_ID`, and the configured local `neodev` CLI. The hook must not pass remote-only business parameters such as project, branch, or commit range.
+
+After local commit-scope validation, the script performs one server-side atomic write call:
+
+```bash
+neodev git post-push-graph-update --payload-file <local_payload_file> --json
+```
+
+The atomic CLI owns document import, DocChange registration, code DocChange linking, branch graph refresh, PostgreSQL commit/rollback, and Neo4j branch graph replacement. Do not replace this with separate `doc import`, `doc change register`, code-link, or `project refresh-graph` calls in the post-push path.
+
+Expected result JSON contains `hook_status`, `classification_summary`, `doc_import_results`, `docchange_register_results`, `docchange_link_results`, `graph_refresh_result`, `run_record`, `rollback_status`, `errors`, and:
+
+```json
+{"skill":"neodev-rd-knowledge","action":"interpret_post_push_result"}
+```
+
+Interpret `interpret_post_push_result` as follows:
+
+- `hook_status=success`: summarize document imports, DocChange registrations, code links, and graph refresh evidence.
+- `hook_status=skipped`: report that no new commits required post-push work.
+- `hook_status=failed`: report the blocking local validation error and the retry command.
+- `hook_status=not_ready`: report the missing local precondition; do not run remote write commands manually unless the missing context is resolved.
+- `rollback_status=rolled_back`: report that the server-side atomic command rolled back the failed update.
+- `rollback_status=rollback_failed`: stop and ask for manual recovery; do not invent database or Neo4j state.
+- Missing required result fields mean `invalid_result`: report the raw JSON and do not infer success.
+- A `skill_hint` that does not point to `{"skill":"neodev-rd-knowledge","action":"interpret_post_push_result"}` is a `skill_hint mismatch`: do not apply this post-push interpretation contract.
+
+Run persistence is local and stable: history is appended and latest status is overwritten under `.neodev/post_push_graph_update/` using `append_history+overwrite_latest`.
+
 ## Version-Scoped Document Flow
 
 Document bindings are scoped to a product version. `doc_bindings.product_version_id` and imported `documents.product_version_id` must point at the target version.

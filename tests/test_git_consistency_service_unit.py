@@ -50,6 +50,11 @@ def test_verify_doc_change_creates_link_and_moves_to_in_implementation(monkeypat
         "create",
         fake_create_link,
     )
+    monkeypatch.setattr(
+        git_consistency_service.code_change_link_repository,
+        "list_by_commit",
+        lambda conn, project_id, branch, commit_sha: [],
+    )
 
     def fake_mark(conn, change_id):
         marked.append(change_id)
@@ -86,6 +91,69 @@ def test_verify_doc_change_creates_link_and_moves_to_in_implementation(monkeypat
             "commit_message": f"feat: auth\n\nDocChange-ID: {doc_commit}\n",
         }
     ]
+    assert marked == [17]
+
+
+def test_verify_doc_change_reuses_existing_code_change_link(monkeypatch):
+    doc_commit = "d" * 40
+    change = {
+        "id": 17,
+        "doc_change_id": doc_commit,
+        "status": "in_implementation",
+    }
+    existing_link = {
+        "id": 41,
+        "doc_change_id": 17,
+        "project_id": 11,
+        "branch": "main",
+        "commit_sha": "a" * 40,
+        "commit_message": f"feat: auth\n\nDocChange-ID: {doc_commit}\n",
+    }
+    created_links = []
+    marked = []
+
+    monkeypatch.setattr(
+        git_consistency_service.doc_change_repository,
+        "find_by_doc_change_id",
+        lambda conn, doc_change_id: change if doc_change_id == doc_commit else None,
+    )
+    monkeypatch.setattr(
+        git_consistency_service.code_change_link_repository,
+        "list_by_commit",
+        lambda conn, project_id, branch, commit_sha: [existing_link],
+    )
+
+    def fake_create_link(conn, **kwargs):
+        created_links.append(kwargs)
+        return {"id": 99, **kwargs}
+
+    monkeypatch.setattr(
+        git_consistency_service.code_change_link_repository,
+        "create",
+        fake_create_link,
+    )
+
+    def fake_mark(conn, change_id):
+        marked.append(change_id)
+        return change
+
+    monkeypatch.setattr(
+        git_consistency_service.doc_change_repository,
+        "mark_in_implementation",
+        fake_mark,
+    )
+
+    result = git_consistency_service.verify_doc_change(
+        object(),
+        project_id=11,
+        branch="main",
+        commit_sha="a" * 40,
+        commit_message=f"feat: auth\n\nDocChange-ID: {doc_commit}\n",
+    )
+
+    assert result["status"] == "verified"
+    assert result["code_change_link"] == existing_link
+    assert created_links == []
     assert marked == [17]
 
 

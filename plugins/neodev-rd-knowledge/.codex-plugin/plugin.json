@@ -56,7 +56,7 @@
       "Use NeoDev to inspect this product version and branch context.",
       "Use NeoDev to import the controlled docs for this version.",
       "Use NeoDev to register the DocChange and estimate implementation impact.",
-      "Use NeoDev to refresh and verify the branch graph after push.",
+      "Use NeoDev to interpret the post-push atomic graph update result.",
       "Use browser acceptance testing to validate this page with screenshots, network evidence, and a report."
     ],
     "brandColor": "#2563EB"
@@ -71,9 +71,8 @@
       "./check_docchange_trailer.py",
       "./check_neodev_environment.py",
       "./check_git_commit_scope.py",
-      "./ensure_git_guard.py",
-      "./git_guard_commit_msg.py",
-      "./git_guard_pre_push.py"
+      "./post_push_graph_update.py",
+      "./session_start_hint.py"
     ],
     "contract": "Remote-service CLI orchestration for Codex, Claude Code, and Cursor. Local clients install/configure neodev and use the remote NeoDev service for facts and state changes; direct database access is diagnostic only.",
     "third_party": [

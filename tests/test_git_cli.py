@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 import subprocess
 import sys
 import urllib.parse
@@ -19,7 +18,6 @@ from service.repositories import document_repository
 
 
 ROOT = Path(__file__).resolve().parent.parent
-PRE_PUSH_GUARD = ROOT / "plugins" / "neodev-rd-knowledge" / "git_guard_pre_push.py"
 INIT_SQL = ROOT / "docker" / "init.sql"
 
 
@@ -70,17 +68,6 @@ def git_cli_db_env(monkeypatch):
         with admin_conn.cursor() as cur:
             cur.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
         admin_conn.close()
-
-
-def _tmp_git_repo(name: str) -> Path:
-    root = ROOT / ".test-tmp" / f"{name}-{uuid.uuid4().hex[:8]}"
-    if root.exists():
-        shutil.rmtree(root)
-    root.mkdir(parents=True)
-    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
-    subprocess.run(["git", "config", "user.email", "tests@example.invalid"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.name", "NeoDev Tests"], cwd=root, check=True)
-    return root
 
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
@@ -355,50 +342,37 @@ def test_git_verify_doc_change_rejects_implemented_doc_change_and_records_danger
     )
 
 
-def test_git_pre_push_guard_records_dangerous_commit_idempotently():
+def test_git_verify_doc_change_records_dangerous_commit_idempotently():
     token = uuid.uuid4().hex[:8]
-    repo = _tmp_git_repo("git-pre-push-dangerous")
-    try:
-        with closing(_connect_fresh()) as conn:
-            project_id = _make_project(conn, f"git-pre-push-dangerous-{token}")
+    commit_sha = f"{uuid.uuid4().hex}{uuid.uuid4().hex}"[:40]
+    with closing(_connect_fresh()) as conn:
+        project_id = _make_project(conn, f"git-dangerous-idempotent-{token}")
 
-        (repo / "app.py").write_text("print('dangerous')\n", encoding="utf-8")
-        subprocess.run(["git", "add", "app.py"], cwd=repo, check=True)
-        subprocess.run(["git", "commit", "-m", "feat: missing docchange", "--no-verify"], cwd=repo, check=True)
-        commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
-        stdin = f"refs/heads/master {commit_sha} refs/heads/master {'0' * 40}\n"
-        env = os.environ.copy()
-        env["NEODEV_CLI"] = f"{sys.executable} {ROOT / 'neodev.py'}"
-        env["NEODEV_PROJECT_ID"] = str(project_id)
-        env["NEODEV_CONFIG_DIR"] = str(ROOT / ".test-tmp" / "git-pre-push-config")
-        env["DATABASE_URL"] = _database_url()
-        env.pop("NEODEV_API_URL", None)
-
-        for _ in range(2):
-            proc = subprocess.run(
-                [sys.executable, str(PRE_PUSH_GUARD), "--repo-root", str(repo), "--json"],
-                cwd=repo,
-                input=stdin,
-                env=env,
-                text=True,
-                capture_output=True,
-                check=False,
-            )
-
-            assert proc.returncode == 1, proc.stderr
-            payload = _payload(proc)
-            assert payload["ok"] is False
-            failed = payload["failed_commits"][0]
-            assert failed["commit_sha"] == commit_sha
-            assert failed["errors"][0]["details"]["dangerous_commit_required"] is True
-
-        _assert_single_dangerous_record(
-            project_id,
-            commit_sha=commit_sha,
-            reason="DocChange-ID trailer is required",
+    for _ in range(2):
+        proc = _run_cli(
+            "git",
+            "verify-doc-change",
+            "--project-id",
+            str(project_id),
+            "--branch",
+            "main",
+            "--commit-sha",
+            commit_sha,
+            "--commit-message",
+            "feat: missing docchange",
+            "--json",
         )
-    finally:
-        shutil.rmtree(repo, ignore_errors=True)
+
+        assert proc.returncode == 2, proc.stderr
+        payload = _payload(proc)
+        assert payload["ok"] is False
+        assert payload["errors"][0]["details"]["dangerous_commit_required"] is True
+
+    _assert_single_dangerous_record(
+        project_id,
+        commit_sha=commit_sha,
+        reason="DocChange-ID trailer is required",
+    )
 
 
 def test_git_dangerous_commit_list_and_resolve():

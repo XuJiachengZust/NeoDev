@@ -330,49 +330,70 @@ def replace_branch_graph(
     rel_batch_size: int = 1000,
 ) -> dict[str, Any]:
     scope = _scope_props(version_scope)
+    manual_nodes = graph_management_repository.list_active_nodes_for_branch(conn, project_id, branch_name)
+    manual_edges = graph_management_repository.list_active_edges_for_branch(conn, project_id, branch_name)
+    doc_links = doc_code_link_repository.list_active_for_branch(
+        conn,
+        project_id=project_id,
+        branch_name=branch_name,
+    )
     driver = _create_driver(config)
     try:
         _ensure_constraints(driver, database)
-        nodes_written, rels_written = _replace_graph(
-            driver,
-            database=database,
-            graph=graph,
-            project_id=project_id,
-            branch_name=branch_name,
-            graph_id=graph_id,
-            head_commit=head_commit,
-            version_scope=scope,
-            batch_size=batch_size,
-            rel_batch_size=rel_batch_size,
-        )
-        manual_write = _write_manual_graph_facts(
-            conn,
-            driver,
-            database=database,
-            project_id=project_id,
-            branch_name=branch_name,
-            graph_id=graph_id,
-            version_scope=scope,
-        )
-        doc_links_written = _rebuild_doc_code_links(
-            conn,
-            driver,
-            database=database,
-            project_id=project_id,
-            branch_name=branch_name,
-            graph_id=graph_id,
-            version_scope=scope,
-        )
+        with driver.session(database=database) as session:
+            return session.execute_write(
+                _replace_branch_graph_tx,
+                graph=graph,
+                project_id=project_id,
+                branch_name=branch_name,
+                graph_id=graph_id,
+                head_commit=head_commit,
+                version_scope=scope,
+                batch_size=batch_size,
+                rel_batch_size=rel_batch_size,
+                manual_nodes=manual_nodes,
+                manual_edges=manual_edges,
+                doc_links=doc_links,
+            )
     finally:
         driver.close()
-    return {
-        "status": "updated",
-        "nodes_written": nodes_written,
-        "relationships_written": rels_written,
-        "manual_nodes_written": manual_write["nodes_written"],
-        "manual_relationships_written": manual_write["relationships_written"],
-        "doc_code_links_written": doc_links_written,
-    }
+
+
+def snapshot_branch_graph(
+    *,
+    config: dict[str, Any],
+    database: str | None,
+    project_id: int,
+    branch_name: str,
+    version_scope: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    driver = _create_driver(config)
+    try:
+        with driver.session(database=database) as session:
+            snapshot = _execute_read(
+                session,
+                _snapshot_branch_graph_tx,
+                project_id=project_id,
+                branch_name=branch_name,
+            )
+        snapshot["version_scope"] = _scope_props(version_scope)
+        return snapshot
+    finally:
+        driver.close()
+
+
+def restore_branch_graph_snapshot(
+    *,
+    config: dict[str, Any],
+    database: str | None,
+    snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    driver = _create_driver(config)
+    try:
+        with driver.session(database=database) as session:
+            return session.execute_write(_restore_branch_graph_snapshot_tx, snapshot=snapshot)
+    finally:
+        driver.close()
 
 
 def _create_driver(config: dict[str, Any]):
@@ -432,10 +453,9 @@ def _ensure_constraints(driver, database: str | None) -> None:
                 pass
 
 
-def _replace_graph(
-    driver,
+def _replace_branch_graph_tx(
+    tx,
     *,
-    database: str | None,
     graph,
     project_id: int,
     branch_name: str,
@@ -444,104 +464,481 @@ def _replace_graph(
     version_scope: dict[str, Any],
     batch_size: int,
     rel_batch_size: int,
-) -> tuple[int, int]:
+    manual_nodes: list[dict[str, Any]],
+    manual_edges: list[dict[str, Any]],
+    doc_links: list[dict[str, Any]],
+) -> dict[str, Any]:
     nodes_written = 0
     rels_written = 0
-    with driver.session(database=database) as session:
-        for label in sorted(_NODE_LABELS):
-            session.execute_write(
-                _delete_branch_nodes,
-                label=label,
-                project_id=project_id,
-                branch_name=branch_name,
-            )
-        session.run(
-            """
-            MATCH (g:BranchGraph {project_id: $project_id, branch_name: $branch_name})
-            DETACH DELETE g
-            """,
-            project_id=project_id,
-            branch_name=branch_name,
-        )
-        session.execute_write(
-            _write_branch_graph_root,
-            project_id=project_id,
-            branch_name=branch_name,
-            graph_id=graph_id,
-            head_commit=head_commit,
-            **version_scope,
-        )
-        session.run(
-            """
-            MATCH (:Document)-[r:LINKS_TO_CODE {project_id: $project_id, branch_name: $branch_name}]->()
-            DELETE r
-            """,
-            project_id=project_id,
-            branch_name=branch_name,
-        )
 
-        nodes = list(graph.iterNodes())
-        for index in range(0, len(nodes), batch_size):
-            batch = nodes[index : index + batch_size]
-            for label, label_batch in _group_by(batch, "label").items():
-                rows = [
-                    _node_row(
-                        node,
-                        project_id=project_id,
-                        branch_name=branch_name,
-                        graph_id=graph_id,
-                        head_commit=head_commit,
-                        version_scope=version_scope,
-                    )
-                    for node in label_batch
-                ]
-                labels = _labels_for_node(label)
-                session.execute_write(_write_nodes, labels=labels, rows=rows)
-                nodes_written += len(rows)
-
-        nodes_by_id = {str(node["id"]): node for node in nodes}
-        root_rows = _root_relationship_rows(
-            graph,
-            nodes_by_id=nodes_by_id,
+    for label in sorted(_NODE_LABELS):
+        _delete_branch_nodes(
+            tx,
+            label=label,
             project_id=project_id,
             branch_name=branch_name,
-            graph_id=graph_id,
-            version_scope=version_scope,
         )
-        if root_rows:
-            for target_label, root_batch in _group_by(root_rows, "target_label").items():
-                written = session.execute_write(
-                    _write_branch_graph_root_links,
-                    target_label=_safe_identifier(target_label, fallback="CodeElement"),
-                    rows=root_batch,
-                )
-                rels_written += int(written or 0)
+    tx.run(
+        """
+        MATCH (g:BranchGraph {project_id: $project_id, branch_name: $branch_name})
+        DETACH DELETE g
+        """,
+        project_id=project_id,
+        branch_name=branch_name,
+    )
+    _write_branch_graph_root(
+        tx,
+        project_id=project_id,
+        branch_name=branch_name,
+        graph_id=graph_id,
+        head_commit=head_commit,
+        **version_scope,
+    )
+    tx.run(
+        """
+        MATCH (:Document)-[r:LINKS_TO_CODE {project_id: $project_id, branch_name: $branch_name}]->()
+        DELETE r
+        """,
+        project_id=project_id,
+        branch_name=branch_name,
+    )
 
-        relationships = list(graph.iterRelationships())
-        for index in range(0, len(relationships), rel_batch_size):
-            batch = relationships[index : index + rel_batch_size]
+    nodes = list(graph.iterNodes())
+    for index in range(0, len(nodes), batch_size):
+        batch = nodes[index : index + batch_size]
+        for label, label_batch in _group_by(batch, "label").items():
             rows = [
-                _relationship_row(
-                    relationship,
-                    nodes_by_id=nodes_by_id,
+                _node_row(
+                    node,
                     project_id=project_id,
                     branch_name=branch_name,
                     graph_id=graph_id,
+                    head_commit=head_commit,
                     version_scope=version_scope,
                 )
-                for relationship in batch
+                for node in label_batch
             ]
-            for rel_key, rel_rows in _group_relationship_rows(rows).items():
-                relationship_type, source_label, target_label = rel_key
-                written = session.execute_write(
-                    _write_relationships,
+            _write_nodes(tx, labels=_labels_for_node(label), rows=rows)
+            nodes_written += len(rows)
+
+    nodes_by_id = {str(node["id"]): node for node in nodes}
+    root_rows = _root_relationship_rows(
+        graph,
+        nodes_by_id=nodes_by_id,
+        project_id=project_id,
+        branch_name=branch_name,
+        graph_id=graph_id,
+        version_scope=version_scope,
+    )
+    if root_rows:
+        for target_label, root_batch in _group_by(root_rows, "target_label").items():
+            rels_written += int(
+                _write_branch_graph_root_links(
+                    tx,
+                    target_label=_safe_identifier(target_label, fallback="CodeElement"),
+                    rows=root_batch,
+                )
+                or 0
+            )
+
+    relationships = list(graph.iterRelationships())
+    for index in range(0, len(relationships), rel_batch_size):
+        batch = relationships[index : index + rel_batch_size]
+        rows = [
+            _relationship_row(
+                relationship,
+                nodes_by_id=nodes_by_id,
+                project_id=project_id,
+                branch_name=branch_name,
+                graph_id=graph_id,
+                version_scope=version_scope,
+            )
+            for relationship in batch
+        ]
+        for rel_key, rel_rows in _group_relationship_rows(rows).items():
+            relationship_type, source_label, target_label = rel_key
+            rels_written += int(
+                _write_relationships(
+                    tx,
                     relationship_type=relationship_type,
                     source_label=source_label,
                     target_label=target_label,
                     rows=rel_rows,
                 )
-                rels_written += int(written or 0)
-    return nodes_written, rels_written
+                or 0
+            )
+
+    manual_nodes_written = 0
+    manual_relationships_written = 0
+    for label, node_batch in _group_by(manual_nodes, "type_key").items():
+        rows = [
+            _manual_node_row(
+                node,
+                branch_name=branch_name,
+                graph_id=graph_id,
+                version_scope=version_scope,
+            )
+            for node in node_batch
+        ]
+        if not rows:
+            continue
+        _write_nodes(tx, labels=_labels_for_node(label), rows=rows)
+        manual_nodes_written += len(rows)
+
+    manual_rel_rows = [
+        _manual_relationship_row(
+            edge,
+            branch_name=branch_name,
+            graph_id=graph_id,
+            version_scope=version_scope,
+        )
+        for edge in manual_edges
+    ]
+    for rel_key, rel_batch in _group_relationship_rows(manual_rel_rows).items():
+        relationship_type, source_label, target_label = rel_key
+        manual_relationships_written += int(
+            _write_relationships(
+                tx,
+                relationship_type=relationship_type,
+                source_label=source_label,
+                target_label=target_label,
+                rows=rel_batch,
+            )
+            or 0
+        )
+
+    doc_code_links_written = 0
+    doc_rows = _doc_code_link_rows(
+        doc_links,
+        project_id=project_id,
+        branch_name=branch_name,
+        graph_id=graph_id,
+        version_scope=version_scope,
+    )
+    for code_label, link_rows in _group_by(doc_rows, "code_label").items():
+        doc_code_links_written += int(
+            _write_doc_code_links(
+                tx,
+                code_label=_safe_identifier(code_label, fallback="CodeElement"),
+                rows=link_rows,
+            )
+            or 0
+        )
+
+    return {
+        "status": "updated",
+        "nodes_written": nodes_written,
+        "relationships_written": rels_written,
+        "manual_nodes_written": manual_nodes_written,
+        "manual_relationships_written": manual_relationships_written,
+        "doc_code_links_written": doc_code_links_written,
+    }
+
+
+def _snapshot_branch_graph_tx(tx, *, project_id: int, branch_name: str) -> dict[str, Any]:
+    node_rows = _result_records(
+        tx.run(
+            """
+            MATCH (n)
+            WHERE n.project_id = $project_id AND n.branch_name = $branch_name
+            RETURN labels(n) AS labels, properties(n) AS props
+            ORDER BY coalesce(toString(n.id), toString(n.graph_id), toString(n.node_id), '')
+            """,
+            project_id=project_id,
+            branch_name=branch_name,
+        )
+    )
+    relationship_rows = _result_records(
+        tx.run(
+            """
+            MATCH (start)-[rel]->(end)
+            WHERE (rel.project_id = $project_id AND rel.branch_name = $branch_name)
+               OR (start.project_id = $project_id AND start.branch_name = $branch_name)
+               OR (end.project_id = $project_id AND end.branch_name = $branch_name)
+            RETURN labels(start) AS start_labels,
+                   properties(start) AS start_props,
+                   type(rel) AS type,
+                   properties(rel) AS props,
+                   labels(end) AS end_labels,
+                   properties(end) AS end_props
+            ORDER BY coalesce(toString(rel.id), toString(rel.relationship_id), toString(rel.edge_id), '')
+            """,
+            project_id=project_id,
+            branch_name=branch_name,
+        )
+    )
+    document_rows = _branch_document_keys(tx, project_id=project_id, branch_name=branch_name)
+    return {
+        "project_id": project_id,
+        "branch_name": branch_name,
+        "nodes": [
+            {
+                "labels": [str(label) for label in (_record_get(row, "labels") or [])],
+                "props": dict(_record_get(row, "props") or {}),
+            }
+            for row in node_rows
+        ],
+        "relationships": [
+            {
+                "start_labels": [str(label) for label in (_record_get(row, "start_labels") or [])],
+                "start_props": dict(_record_get(row, "start_props") or {}),
+                "type": str(_record_get(row, "type") or "RELATED_TO"),
+                "props": dict(_record_get(row, "props") or {}),
+                "end_labels": [str(label) for label in (_record_get(row, "end_labels") or [])],
+                "end_props": dict(_record_get(row, "end_props") or {}),
+            }
+            for row in relationship_rows
+        ],
+        "document_keys": document_rows,
+    }
+
+
+def _restore_branch_graph_snapshot_tx(tx, *, snapshot: dict[str, Any]) -> dict[str, Any]:
+    project_id = int(snapshot["project_id"])
+    branch_name = str(snapshot["branch_name"])
+    current_document_keys = _branch_document_keys(tx, project_id=project_id, branch_name=branch_name)
+    snapshot_document_keys = {
+        _document_key(row)
+        for row in snapshot.get("document_keys", [])
+        if _document_key(row) is not None
+    }
+    prune_document_keys = [
+        row
+        for row in current_document_keys
+        if _document_key(row) is not None and _document_key(row) not in snapshot_document_keys
+    ]
+
+    _delete_snapshot_branch_data(tx, project_id=project_id, branch_name=branch_name)
+    documents_pruned = _delete_orphan_documents(tx, document_keys=prune_document_keys)
+
+    nodes_restored = 0
+    for node in snapshot.get("nodes", []) or []:
+        if _merge_snapshot_node(tx, labels=node.get("labels") or [], props=node.get("props") or {}):
+            nodes_restored += 1
+
+    relationships_restored = 0
+    for relationship in snapshot.get("relationships", []) or []:
+        if _merge_snapshot_node(
+            tx,
+            labels=relationship.get("start_labels") or [],
+            props=relationship.get("start_props") or {},
+        ):
+            nodes_restored += 1
+        if _merge_snapshot_node(
+            tx,
+            labels=relationship.get("end_labels") or [],
+            props=relationship.get("end_props") or {},
+        ):
+            nodes_restored += 1
+        _merge_snapshot_relationship(tx, relationship=relationship)
+        relationships_restored += 1
+
+    return {
+        "status": "restored",
+        "project_id": project_id,
+        "branch_name": branch_name,
+        "nodes_restored": nodes_restored,
+        "relationships_restored": relationships_restored,
+        "documents_pruned": documents_pruned,
+    }
+
+
+def _branch_document_keys(tx, *, project_id: int, branch_name: str) -> list[dict[str, Any]]:
+    rows = _result_records(
+        tx.run(
+            """
+            MATCH (doc:Document)-[:LINKS_TO_CODE {project_id: $project_id, branch_name: $branch_name}]->()
+            RETURN DISTINCT doc.doc_id AS doc_id, doc.product_version_id AS product_version_id
+            """,
+            project_id=project_id,
+            branch_name=branch_name,
+        )
+    )
+    return [
+        {
+            "doc_id": _record_get(row, "doc_id"),
+            "product_version_id": _record_get(row, "product_version_id"),
+        }
+        for row in rows
+        if _record_get(row, "doc_id") is not None
+    ]
+
+
+def _delete_snapshot_branch_data(tx, *, project_id: int, branch_name: str) -> None:
+    tx.run(
+        """
+        MATCH (:Document)-[rel:LINKS_TO_CODE {project_id: $project_id, branch_name: $branch_name}]->()
+        DELETE rel
+        """,
+        project_id=project_id,
+        branch_name=branch_name,
+    )
+    tx.run(
+        """
+        MATCH ()-[rel]-()
+        WHERE rel.project_id = $project_id AND rel.branch_name = $branch_name
+        DELETE rel
+        """,
+        project_id=project_id,
+        branch_name=branch_name,
+    )
+    tx.run(
+        """
+        MATCH (n)
+        WHERE n.project_id = $project_id AND n.branch_name = $branch_name
+        DETACH DELETE n
+        """,
+        project_id=project_id,
+        branch_name=branch_name,
+    )
+
+
+def _delete_orphan_documents(tx, *, document_keys: list[dict[str, Any]]) -> int:
+    deleted = 0
+    for key in document_keys:
+        doc_id = key.get("doc_id")
+        product_version_id = key.get("product_version_id")
+        if product_version_id is None:
+            result = tx.run(
+                """
+                MATCH (doc:Document {doc_id: $doc_id})
+                WHERE doc.product_version_id IS NULL AND NOT (doc)--()
+                DETACH DELETE doc
+                RETURN count(doc) AS deleted
+                """,
+                doc_id=doc_id,
+            )
+        else:
+            result = tx.run(
+                """
+                MATCH (doc:Document {doc_id: $doc_id, product_version_id: $product_version_id})
+                WHERE NOT (doc)--()
+                DETACH DELETE doc
+                RETURN count(doc) AS deleted
+                """,
+                doc_id=doc_id,
+                product_version_id=product_version_id,
+            )
+        row = result.single()
+        deleted += int(row["deleted"] if row else 0)
+    return deleted
+
+
+def _merge_snapshot_node(tx, *, labels: list[str], props: dict[str, Any]) -> bool:
+    clean_labels = _snapshot_labels(labels)
+    key_props = _snapshot_node_key(clean_labels, props)
+    if not key_props:
+        return False
+    key_clause, key_params = _snapshot_key_clause(key_props, "node_key")
+    label_clause = ":".join(clean_labels)
+    tx.run(
+        f"""
+        MERGE (node:{label_clause} {{{key_clause}}})
+        SET node = $props
+        """,
+        **key_params,
+        props=_props_for_neo4j(props),
+    )
+    return True
+
+
+def _merge_snapshot_relationship(tx, *, relationship: dict[str, Any]) -> None:
+    start_labels = _snapshot_labels(relationship.get("start_labels") or [])
+    end_labels = _snapshot_labels(relationship.get("end_labels") or [])
+    start_props = relationship.get("start_props") or {}
+    end_props = relationship.get("end_props") or {}
+    start_key = _snapshot_node_key(start_labels, start_props)
+    end_key = _snapshot_node_key(end_labels, end_props)
+    if not start_key or not end_key:
+        return
+
+    start_clause, start_params = _snapshot_key_clause(start_key, "start_key")
+    end_clause, end_params = _snapshot_key_clause(end_key, "end_key")
+    rel_props = _props_for_neo4j(relationship.get("props") or {})
+    rel_key = _snapshot_relationship_key(rel_props)
+    relationship_type = _safe_identifier(str(relationship.get("type") or ""), fallback="RELATED_TO")
+    params = {**start_params, **end_params, "props": rel_props}
+    if rel_key:
+        rel_clause, rel_params = _snapshot_key_clause(rel_key, "rel_key")
+        params.update(rel_params)
+        merge_relationship = f"MERGE (start)-[rel:{relationship_type} {{{rel_clause}}}]->(end)"
+    else:
+        merge_relationship = f"MERGE (start)-[rel:{relationship_type}]->(end)"
+
+    tx.run(
+        f"""
+        MATCH (start:{":".join(start_labels)} {{{start_clause}}})
+        MATCH (end:{":".join(end_labels)} {{{end_clause}}})
+        {merge_relationship}
+        SET rel = $props
+        """,
+        **params,
+    )
+
+
+def _snapshot_labels(labels: list[str]) -> list[str]:
+    clean: list[str] = []
+    for label in labels:
+        safe = _safe_identifier(str(label), fallback="")
+        if safe and safe not in clean:
+            clean.append(safe)
+    return clean or ["CodeNode"]
+
+
+def _snapshot_node_key(labels: list[str], props: dict[str, Any]) -> dict[str, Any]:
+    if "Project" in labels and props.get("project_id") is not None:
+        return {"project_id": props["project_id"]}
+    if "BranchGraph" in labels and props.get("graph_id") is not None:
+        return {"graph_id": props["graph_id"]}
+    if "Document" in labels and props.get("doc_id") is not None:
+        key = {"doc_id": props["doc_id"]}
+        if props.get("product_version_id") is not None:
+            key["product_version_id"] = props["product_version_id"]
+        return key
+    if props.get("id") is not None:
+        return {"id": props["id"]}
+    if (
+        props.get("project_id") is not None
+        and props.get("branch_name") is not None
+        and props.get("node_id") is not None
+    ):
+        return {
+            "project_id": props["project_id"],
+            "branch_name": props["branch_name"],
+            "node_id": props["node_id"],
+        }
+    return {}
+
+
+def _snapshot_relationship_key(props: dict[str, Any]) -> dict[str, Any]:
+    for field in ("id", "relationship_id", "edge_id"):
+        if props.get(field) is not None:
+            return {field: props[field]}
+    return {}
+
+
+def _snapshot_key_clause(key_props: dict[str, Any], prefix: str) -> tuple[str, dict[str, Any]]:
+    clauses = []
+    params = {}
+    for index, (key, value) in enumerate(key_props.items()):
+        param_name = f"{prefix}_{index}"
+        clauses.append(f"{_safe_identifier(str(key), fallback='id')}: ${param_name}")
+        params[param_name] = value
+    return ", ".join(clauses), params
+
+
+def _document_key(row: dict[str, Any]) -> tuple[str, Any] | None:
+    doc_id = row.get("doc_id")
+    if doc_id is None:
+        return None
+    return str(doc_id), row.get("product_version_id")
+
+
+def _result_records(result) -> list[dict[str, Any]]:
+    data = getattr(result, "data", None)
+    if callable(data):
+        return data()
+    return [dict(record) for record in result]
 
 
 def _delete_branch_nodes(tx, *, label: str, project_id: int, branch_name: str) -> None:
@@ -668,6 +1065,36 @@ def _rebuild_doc_code_links(
         project_id=project_id,
         branch_name=branch_name,
     )
+    rows = _doc_code_link_rows(
+        links,
+        project_id=project_id,
+        branch_name=branch_name,
+        graph_id=graph_id,
+        version_scope=version_scope,
+    )
+    if not rows:
+        return 0
+
+    written = 0
+    with driver.session(database=database) as session:
+        for code_label, link_rows in _group_by(rows, "code_label").items():
+            result = session.execute_write(
+                _write_doc_code_links,
+                code_label=_safe_identifier(code_label, fallback="CodeElement"),
+                rows=link_rows,
+            )
+            written += int(result or 0)
+    return written
+
+
+def _doc_code_link_rows(
+    links: list[dict[str, Any]],
+    *,
+    project_id: int,
+    branch_name: str,
+    graph_id: int,
+    version_scope: dict[str, Any],
+) -> list[dict[str, Any]]:
     rows = []
     for link in links:
         locator = link.get("code_locator_json") or {}
@@ -694,19 +1121,7 @@ def _rebuild_doc_code_links(
                 },
             }
         )
-    if not rows:
-        return 0
-
-    written = 0
-    with driver.session(database=database) as session:
-        for code_label, link_rows in _group_by(rows, "code_label").items():
-            result = session.execute_write(
-                _write_doc_code_links,
-                code_label=_safe_identifier(code_label, fallback="CodeElement"),
-                rows=link_rows,
-            )
-            written += int(result or 0)
-    return written
+    return rows
 
 
 def _write_manual_graph_facts(

@@ -72,9 +72,9 @@ def verify_doc_change(
             commit_message=commit_message,
         )
 
-    link = code_change_link_repository.create(
+    link = _ensure_code_change_link(
         conn,
-        doc_change_id=change["id"],
+        doc_change_id=int(change["id"]),
         project_id=project_id,
         branch=normalized_branch,
         commit_sha=normalized_sha,
@@ -96,6 +96,46 @@ def verify_doc_change(
         "matched_by": parsed["matched_by"],
         "code_change_link": link,
     }
+
+
+def _ensure_code_change_link(
+    conn,
+    *,
+    doc_change_id: int,
+    project_id: int,
+    branch: str,
+    commit_sha: str,
+    commit_message: str,
+) -> dict:
+    existing_links = code_change_link_repository.list_by_commit(
+        conn,
+        project_id=project_id,
+        branch=branch,
+        commit_sha=commit_sha,
+    )
+    for link in existing_links:
+        if int(link.get("doc_change_id") or 0) == doc_change_id:
+            return link
+    if existing_links:
+        raise GitConsistencyError(
+            category="conflict",
+            message="commit is already linked to another doc change",
+            details={
+                "project_id": project_id,
+                "branch": branch,
+                "commit_sha": commit_sha,
+                "existing_doc_change_id": existing_links[0].get("doc_change_id"),
+                "doc_change_id": doc_change_id,
+            },
+        )
+    return code_change_link_repository.create(
+        conn,
+        doc_change_id=doc_change_id,
+        project_id=project_id,
+        branch=branch,
+        commit_sha=commit_sha,
+        commit_message=commit_message,
+    )
 
 
 def list_dangerous_commits(conn, *, project_id: int | None = None) -> dict[str, Any]:

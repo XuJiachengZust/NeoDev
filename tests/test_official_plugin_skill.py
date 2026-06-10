@@ -20,13 +20,17 @@ def test_official_plugin_manifest_and_marketplace_are_registered():
     manifest = _read_json(PLUGIN_ROOT / ".codex-plugin" / "plugin.json")
 
     assert manifest["name"] == "neodev-rd-knowledge"
-    assert manifest["version"] == "0.1.0"
+    assert manifest["version"] == "0.2.0"
     assert manifest["skills"] == "./skills/"
     assert "neodev" in manifest["keywords"]
-    assert len(manifest["interface"]["defaultPrompt"]) <= 3
-    assert _contains_cjk(manifest["description"])
-    assert _contains_cjk(manifest["interface"]["shortDescription"])
-    assert _contains_cjk(manifest["interface"]["longDescription"])
+    assert len(manifest["interface"]["defaultPrompt"]) <= 7
+    assert "NeoSuperpower workflow plugin" in manifest["description"]
+    assert "NeoSuperpower workflows" in manifest["interface"]["shortDescription"]
+    assert "Official NeoSuperpower workflow layer" in manifest["interface"]["longDescription"]
+    default_prompt = "\n".join(manifest["interface"]["defaultPrompt"])
+    assert "interpret the post-push atomic graph update result" in default_prompt
+    assert "after push" not in default_prompt.lower()
+    assert "refresh and verify the branch graph after push" not in default_prompt
 
     marketplace = _read_json(ROOT / ".agents" / "plugins" / "marketplace.json")
     entries = {entry["name"]: entry for entry in marketplace["plugins"]}
@@ -37,7 +41,10 @@ def test_official_plugin_manifest_and_marketplace_are_registered():
 
 def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
     workflows = _read_json(PLUGIN_ROOT / "workflows" / "core-workflows.json")
-    assert _contains_cjk(workflows["contract"])
+    assert "local neodev CLI" in workflows["contract"]
+    workflow_text = json.dumps(workflows, ensure_ascii=False)
+    assert "refresh the branch graph after push" not in workflow_text
+    assert "After successful push" not in workflow_text
 
     required = {
         "session_version_check",
@@ -50,25 +57,39 @@ def test_official_plugin_workflows_cover_main_paths_and_use_cli_only():
 
     all_commands = []
     for workflow in workflows["workflows"].values():
-        assert _contains_cjk(workflow["goal"])
+        assert workflow["goal"]
+        assert workflow["steps"]
+        for step in workflow["steps"]:
+            assert step["type"] in {
+                "browser",
+                "cli",
+                "diagnostic",
+                "manual",
+                "script",
+                "skill",
+                "user-confirmation",
+                "workflow",
+            }
         commands = [step["command"] for step in workflow["steps"] if step["type"] == "cli"]
-        assert commands[0] == "neodev config show"
-        assert commands[1].startswith("neodev cli version-check")
         all_commands.extend(commands)
 
+    assert all_commands
     joined = "\n".join(all_commands)
+    assert "neodev config show" in joined
+    assert "neodev cli version-check" in joined
     for expected in [
         "doc binding list --product-code <product_code> --json",
-        "doc binding create --product-code <product_code> --project-id <doc_project_id> --branch <branch> --json",
+        "doc binding create --product-code <product_code> --version-name <version_name> --project-name <project_name> --repo-path <docs_repo_path> --branch <branch> --json",
         "doc import --doc-binding-id <doc_binding_id> --json",
         "doc change register",
         "graph impact",
         "project create --name <project_name> --repo-url <repo_url>",
-        "project show --project-id <project_id>",
+        "project init-status --project-name <project_name> --branch <branch>",
+        "product version bind-branch --product-code <product_code> --version-name <version_name> --project-name <project_name> --branch <branch>",
         "git verify-doc-change",
         "git dangerous-commit list",
         "git dangerous-commit resolve",
-        "project refresh-graph --project-id <project_id> --branch <branch>",
+        "project refresh-graph --project-name <project_name> --branch <branch>",
     ]:
         assert expected in joined
     assert "project refresh-commit-graph" not in joined
@@ -89,8 +110,13 @@ def test_official_plugin_hooks_check_remote_cli_environment():
             hook_commands.extend(hook["command"] for hook in entry["hooks"])
 
     joined = "\n".join(hook_commands)
+    assert "session_start_hint.py" in joined
     assert "check_neodev_environment.py" in joined
-    assert "neodev project refresh-graph" in joined
+    assert "ensure_git_guard.py" not in joined
+    assert "git_guard_commit_msg.py" not in joined
+    assert "git_guard_pre_push.py" not in joined
+    assert "post_push_graph_update.py" in joined
+    assert "echo \"After push" not in joined
     assert "neodev project refresh-commit-graph" not in joined
     assert "python neodev.py" not in joined
 
@@ -100,23 +126,43 @@ def test_official_skill_is_bundled_and_points_to_the_shared_workflow_contract():
 
     assert skill.startswith("---\n")
     assert "name: neodev-rd-knowledge" in skill
-    assert "description: 使用 NeoDev 远程服务" in skill
+    assert "description: Use the local NeoDev CLI client against the configured remote NeoDev service" in skill
     assert "workflows/core-workflows.json" in skill
     assert "cli version-check" in skill
     assert "neodev config set-server" in skill
-    assert "install-neodev-client.ps1" in skill
-    assert "doc binding create --product-code <product_code> --project-id <doc_project_id>" in skill
+    assert "install-neodev-client.cmd" in skill
+    assert "doc binding create" in skill
+    assert "--project-name <project_name>" in skill
     assert "doc binding list --product-code <product_code> --json" in skill
-    assert "doc import --doc-binding-id <id> --json" in skill
-    assert "日常导入不要使用 `--force`" in skill
-    assert "DocChange-ID 默认使用文档 Git commit hash" in skill
+    assert "doc import --doc-binding-id <doc_binding_id> --json" in skill
+    assert "Use `--force` only when intentionally rebuilding existing chunks/embeddings" in skill
+    assert "DocChange IDs are 40-character Git commit hashes" in skill
     assert "project create --name <project_name> --repo-url <repo_url>" in skill
     assert "product version analyze" not in skill
     assert "git verify-doc-change" not in skill
     assert "project refresh-graph" in skill
+    assert "post_push_graph_update.py --json" in skill
+    assert "git post-push-graph-update" in skill
+    assert "server-side atomic" in skill
+    assert "interpret_post_push_result" in skill
+    assert "append_history+overwrite_latest" in skill
+    assert "invalid_result" in skill
+    assert "skill_hint mismatch" in skill
+    assert "rollback_status=rolled_back" in skill
     assert "project refresh-commit-graph" not in skill
     assert "graph semantic-search" not in skill
     assert "PostgreSQL" in skill
     assert "Neo4j" in skill
-    assert "## 边界" in skill
-    assert "## 常用流程" in skill
+    assert "## Session Checks" in skill
+    assert "## Agent Post-Push Automation" in skill
+
+
+def test_official_plugin_guidance_does_not_suggest_manual_post_push_refresh():
+    agent_guidance = (PLUGIN_ROOT / "agents" / "neodev-rd-knowledge.md").read_text(encoding="utf-8")
+    cursor_rule = (PLUGIN_ROOT / "cursor" / "rules" / "neodev-git-docchange.mdc").read_text(encoding="utf-8")
+    combined = "\n".join([agent_guidance, cursor_rule])
+
+    assert "post-push atomic graph update" in combined
+    assert "git post-push-graph-update" in combined
+    assert "refresh the branch graph after push" not in combined
+    assert "neodev project refresh-graph --project-id <project_id> --branch <branch> --json" not in combined

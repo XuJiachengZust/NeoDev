@@ -28,7 +28,7 @@ Workflow expectations:
 - If no active version-scoped binding exists, create one with `doc binding create --product-code <product_code> --version-name <version_name> --project-name <project_name> --repo-path|--repo-url <source> --branch <branch> --json`.
 - Before `doc import` or `doc change register`, validate controlled documents with the plugin validators.
 - Document-only commits must complete the document workflow first: version-scoped binding, `doc scan`, `doc import`, then `doc change register` from imported document ids.
-- Code-only commits must carry exactly one valid `DocChange-ID` trailer; the value must be the imported document's 40-character Git commit hash, then run Git DocChange verification and refresh the branch graph after push.
+- Code-only commits must carry exactly one valid `DocChange-ID` trailer; the value must be the imported document's 40-character Git commit hash. Pre-push verification uses Git DocChange checks; successful pushes are handled by the post-push atomic graph update hook, so interpret that result instead of manually refreshing the branch graph.
 - Mixed document and code commits are not allowed; split them.
 - Document identity is version scoped: `doc_id + product_version_id` is the uniqueness key. Re-importing the same `doc_id` for the same product version overwrites that version's document record; it must not overwrite a different version.
 - Use NeoSuperpower workflows when applicable: requirements-or-design before requirements or design, implementation before code changes, failure-investigation for failures, and verification-before-completion before completion, commit, or push.

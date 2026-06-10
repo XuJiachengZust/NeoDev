@@ -1,5 +1,7 @@
 import json
+import importlib.util
 import shutil
+import sys
 import uuid
 from pathlib import Path
 
@@ -15,6 +17,15 @@ def _local_tmp_dir(name: str) -> Path:
         shutil.rmtree(path)
     path.mkdir(parents=True)
     return path
+
+
+def _load_module(path: Path):
+    spec = importlib.util.spec_from_file_location(f"neodev_client_{uuid.uuid4().hex}", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_cli_main_forwards_all_command_arguments_to_remote_server(monkeypatch, capsys):
@@ -265,8 +276,8 @@ def test_cli_execute_api_reuses_existing_cli_contract():
     assert body["exit_code"] == 0
     assert body["payload"]["ok"] is True
     assert body["payload"]["command"] == "cli version-check"
-    assert body["payload"]["data"]["plugin_version"] == "0.1.0"
-    assert body["payload"]["data"]["skill_version"] == "0.1.0"
+    assert body["payload"]["data"]["plugin_version"] == "0.2.0"
+    assert body["payload"]["data"]["skill_version"] == "0.2.0"
     assert body["payload"]["data"]["compatible"] is True
 
 
@@ -342,6 +353,66 @@ def test_install_client_command_writes_terminal_wrapper(capsys):
     ).read_text(encoding="utf-8")
     assert "_render_payload" in (install_dir / "neodev_client.py").read_text(encoding="utf-8")
     assert "_follow_project_init" in (install_dir / "neodev_client.py").read_text(encoding="utf-8")
+    assert "_prepare_remote_argv" in (install_dir / "neodev_client.py").read_text(encoding="utf-8")
+
+
+def test_installed_client_sends_local_post_push_payload_file_as_json(monkeypatch, capsys):
+    from service.cli import main as cli_main
+
+    install_dir = _local_tmp_dir("client-local-payload")
+    rc = cli_main.main(
+        [
+            "install-client",
+            "--bin-dir",
+            str(install_dir),
+            "--config-dir",
+            str(install_dir / "config"),
+            "--no-path-update",
+            "--json",
+        ]
+    )
+    assert rc == 0
+    capsys.readouterr()
+
+    payload_file = install_dir / "payload.json"
+    payload_file.write_text('{"branch": "neodev-sp"}', encoding="utf-8")
+    client = _load_module(install_dir / "neodev_client.py")
+    calls = {}
+
+    def fake_execute_remote(server_url, argv):
+        calls["server_url"] = server_url
+        calls["argv"] = argv
+        return 0, {
+            "ok": True,
+            "command": "git post-push-graph-update",
+            "timestamp": "2026-05-26T00:00:00+00:00",
+            "data": {"accepted": True},
+            "errors": [],
+        }
+
+    monkeypatch.setattr(client, "_execute_remote", fake_execute_remote)
+
+    run_rc = client.main(
+        [
+            "--server",
+            "http://10.50.3.149",
+            "git",
+            "post-push-graph-update",
+            "--payload-file",
+            str(payload_file),
+            "--json",
+        ]
+    )
+
+    assert run_rc == 0
+    assert calls["server_url"] == "http://10.50.3.149"
+    assert calls["argv"] == [
+        "git",
+        "post-push-graph-update",
+        "--payload-json",
+        '{"branch": "neodev-sp"}',
+        "--json",
+    ]
 
 
 def test_install_client_command_defaults_to_plain_text(capsys):
@@ -444,6 +515,7 @@ def test_github_powershell_installer_supports_one_line_remote_install():
     assert "config set-server" in text
     assert "neodev.cmd" in text
     assert "_render_payload" in text
+    assert "_prepare_remote_argv" in text
 
 
 def test_windows_cmd_installer_bypasses_powershell_execution_policy():

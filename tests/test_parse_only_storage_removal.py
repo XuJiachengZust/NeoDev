@@ -9,6 +9,20 @@ class FakeConn:
         self.commits += 1
 
 
+class FailingCommitConn(FakeConn):
+    def commit(self):
+        self.commits += 1
+        raise RuntimeError("commit failed")
+
+
+class FailingSecondCommitConn(FakeConn):
+    def commit(self):
+        self.commits += 1
+        if self.commits == 1:
+            raise RuntimeError("commit failed")
+        raise RuntimeError("failure-state commit failed")
+
+
 def test_refresh_graph_for_branch_replaces_neo4j_branch_graph(monkeypatch):
     from gitnexus_parser.ingestion import pipeline
     from service.services import sync_service
@@ -106,6 +120,402 @@ def test_refresh_graph_for_branch_replaces_neo4j_branch_graph(monkeypatch):
     assert calls["mark_ready"]["node_count"] == 4
     assert calls["mark_ready"]["edge_count"] == 3
     assert conn.commits == 1
+
+
+def test_refresh_graph_for_branch_can_defer_pg_commit_for_atomic_call(monkeypatch):
+    from gitnexus_parser.ingestion import pipeline
+    from service.services import sync_service
+
+    calls = {}
+    graph = object()
+    monkeypatch.setattr(
+        sync_service.project_repo,
+        "find_by_id",
+        lambda conn, project_id: {"id": project_id, "repo_path": "D:/repo"},
+    )
+    monkeypatch.setattr(sync_service, "_resolve_local_repo", lambda project, project_id: "D:/repo")
+    monkeypatch.setattr(sync_service.git_ops, "fetch_repo", lambda local_root: None)
+    monkeypatch.setattr(sync_service.git_ops, "get_head_commit", lambda local_root, branch: "c" * 40)
+    monkeypatch.setattr(sync_service, "_git_checkout", lambda local_root, branch: "main")
+    monkeypatch.setattr(sync_service, "_restore_checkout", lambda local_root, previous_branch, current_branch: None)
+    monkeypatch.setattr(sync_service.branch_graph_repo, "get_by_project_branch", lambda conn, project_id, branch_name: None)
+    monkeypatch.setattr(sync_service.product_version_service, "list_versions_by_project_branch", lambda conn, project_id, branch_name: [])
+    monkeypatch.setattr(sync_service.branch_graph_repo, "upsert", lambda conn, **kwargs: {"id": 9, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "start_refresh_run", lambda conn, **kwargs: {"id": 17, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "mark_ready", lambda conn, **kwargs: calls.setdefault("mark_ready", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "complete_refresh_run", lambda conn, **kwargs: calls.setdefault("complete_run", kwargs))
+    monkeypatch.setattr(
+        sync_service.neo4j_config_service,
+        "load_neo4j_config",
+        lambda project: ({"neo4j_uri": "bolt://neo4j:7687"}, None),
+    )
+    monkeypatch.setattr(sync_service.branch_graph_neo4j_service, "branch_has_graph", lambda **kwargs: False)
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "replace_branch_graph",
+        lambda **kwargs: calls.setdefault("replace", kwargs) or {"status": "updated", "nodes_written": 1, "relationships_written": 1},
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_pipeline",
+        lambda *args, **kwargs: SimpleNamespace(node_count=1, relationship_count=1, file_count=1, graph=graph),
+    )
+
+    conn = FakeConn()
+    result = sync_service.refresh_graph_for_branch(conn, project_id=3, branch="main", commit=False)
+
+    assert result["graph_action"] == "full_replace"
+    assert calls["replace"]["graph"] is graph
+    assert conn.commits == 0
+
+
+def test_refresh_graph_for_branch_captures_neo4j_snapshot_for_atomic_restore(monkeypatch):
+    from gitnexus_parser.ingestion import pipeline
+    from service.services import sync_service
+
+    calls = {}
+    graph = object()
+    monkeypatch.setattr(
+        sync_service.project_repo,
+        "find_by_id",
+        lambda conn, project_id: {"id": project_id, "repo_path": "D:/repo"},
+    )
+    monkeypatch.setattr(sync_service, "_resolve_local_repo", lambda project, project_id: "D:/repo")
+    monkeypatch.setattr(sync_service.git_ops, "fetch_repo", lambda local_root: None)
+    monkeypatch.setattr(sync_service.git_ops, "get_head_commit", lambda local_root, branch: "c" * 40)
+    monkeypatch.setattr(sync_service, "_git_checkout", lambda local_root, branch: "main")
+    monkeypatch.setattr(sync_service, "_restore_checkout", lambda local_root, previous_branch, current_branch: None)
+    monkeypatch.setattr(sync_service.branch_graph_repo, "get_by_project_branch", lambda conn, project_id, branch_name: None)
+    monkeypatch.setattr(sync_service.product_version_service, "list_versions_by_project_branch", lambda conn, project_id, branch_name: [])
+    monkeypatch.setattr(sync_service.branch_graph_repo, "upsert", lambda conn, **kwargs: {"id": 9, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "start_refresh_run", lambda conn, **kwargs: {"id": 17, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "mark_ready", lambda conn, **kwargs: calls.setdefault("mark_ready", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "complete_refresh_run", lambda conn, **kwargs: calls.setdefault("complete_run", kwargs))
+    monkeypatch.setattr(
+        sync_service.neo4j_config_service,
+        "load_neo4j_config",
+        lambda project: ({"neo4j_uri": "bolt://neo4j:7687"}, None),
+    )
+    monkeypatch.setattr(sync_service.branch_graph_neo4j_service, "branch_has_graph", lambda **kwargs: False)
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "snapshot_branch_graph",
+        lambda **kwargs: calls.setdefault("snapshot", kwargs) or {"project_id": kwargs["project_id"], "branch_name": kwargs["branch_name"]},
+    )
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "replace_branch_graph",
+        lambda **kwargs: calls.setdefault("replace", kwargs) or {"status": "updated", "nodes_written": 1, "relationships_written": 1},
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_pipeline",
+        lambda *args, **kwargs: SimpleNamespace(node_count=1, relationship_count=1, file_count=1, graph=graph),
+    )
+
+    conn = FakeConn()
+    result = sync_service.refresh_graph_for_branch(
+        conn,
+        project_id=3,
+        branch="main",
+        commit=False,
+        restore_neo4j_on_error=True,
+    )
+
+    assert calls["snapshot"]["project_id"] == 3
+    assert calls["snapshot"]["branch_name"] == "main"
+    assert result["_neo4j_restore"]["config"] == {"neo4j_uri": "bolt://neo4j:7687"}
+    assert result["_neo4j_restore"]["snapshot"]["branch_name"] == "main"
+    assert conn.commits == 0
+
+
+def test_refresh_graph_for_branch_restores_neo4j_when_pg_commit_fails(monkeypatch):
+    from gitnexus_parser.ingestion import pipeline
+    from service.services import sync_service
+
+    calls = {}
+    graph = object()
+    monkeypatch.setattr(
+        sync_service.project_repo,
+        "find_by_id",
+        lambda conn, project_id: {"id": project_id, "repo_path": "D:/repo"},
+    )
+    monkeypatch.setattr(sync_service, "_resolve_local_repo", lambda project, project_id: "D:/repo")
+    monkeypatch.setattr(sync_service.git_ops, "fetch_repo", lambda local_root: None)
+    monkeypatch.setattr(sync_service.git_ops, "get_head_commit", lambda local_root, branch: "c" * 40)
+    monkeypatch.setattr(sync_service, "_git_checkout", lambda local_root, branch: "main")
+    monkeypatch.setattr(sync_service, "_restore_checkout", lambda local_root, previous_branch, current_branch: None)
+    monkeypatch.setattr(sync_service.branch_graph_repo, "get_by_project_branch", lambda conn, project_id, branch_name: None)
+    monkeypatch.setattr(sync_service.product_version_service, "list_versions_by_project_branch", lambda conn, project_id, branch_name: [])
+    monkeypatch.setattr(sync_service.branch_graph_repo, "upsert", lambda conn, **kwargs: {"id": 9, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "start_refresh_run", lambda conn, **kwargs: {"id": 17, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "mark_ready", lambda conn, **kwargs: calls.setdefault("mark_ready", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "complete_refresh_run", lambda conn, **kwargs: calls.setdefault("complete_run", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "mark_failed", lambda conn, **kwargs: calls.setdefault("mark_failed", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "fail_refresh_run", lambda conn, **kwargs: calls.setdefault("fail_run", kwargs))
+    monkeypatch.setattr(
+        sync_service.neo4j_config_service,
+        "load_neo4j_config",
+        lambda project: ({"neo4j_uri": "bolt://neo4j:7687"}, None),
+    )
+    monkeypatch.setattr(sync_service.branch_graph_neo4j_service, "branch_has_graph", lambda **kwargs: False)
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "snapshot_branch_graph",
+        lambda **kwargs: {"project_id": kwargs["project_id"], "branch_name": kwargs["branch_name"]},
+    )
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "replace_branch_graph",
+        lambda **kwargs: {"status": "updated", "nodes_written": 1, "relationships_written": 1},
+    )
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "restore_branch_graph_snapshot",
+        lambda **kwargs: calls.setdefault("restore", kwargs) or {"status": "restored"},
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_pipeline",
+        lambda *args, **kwargs: SimpleNamespace(node_count=1, relationship_count=1, file_count=1, graph=graph),
+    )
+
+    conn = FailingCommitConn()
+    try:
+        sync_service.refresh_graph_for_branch(
+            conn,
+            project_id=3,
+            branch="main",
+            commit=True,
+            commit_failure_state=False,
+            restore_neo4j_on_error=True,
+        )
+    except RuntimeError as exc:
+        assert "commit failed" in str(exc)
+    else:
+        raise AssertionError("expected commit failure")
+
+    assert calls["restore"]["snapshot"]["project_id"] == 3
+    assert calls["mark_failed"]["graph_id"] == 9
+    assert calls["fail_run"]["run_id"] == 17
+    assert conn.commits == 1
+
+
+def test_refresh_graph_for_branch_reports_rollback_failed_when_neo4j_restore_fails(monkeypatch):
+    from gitnexus_parser.ingestion import pipeline
+    from service.services import sync_service
+
+    calls = {}
+    graph = object()
+    monkeypatch.setattr(
+        sync_service.project_repo,
+        "find_by_id",
+        lambda conn, project_id: {"id": project_id, "repo_path": "D:/repo"},
+    )
+    monkeypatch.setattr(sync_service, "_resolve_local_repo", lambda project, project_id: "D:/repo")
+    monkeypatch.setattr(sync_service.git_ops, "fetch_repo", lambda local_root: None)
+    monkeypatch.setattr(sync_service.git_ops, "get_head_commit", lambda local_root, branch: "c" * 40)
+    monkeypatch.setattr(sync_service, "_git_checkout", lambda local_root, branch: "main")
+    monkeypatch.setattr(sync_service, "_restore_checkout", lambda local_root, previous_branch, current_branch: None)
+    monkeypatch.setattr(sync_service.branch_graph_repo, "get_by_project_branch", lambda conn, project_id, branch_name: None)
+    monkeypatch.setattr(sync_service.product_version_service, "list_versions_by_project_branch", lambda conn, project_id, branch_name: [])
+    monkeypatch.setattr(sync_service.branch_graph_repo, "upsert", lambda conn, **kwargs: {"id": 9, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "start_refresh_run", lambda conn, **kwargs: {"id": 17, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "mark_ready", lambda conn, **kwargs: calls.setdefault("mark_ready", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "complete_refresh_run", lambda conn, **kwargs: calls.setdefault("complete_run", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "mark_failed", lambda conn, **kwargs: calls.setdefault("mark_failed", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "fail_refresh_run", lambda conn, **kwargs: calls.setdefault("fail_run", kwargs))
+    monkeypatch.setattr(
+        sync_service.neo4j_config_service,
+        "load_neo4j_config",
+        lambda project: ({"neo4j_uri": "bolt://neo4j:7687"}, None),
+    )
+    monkeypatch.setattr(sync_service.branch_graph_neo4j_service, "branch_has_graph", lambda **kwargs: False)
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "snapshot_branch_graph",
+        lambda **kwargs: {"project_id": kwargs["project_id"], "branch_name": kwargs["branch_name"]},
+    )
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "replace_branch_graph",
+        lambda **kwargs: {"status": "updated", "nodes_written": 1, "relationships_written": 1},
+    )
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "restore_branch_graph_snapshot",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("restore failed")),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_pipeline",
+        lambda *args, **kwargs: SimpleNamespace(node_count=1, relationship_count=1, file_count=1, graph=graph),
+    )
+
+    conn = FailingCommitConn()
+    try:
+        sync_service.refresh_graph_for_branch(
+            conn,
+            project_id=3,
+            branch="main",
+            commit=True,
+            commit_failure_state=False,
+            restore_neo4j_on_error=True,
+        )
+    except sync_service.GraphRefreshRollbackError as exc:
+        assert exc.rollback_status == "rollback_failed"
+        assert str(exc.restore_error) == "restore failed"
+    else:
+        raise AssertionError("expected graph refresh rollback failure")
+
+    assert calls["mark_failed"]["graph_id"] == 9
+    assert calls["fail_run"]["run_id"] == 17
+    assert conn.commits == 1
+
+
+def test_refresh_graph_for_branch_restore_failure_is_not_masked_by_failure_state_commit(monkeypatch):
+    from gitnexus_parser.ingestion import pipeline
+    from service.services import sync_service
+
+    calls = {}
+    graph = object()
+    monkeypatch.setattr(
+        sync_service.project_repo,
+        "find_by_id",
+        lambda conn, project_id: {"id": project_id, "repo_path": "D:/repo"},
+    )
+    monkeypatch.setattr(sync_service, "_resolve_local_repo", lambda project, project_id: "D:/repo")
+    monkeypatch.setattr(sync_service.git_ops, "fetch_repo", lambda local_root: None)
+    monkeypatch.setattr(sync_service.git_ops, "get_head_commit", lambda local_root, branch: "c" * 40)
+    monkeypatch.setattr(sync_service, "_git_checkout", lambda local_root, branch: "main")
+    monkeypatch.setattr(sync_service, "_restore_checkout", lambda local_root, previous_branch, current_branch: None)
+    monkeypatch.setattr(sync_service.branch_graph_repo, "get_by_project_branch", lambda conn, project_id, branch_name: None)
+    monkeypatch.setattr(sync_service.product_version_service, "list_versions_by_project_branch", lambda conn, project_id, branch_name: [])
+    monkeypatch.setattr(sync_service.branch_graph_repo, "upsert", lambda conn, **kwargs: {"id": 9, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "start_refresh_run", lambda conn, **kwargs: {"id": 17, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "mark_ready", lambda conn, **kwargs: calls.setdefault("mark_ready", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "complete_refresh_run", lambda conn, **kwargs: calls.setdefault("complete_run", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "mark_failed", lambda conn, **kwargs: calls.setdefault("mark_failed", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "fail_refresh_run", lambda conn, **kwargs: calls.setdefault("fail_run", kwargs))
+    monkeypatch.setattr(
+        sync_service.neo4j_config_service,
+        "load_neo4j_config",
+        lambda project: ({"neo4j_uri": "bolt://neo4j:7687"}, None),
+    )
+    monkeypatch.setattr(sync_service.branch_graph_neo4j_service, "branch_has_graph", lambda **kwargs: False)
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "snapshot_branch_graph",
+        lambda **kwargs: {"project_id": kwargs["project_id"], "branch_name": kwargs["branch_name"]},
+    )
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "replace_branch_graph",
+        lambda **kwargs: {"status": "updated", "nodes_written": 1, "relationships_written": 1},
+    )
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "restore_branch_graph_snapshot",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("restore failed")),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_pipeline",
+        lambda *args, **kwargs: SimpleNamespace(node_count=1, relationship_count=1, file_count=1, graph=graph),
+    )
+
+    conn = FailingSecondCommitConn()
+    try:
+        sync_service.refresh_graph_for_branch(
+            conn,
+            project_id=3,
+            branch="main",
+            commit=True,
+            restore_neo4j_on_error=True,
+        )
+    except sync_service.GraphRefreshRollbackError as exc:
+        assert exc.rollback_status == "rollback_failed"
+        assert str(exc.restore_error) == "restore failed"
+        assert str(exc.commit_error) == "failure-state commit failed"
+    else:
+        raise AssertionError("expected graph refresh rollback failure")
+
+    assert conn.commits == 2
+    assert calls["mark_failed"]["graph_id"] == 9
+    assert calls["fail_run"]["run_id"] == 17
+
+
+def test_refresh_graph_for_branch_does_not_restore_when_neo4j_replace_transaction_fails(monkeypatch):
+    from gitnexus_parser.ingestion import pipeline
+    from service.services import sync_service
+
+    calls = {}
+    graph = object()
+    monkeypatch.setattr(
+        sync_service.project_repo,
+        "find_by_id",
+        lambda conn, project_id: {"id": project_id, "repo_path": "D:/repo"},
+    )
+    monkeypatch.setattr(sync_service, "_resolve_local_repo", lambda project, project_id: "D:/repo")
+    monkeypatch.setattr(sync_service.git_ops, "fetch_repo", lambda local_root: None)
+    monkeypatch.setattr(sync_service.git_ops, "get_head_commit", lambda local_root, branch: "c" * 40)
+    monkeypatch.setattr(sync_service, "_git_checkout", lambda local_root, branch: "main")
+    monkeypatch.setattr(sync_service, "_restore_checkout", lambda local_root, previous_branch, current_branch: None)
+    monkeypatch.setattr(sync_service.branch_graph_repo, "get_by_project_branch", lambda conn, project_id, branch_name: None)
+    monkeypatch.setattr(sync_service.product_version_service, "list_versions_by_project_branch", lambda conn, project_id, branch_name: [])
+    monkeypatch.setattr(sync_service.branch_graph_repo, "upsert", lambda conn, **kwargs: {"id": 9, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "start_refresh_run", lambda conn, **kwargs: {"id": 17, **kwargs})
+    monkeypatch.setattr(sync_service.branch_graph_repo, "mark_ready", lambda conn, **kwargs: calls.setdefault("mark_ready", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "complete_refresh_run", lambda conn, **kwargs: calls.setdefault("complete_run", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "mark_failed", lambda conn, **kwargs: calls.setdefault("mark_failed", kwargs))
+    monkeypatch.setattr(sync_service.branch_graph_repo, "fail_refresh_run", lambda conn, **kwargs: calls.setdefault("fail_run", kwargs))
+    monkeypatch.setattr(
+        sync_service.neo4j_config_service,
+        "load_neo4j_config",
+        lambda project: ({"neo4j_uri": "bolt://neo4j:7687"}, None),
+    )
+    monkeypatch.setattr(sync_service.branch_graph_neo4j_service, "branch_has_graph", lambda **kwargs: False)
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "snapshot_branch_graph",
+        lambda **kwargs: {"project_id": kwargs["project_id"], "branch_name": kwargs["branch_name"]},
+    )
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "replace_branch_graph",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("neo4j write failed")),
+    )
+    monkeypatch.setattr(
+        sync_service.branch_graph_neo4j_service,
+        "restore_branch_graph_snapshot",
+        lambda **kwargs: calls.setdefault("restore", kwargs),
+    )
+    monkeypatch.setattr(
+        pipeline,
+        "run_pipeline",
+        lambda *args, **kwargs: SimpleNamespace(node_count=1, relationship_count=1, file_count=1, graph=graph),
+    )
+
+    conn = FakeConn()
+    try:
+        sync_service.refresh_graph_for_branch(
+            conn,
+            project_id=3,
+            branch="main",
+            commit=False,
+            commit_failure_state=False,
+            restore_neo4j_on_error=True,
+        )
+    except RuntimeError as exc:
+        assert "neo4j write failed" in str(exc)
+        assert not isinstance(exc, sync_service.GraphRefreshRollbackError)
+    else:
+        raise AssertionError("expected Neo4j replace failure")
+
+    assert "restore" not in calls
+    assert calls["mark_failed"]["graph_id"] == 9
+    assert calls["fail_run"]["run_id"] == 17
+    assert conn.commits == 0
 
 
 def test_refresh_graph_for_branch_skips_unchanged_existing_neo4j_graph(monkeypatch):

@@ -37,7 +37,7 @@ def classify_paths(paths: list[str]) -> dict:
         required_workflow = "doc binding list -> doc import -> doc change register"
     elif code_paths:
         scope = "code"
-        required_workflow = "verify DocChange-ID -> git verify-doc-change -> project refresh-graph after push"
+        required_workflow = "verify DocChange-ID -> git push -> post-push atomic graph update hook"
     else:
         scope = "empty"
         required_workflow = "no staged changes"

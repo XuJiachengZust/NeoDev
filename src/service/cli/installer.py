@@ -21,6 +21,13 @@ import urllib.request
 CONFIG_DIR = Path(os.environ.get("NEODEV_CONFIG_DIR") or r"{config_dir}")
 
 
+class LocalPayloadFileError(Exception):
+    def __init__(self, payload_file, error):
+        super().__init__(str(error))
+        self.payload_file = payload_file
+        self.error = error
+
+
 def _config_path():
     return CONFIG_DIR / "config.json"
 
@@ -139,6 +146,52 @@ def _print_payload(payload, json_output=False):
     sys.stdout.write(_render_payload(payload, json_output=json_output))
 
 
+def _client_error(command, category, message, details=None):
+    return {{
+        "ok": False,
+        "command": command,
+        "timestamp": None,
+        "data": None,
+        "errors": [{{"category": category, "message": message, "details": details or {{}}}}],
+    }}
+
+
+def _prepare_remote_argv(argv):
+    if argv[:2] != ["git", "post-push-graph-update"]:
+        return list(argv)
+    if "--payload-file" not in argv and not any(item.startswith("--payload-file=") for item in argv):
+        return list(argv)
+    if "--payload-json" in argv or any(item.startswith("--payload-json=") for item in argv):
+        return list(argv)
+
+    prepared = []
+    index = 0
+    while index < len(argv):
+        item = argv[index]
+        if item == "--payload-file":
+            if index + 1 >= len(argv):
+                return list(argv)
+            payload_file = argv[index + 1]
+            prepared.extend(["--payload-json", _read_local_payload(payload_file)])
+            index += 2
+            continue
+        if item.startswith("--payload-file="):
+            payload_file = item.split("=", 1)[1]
+            prepared.extend(["--payload-json", _read_local_payload(payload_file)])
+            index += 1
+            continue
+        prepared.append(item)
+        index += 1
+    return prepared
+
+
+def _read_local_payload(payload_file):
+    try:
+        return Path(payload_file).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise LocalPayloadFileError(payload_file, exc) from exc
+
+
 def _execute_remote(server_url, argv):
     endpoint = server_url.rstrip("/") + "/api/cli/execute"
     request = urllib.request.Request(
@@ -237,6 +290,16 @@ def main(argv=None):
         cleaned.append(item)
         index += 1
     argv = cleaned
+    try:
+        argv = _prepare_remote_argv(argv)
+    except LocalPayloadFileError as exc:
+        _print_payload(_client_error(
+            "git post-push-graph-update",
+            "invalid_argument",
+            "payload file is not readable",
+            {{"payload_file": exc.payload_file, "error": str(exc.error), "rollback_status": "not_needed"}},
+        ), json_output=json_output)
+        return 2
     server_url = server_url or os.environ.get("NEODEV_API_URL") or _load_server_url()
     if not server_url:
         _print_payload(_error("remote server is not configured; run: neodev config set-server <url>"), json_output=json_output)

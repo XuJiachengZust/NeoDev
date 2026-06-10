@@ -34,6 +34,7 @@ class FakeTx:
 class FakeSession:
     def __init__(self, row=None):
         self.calls = []
+        self.write_functions = []
         self.row = row
 
     def __enter__(self):
@@ -47,6 +48,7 @@ class FakeSession:
         return FakeResult(self.row)
 
     def execute_write(self, fn, **kwargs):
+        self.write_functions.append(getattr(fn, "__name__", "unknown"))
         return fn(FakeTx(self), **kwargs)
 
 
@@ -216,6 +218,78 @@ def test_replace_branch_graph_scopes_nodes_by_project_branch(monkeypatch):
     assert result["nodes_written"] == 3
     assert result["relationships_written"] == 3
     assert driver.closed is True
+
+
+def test_replace_branch_graph_uses_one_write_transaction_for_branch_data(monkeypatch):
+    from service.services import branch_graph_neo4j_service
+
+    driver = FakeDriver()
+    graph = create_knowledge_graph()
+    graph.addNode({"id": "File:src/app.py", "label": "File", "properties": {"filePath": "src/app.py"}})
+    monkeypatch.setattr(branch_graph_neo4j_service, "_create_driver", lambda config: driver)
+    monkeypatch.setattr(
+        branch_graph_neo4j_service.doc_code_link_repository,
+        "list_active_for_branch",
+        lambda conn, project_id, branch_name: [],
+    )
+    monkeypatch.setattr(
+        branch_graph_neo4j_service.graph_management_repository,
+        "list_active_nodes_for_branch",
+        lambda conn, project_id, branch_name: [],
+    )
+    monkeypatch.setattr(
+        branch_graph_neo4j_service.graph_management_repository,
+        "list_active_edges_for_branch",
+        lambda conn, project_id, branch_name: [],
+    )
+
+    branch_graph_neo4j_service.replace_branch_graph(
+        conn=object(),
+        config={"neo4j_uri": "bolt://neo4j:7687"},
+        database=None,
+        graph=graph,
+        project_id=3,
+        branch_name="main",
+        graph_id=9,
+        head_commit="abc",
+    )
+
+    write_functions = [
+        name
+        for session in driver.sessions
+        for name in session.write_functions
+    ]
+    assert write_functions == ["_replace_branch_graph_tx"]
+
+
+def test_restore_snapshot_replaces_endpoint_properties_exactly():
+    from service.services import branch_graph_neo4j_service
+
+    session = FakeSession()
+    tx = FakeTx(session)
+
+    branch_graph_neo4j_service._merge_snapshot_node(
+        tx,
+        labels=["Project"],
+        props={"project_id": 3, "id": "project:3", "name": "NeoDev"},
+    )
+    branch_graph_neo4j_service._merge_snapshot_relationship(
+        tx,
+        relationship={
+            "start_labels": ["Project"],
+            "start_props": {"project_id": 3, "id": "project:3", "name": "NeoDev"},
+            "type": "HAS_BRANCH_GRAPH",
+            "props": {"graph_id": 9, "project_id": 3, "branch_name": "main"},
+            "end_labels": ["BranchGraph"],
+            "end_props": {"graph_id": 9, "project_id": 3, "branch_name": "main"},
+        },
+    )
+
+    queries = "\n".join(query for query, _ in session.calls)
+    assert "SET node = $props" in queries
+    assert "SET rel = $props" in queries
+    assert "SET node += $props" not in queries
+    assert "SET rel += $props" not in queries
 
 
 def test_replace_branch_graph_projects_manual_cross_project_edges(monkeypatch):

@@ -1,4 +1,6 @@
 from contextlib import closing
+import json
+from pathlib import Path
 
 import psycopg2
 
@@ -6,6 +8,7 @@ from service.cli.errors import CliError
 from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
 from service.services import git_consistency_service
+from service.services import post_push_update_service
 
 
 def register(subparsers) -> None:
@@ -21,6 +24,15 @@ def register(subparsers) -> None:
     verify_parser.set_defaults(
         handler=handle_verify_doc_change,
         command_name="git verify-doc-change",
+    )
+
+    post_push_parser = git_subparsers.add_parser("post-push-graph-update")
+    post_push_parser.add_argument("--payload-file")
+    post_push_parser.add_argument("--payload-json")
+    post_push_parser.add_argument("--json", action="store_true", dest="json_output")
+    post_push_parser.set_defaults(
+        handler=handle_post_push_graph_update,
+        command_name="git post-push-graph-update",
     )
 
     dangerous_parser = git_subparsers.add_parser("dangerous-commit")
@@ -85,6 +97,36 @@ def handle_verify_doc_change(args) -> dict:
     return _with_db(run)
 
 
+def handle_post_push_graph_update(args) -> dict:
+    payload = _load_post_push_payload(args)
+    try:
+        conn = psycopg2.connect(get_database_url())
+    except psycopg2.Error as exc:
+        raise CliError(
+            category="internal_error",
+            message="database connection failed",
+            details={"database_error": str(exc), "rollback_status": "not_needed"},
+        ) from exc
+    try:
+        with closing(conn):
+            result = post_push_update_service.apply_post_push_update(conn, payload)
+            return build_success_payload(args.command_name, result)
+    except post_push_update_service.PostPushUpdateError as exc:
+        raise CliError(
+            category=exc.category,
+            message=exc.message,
+            details=exc.details,
+        ) from exc
+    except CliError:
+        raise
+    except psycopg2.Error as exc:
+        raise CliError(
+            category="internal_error",
+            message="database operation failed",
+            details={"database_error": str(exc), "rollback_status": "rollback_failed"},
+        ) from exc
+
+
 def handle_dangerous_commit_list(args) -> dict:
     def run(conn):
         result = git_consistency_service.list_dangerous_commits(
@@ -94,6 +136,31 @@ def handle_dangerous_commit_list(args) -> dict:
         return build_success_payload(args.command_name, result)
 
     return _with_db(run)
+
+
+def _load_post_push_payload(args) -> dict:
+    if bool(args.payload_file) == bool(args.payload_json):
+        raise CliError(
+            category="invalid_argument",
+            message="provide exactly one of --payload-file or --payload-json",
+            details={"rollback_status": "not_needed"},
+        )
+    try:
+        if args.payload_file:
+            return json.loads(Path(args.payload_file).read_text(encoding="utf-8"))
+        return json.loads(args.payload_json)
+    except OSError as exc:
+        raise CliError(
+            category="invalid_argument",
+            message="payload file is not readable",
+            details={"payload_file": args.payload_file, "error": str(exc), "rollback_status": "not_needed"},
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise CliError(
+            category="invalid_argument",
+            message="payload must be valid JSON",
+            details={"error": str(exc), "rollback_status": "not_needed"},
+        ) from exc
 
 
 def handle_dangerous_commit_resolve(args) -> dict:
