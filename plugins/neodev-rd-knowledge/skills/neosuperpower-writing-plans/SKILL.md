@@ -53,6 +53,15 @@ Before defining tasks, map out which files will be created or modified and what 
 
 This structure informs the task decomposition. Each task should produce self-contained changes that make sense independently.
 
+## Code-Document Coverage
+
+Before defining implementation tasks, map every planned code change to document coverage:
+
+- Existing approved requirement, PRD, or technical design `doc_id` that authorizes the change.
+- Or a controlled document update this plan will create or modify before code edits.
+
+If a task changes code and has neither, the plan must stop before implementation and ask the human partner whether to create/update documents first or explicitly proceed without document coverage. Record the answer in the plan; do not hide the gap in assumptions.
+
 ## Bite-Sized Task Granularity
 
 **Each step is one action (2-5 minutes):**

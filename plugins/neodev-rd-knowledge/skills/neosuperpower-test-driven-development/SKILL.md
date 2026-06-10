@@ -28,6 +28,15 @@ Write the test first. Watch it fail. Write minimal code to pass.
 
 Thinking "skip TDD just this once"? Stop. That's rationalization.
 
+## Before Code: Document Coverage Gate
+
+Before editing production code, identify the local files, commands, APIs, graph nodes, or workflows you intend to change and verify one of these is true:
+
+- An existing approved controlled document, requirement, or technical design covers the change and can be used for the DocChange trail.
+- The current worktree includes a corresponding controlled document update that explains the change.
+
+If neither is true, stop before code edits and ask your human partner whether to create/update documents first or explicitly proceed without document coverage. Do not treat an implementation plan as coverage unless it links to the real requirement or design `doc_id` it implements.
+
 ## The Iron Law
 
 ```
@@ -272,6 +281,7 @@ Tests-first force edge case discovery before implementing. Tests-after verify yo
 ## Red Flags - STOP and Start Over
 
 - Code before test
+- Code before checking document coverage
 - Test after implementation
 - Test passes immediately
 - Can't explain why test failed

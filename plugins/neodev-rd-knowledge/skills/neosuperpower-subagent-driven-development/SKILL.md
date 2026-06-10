@@ -41,6 +41,8 @@ digraph when_to_use {
 
 ## The Process
 
+Before dispatching any implementer subagent, run the document coverage gate over the plan: every task that changes code must map to an approved controlled document, requirement, or technical design `doc_id`, or include a controlled document update that happens before code edits. If coverage is missing, stop and ask the human partner whether to create/update documents first or explicitly proceed without document coverage.
+
 ```dot
 digraph process {
     rankdir=TB;
@@ -237,6 +239,7 @@ Done!
 
 **Never:**
 - Start implementation on main/master branch without explicit user consent
+- Dispatch an implementer before checking code-change document coverage
 - Skip reviews (spec compliance OR code quality)
 - Proceed with unfixed issues
 - Dispatch multiple implementation subagents in parallel (conflicts)

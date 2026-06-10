@@ -27,6 +27,7 @@ Workflow expectations:
 - Resolve document bindings with `doc binding list --product-code <product_code> --json`.
 - If no active version-scoped binding exists, create one with `doc binding create --product-code <product_code> --version-name <version_name> --project-name <project_name> --repo-path|--repo-url <source> --branch <branch> --json`.
 - Before `doc import` or `doc change register`, validate controlled documents with the plugin validators.
+- Before changing code, run the document coverage gate: identify the local files, commands, APIs, graph nodes, or workflows to be modified; verify an existing approved controlled document or current worktree document update covers that change; if no matching document change exists, stop before editing code and ask the user whether to create/update docs first or explicitly proceed without document coverage.
 - Document-only commits must complete the document workflow first: version-scoped binding, `doc scan`, `doc import`, then `doc change register` from imported document ids.
 - Code-only commits must carry exactly one valid `DocChange-ID` trailer; the value must be the imported document's 40-character Git commit hash. Pre-push verification uses Git DocChange checks; successful pushes are handled by the post-push atomic graph update hook, so interpret that result instead of manually refreshing the branch graph.
 - Mixed document and code commits are not allowed; split them.

@@ -26,6 +26,16 @@ Task tool (general-purpose):
 
     **Ask them now.** Raise any concerns before starting work.
 
+    ## Document Coverage Gate
+
+    Before editing code, verify this task either:
+    - References an approved controlled document, requirement, or technical design that covers the change
+    - Or includes a controlled document update to make before code edits
+    - Or includes explicit user confirmation to proceed without document coverage
+
+    If none of those are true, stop and report NEEDS_CONTEXT. Do not edit code until the
+    controller provides document coverage or explicit user confirmation.
+
     ## Your Job
 
     Once you're clear on requirements:

@@ -53,6 +53,10 @@ Task tool (general-purpose):
     - Did they solve the wrong problem?
     - Did they implement the right feature but wrong way?
 
+    **Document coverage:**
+    - Did the code change map to an approved controlled document, requirement, or technical design?
+    - If not, did the task include a controlled document update before code edits or explicit user confirmation to proceed without document coverage?
+
     **Verify by reading code, not by trusting report.**
 
     Report:

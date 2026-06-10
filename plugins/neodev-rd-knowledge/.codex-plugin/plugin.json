@@ -32,7 +32,7 @@
   "interface": {
     "displayName": "NeoDev RD Knowledge",
     "shortDescription": "Run NeoSuperpower workflows for NeoDev CLI work, planning, browser acceptance testing, TDD, debugging, and verification.",
-    "longDescription": "Official NeoSuperpower workflow layer for NeoDev RD knowledge operations. It embeds the former Superpowers planning, test-first implementation, systematic debugging, code-review, delegation, and completion-verification skill bodies under NeoSuperpower skill names, plus strict browser acceptance testing. Product/version discovery, version-scoped document import, DocChange registration, graph impact analysis, branch graph refresh, and Git verification stay behind the configured local neodev CLI client.",
+    "longDescription": "Official NeoSuperpower workflow layer for NeoDev RD knowledge operations. It embeds the former Superpowers planning, test-first implementation, systematic debugging, code-review, delegation, and completion-verification skill bodies under NeoSuperpower skill names, plus strict browser acceptance testing. Product/version discovery, version-scoped document import, DocChange registration, graph impact analysis, branch graph refresh, and Git verification stay behind the configured local neodev CLI client. Code changes pass a document coverage gate before implementation edits.",
     "developerName": "NeoDev",
     "category": "Developer Tools",
     "capabilities": [
@@ -44,6 +44,7 @@
       "Embedded NeoSuperpower process skills",
       "Requirements and design planning",
       "Test-driven implementation",
+      "Code-change document coverage gate",
       "Systematic debugging",
       "Code review and completion verification",
       "Requirements and PRD refinement",
@@ -56,6 +57,7 @@
       "Use NeoDev to inspect this product version and branch context.",
       "Use NeoDev to import the controlled docs for this version.",
       "Use NeoDev to register the DocChange and estimate implementation impact.",
+      "Use NeoDev to check document coverage before changing code.",
       "Use NeoDev to interpret the post-push atomic graph update result.",
       "Use browser acceptance testing to validate this page with screenshots, network evidence, and a report."
     ],
