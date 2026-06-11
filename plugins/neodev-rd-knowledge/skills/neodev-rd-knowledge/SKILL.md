@@ -17,6 +17,17 @@ NeoSuperpower is the plugin-owned workflow layer. Former Superpowers planning, t
 
 Workflow weak orchestration lives in `core-workflows.json` as `neosuperpower.weak_orchestration` plus per-workflow `neosuperpower_awareness`. These fields make agents aware of relevant phases, suggested embedded skills, and evidence focus without changing the explicit CLI `steps`. Use them as soft routing and verification hints; do not treat them as extra mandatory CLI commands.
 
+## Primary Intent Entries
+
+Default user-facing routing is four intents:
+
+- context: `neodev doctor`, `neodev context show`, `neodev setup repo`
+- docs: `neodev docs sync`
+- change: `neodev change start`, `neodev change impact`
+- submit: `neodev git check`, `neodev status`
+
+Use atomic commands as advanced troubleshooting references, compatibility paths, or hook/script internals. Do not recommend internal hook-only commands as normal user entry points. When a primary command lacks enough context, report the missing input and the next primary intent instead of hand-stitching multiple atomics.
+
 ## Session Checks
 
 Before write workflows, high-risk reads, commit/push checks, or verification:

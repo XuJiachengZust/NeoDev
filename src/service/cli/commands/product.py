@@ -5,6 +5,7 @@ from contextlib import closing
 import psycopg2
 
 from service.cli.errors import CliError
+from service.cli.help_visibility import hide_subparser_choices
 from service.cli.output import build_success_payload
 from service.dependencies import get_database_url
 from service.repositories import branch_graph_repository as branch_graph_repo
@@ -149,13 +150,7 @@ def register(subparsers) -> None:
         handler=handle_version_watch_status,
         command_name="product version watch-status",
     )
-    _hide_subparser_choices(version_subparsers, {"analyze", "analyze-status", "watch-status"})
-
-
-def _hide_subparser_choices(subparsers, hidden_names: set[str]) -> None:
-    subparsers._choices_actions = [
-        action for action in subparsers._choices_actions if action.dest not in hidden_names
-    ]
+    hide_subparser_choices(version_subparsers, {"analyze", "analyze-status", "watch-status"})
 
 
 def _add_product_locator(parser) -> None:

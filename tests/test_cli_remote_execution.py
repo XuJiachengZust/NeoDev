@@ -292,7 +292,54 @@ def test_cli_execute_api_returns_help_payload_instead_of_raising():
     assert body["exit_code"] == 0
     assert body["payload"]["ok"] is True
     assert body["payload"]["command"] == "help"
-    assert "usage: neodev" in body["payload"]["data"]["text"]
+    assert "NeoDev primary commands:" in body["payload"]["data"]["text"]
+    assert "neodev help --all" in body["payload"]["data"]["text"]
+
+
+def test_cli_execute_api_returns_help_all_json_metadata():
+    from service.main import app
+
+    with TestClient(app) as client:
+        response = client.post("/api/cli/execute", json={"argv": ["help", "--all", "--json"]})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exit_code"] == 0
+    payload = body["payload"]
+    assert payload["command"] == "help all"
+    commands = {item["command"]: item for item in payload["data"]["commands"]}
+    assert commands["neodev graph edge add"]["visibility"] == "advanced"
+    assert commands["neodev git post-push-graph-update"]["visibility"] == "internal"
+
+
+def test_cli_execute_api_runs_primary_workflow_payloads():
+    from service.main import app
+
+    with TestClient(app) as client:
+        response = client.post("/api/cli/execute", json={"argv": ["docs", "sync", "--json"]})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exit_code"] == 0
+    payload = body["payload"]
+    assert payload["command"] == "docs sync"
+    assert payload["data"]["scenario_id"] == "S02"
+    assert payload["data"]["steps"]
+    assert payload["data"]["next_actions"][0]["command"] == "neodev change start"
+
+
+def test_cli_execute_api_keeps_advanced_commands_accessible():
+    from service.main import app
+
+    with TestClient(app) as client:
+        response = client.post("/api/cli/execute", json={"argv": ["graph", "edge", "add", "--help"]})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exit_code"] == 0
+    assert body["payload"]["command"] == "help"
+    assert "--from-node-id" in body["payload"]["data"]["text"]
+    assert "--to-node-id" in body["payload"]["data"]["text"]
 
 
 def test_code_ai_preprocess_routes_are_not_registered():

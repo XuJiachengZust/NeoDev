@@ -157,6 +157,20 @@ def test_official_skill_is_bundled_and_points_to_the_shared_workflow_contract():
     assert "## Agent Post-Push Automation" in skill
 
 
+def test_official_skill_prefers_primary_intent_commands():
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+    assert "## Primary Intent Entries" in skill
+    for expected in [
+        "context: `neodev doctor`, `neodev context show`, `neodev setup repo`",
+        "docs: `neodev docs sync`",
+        "change: `neodev change start`, `neodev change impact`",
+        "submit: `neodev git check`, `neodev status`",
+    ]:
+        assert expected in skill
+    assert "Use atomic commands as advanced troubleshooting references" in skill
+
+
 def test_official_plugin_guidance_does_not_suggest_manual_post_push_refresh():
     agent_guidance = (PLUGIN_ROOT / "agents" / "neodev-rd-knowledge.md").read_text(encoding="utf-8")
     cursor_rule = (PLUGIN_ROOT / "cursor" / "rules" / "neodev-git-docchange.mdc").read_text(encoding="utf-8")
@@ -166,3 +180,28 @@ def test_official_plugin_guidance_does_not_suggest_manual_post_push_refresh():
     assert "git post-push-graph-update" in combined
     assert "refresh the branch graph after push" not in combined
     assert "neodev project refresh-graph --project-id <project_id> --branch <branch> --json" not in combined
+
+
+def test_official_plugin_commands_are_grouped_by_four_intents():
+    command_root = PLUGIN_ROOT / "commands"
+    command_files = {path.name for path in command_root.glob("*.md")}
+
+    assert command_files == {
+        "neodev-context.md",
+        "neodev-docs.md",
+        "neodev-change.md",
+        "neodev-submit.md",
+    }
+
+    expected = {
+        "neodev-context.md": ["neodev doctor", "neodev context show", "neodev setup repo"],
+        "neodev-docs.md": ["neodev docs sync"],
+        "neodev-change.md": ["neodev change start", "neodev change impact"],
+        "neodev-submit.md": ["neodev git check", "neodev status"],
+    }
+    for filename, commands in expected.items():
+        text = (command_root / filename).read_text(encoding="utf-8")
+        assert "Primary intent entry" in text
+        for command in commands:
+            assert command in text
+        assert "git post-push-graph-update" not in text

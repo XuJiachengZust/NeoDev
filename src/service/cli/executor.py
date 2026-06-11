@@ -4,6 +4,7 @@ import io
 
 from service.cli.commands import register_commands
 from service.cli.errors import CliError, error_to_exit_code
+from service.cli.help_renderer import render_default_help
 from service.cli.output import build_error_payload, build_success_payload
 
 
@@ -21,6 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def execute_local(argv: list[str] | None = None) -> tuple[int, dict]:
+    if argv in (["--help"], ["-h"]):
+        return 0, build_success_payload("help", {"text": render_default_help()})
     parser = build_parser()
     args = None
     stdout = io.StringIO()

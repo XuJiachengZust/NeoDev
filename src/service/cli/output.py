@@ -46,7 +46,7 @@ def render_payload(payload: dict, json_output: bool = False) -> str:
     if json_output:
         return json.dumps(payload, ensure_ascii=False) + "\n"
 
-    if payload.get("command") == "help":
+    if payload.get("command") in {"help", "help all"}:
         text = (payload.get("data") or {}).get("text")
         if isinstance(text, str):
             return text if text.endswith("\n") else text + "\n"

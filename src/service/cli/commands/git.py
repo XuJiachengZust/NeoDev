@@ -6,6 +6,7 @@ import psycopg2
 
 from service.cli.errors import CliError
 from service.cli.output import build_success_payload
+from service.cli.workflow_runner import WorkflowStepSpec, run_workflow
 from service.dependencies import get_database_url
 from service.services import git_consistency_service
 from service.services import post_push_update_service
@@ -14,6 +15,13 @@ from service.services import post_push_update_service
 def register(subparsers) -> None:
     git_parser = subparsers.add_parser("git")
     git_subparsers = git_parser.add_subparsers(dest="git_command", required=True)
+
+    check_parser = git_subparsers.add_parser("check")
+    check_parser.add_argument("--json", action="store_true", dest="json_output")
+    check_parser.set_defaults(
+        handler=handle_git_check,
+        command_name="git check",
+    )
 
     verify_parser = git_subparsers.add_parser("verify-doc-change")
     verify_parser.add_argument("--project-id", type=int, required=True)
@@ -95,6 +103,28 @@ def handle_verify_doc_change(args) -> dict:
         return build_success_payload(args.command_name, result)
 
     return _with_db(run)
+
+
+def handle_git_check(args) -> dict:
+    return build_success_payload(
+        args.command_name,
+        run_workflow(
+            scenario_id="S04",
+            stage="submit",
+            steps=[
+                WorkflowStepSpec("classify_staged_changes", "python plugins/neodev-rd-knowledge/check_git_commit_scope.py", "Classify staged changes and commit scope."),
+                WorkflowStepSpec("verify_docchange_trailer", "neodev git verify-doc-change --json", "Verify required DocChange trailer when code changes are present."),
+                WorkflowStepSpec("check_dangerous_commits", "neodev git dangerous-commit list --json", "Check unresolved dangerous commit records."),
+            ],
+            summary={
+                "commit_scope": "unknown",
+                "required_trailer": "DocChange-ID",
+                "risk_summary": "not_evaluated",
+            },
+            closure_evidence=[{"type": "git", "status": "not_evaluated"}],
+            next_actions=[{"intent": "submit", "command": "neodev git check"}],
+        ),
+    )
 
 
 def handle_post_push_graph_update(args) -> dict:

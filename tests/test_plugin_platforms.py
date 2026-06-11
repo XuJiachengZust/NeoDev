@@ -55,17 +55,17 @@ def test_claude_plugin_contains_commands_agent_and_hook_schema():
     assert manifest["hooks"] == "./hooks/hooks.json"
 
     for command_name in [
-        "neodev-docchange",
-        "neodev-doc-scan",
-        "neodev-graph-impact",
-        "neodev-project-refresh-graph",
+        "neodev-context",
+        "neodev-docs",
+        "neodev-change",
+        "neodev-submit",
     ]:
         command = (PLUGIN_ROOT / "commands" / f"{command_name}.md").read_text(
             encoding="utf-8"
         )
         assert "neodev" in command
         assert "--json" in command
-        assert "remote NeoDev service" in command or "远程 NeoDev 服务" in command
+        assert "Primary intent entry" in command
 
     agent = (PLUGIN_ROOT / "agents" / "neodev-rd-knowledge.md").read_text(
         encoding="utf-8"

@@ -1,5 +1,6 @@
 import json
 import os
+import argparse
 import subprocess
 import sys
 from datetime import datetime
@@ -222,6 +223,111 @@ def test_product_version_analysis_commands_are_hidden_from_standard_help():
     assert "analyze" not in proc.stdout
     assert "analyze-status" not in proc.stdout
     assert "watch-status" not in proc.stdout
+
+
+def test_primary_workflow_commands_are_registered():
+    cases = [
+        ("doctor",),
+        ("context", "show"),
+        ("setup", "repo"),
+        ("docs", "sync"),
+        ("change", "start"),
+        ("change", "impact"),
+        ("git", "check"),
+        ("status",),
+    ]
+
+    for args in cases:
+        proc = _run("neodev.py", *args, "--help")
+        assert proc.returncode == 0, (args, proc.stdout, proc.stderr)
+
+
+def test_default_help_shows_primary_path_and_hides_advanced_commands():
+    proc = _run("neodev.py", "--help")
+
+    assert proc.returncode == 0
+    assert "neodev doctor" in proc.stdout
+    assert "neodev context show" in proc.stdout
+    assert "neodev setup repo" in proc.stdout
+    assert "neodev docs sync" in proc.stdout
+    assert "neodev change start" in proc.stdout
+    assert "neodev change impact" in proc.stdout
+    assert "neodev git check" in proc.stdout
+    assert "neodev status" in proc.stdout
+    assert "neodev help --all" in proc.stdout
+    assert "graph edge add" not in proc.stdout
+    assert "git post-push-graph-update" not in proc.stdout
+    assert "product version analyze" not in proc.stdout
+
+
+def test_help_all_lists_all_visibility_levels_and_advanced_commands():
+    proc = _run("neodev.py", "help", "--all")
+
+    assert proc.returncode == 0
+    assert "Primary" in proc.stdout
+    assert "Advanced" in proc.stdout
+    assert "Internal" in proc.stdout
+    assert "Hidden" in proc.stdout
+    assert "neodev graph edge add" in proc.stdout
+    assert "manual graph mutation" in proc.stdout
+    assert "neodev git post-push-graph-update" in proc.stdout
+    assert "hook-only" in proc.stdout
+    assert "neodev product version analyze" in proc.stdout
+
+
+def test_help_all_json_returns_command_metadata():
+    proc = _run("neodev.py", "help", "--all", "--json")
+
+    assert proc.returncode == 0
+    payload = json.loads(proc.stdout)
+    assert payload["command"] == "help all"
+    commands = {item["command"]: item for item in payload["data"]["commands"]}
+    assert commands["neodev docs sync"]["visibility"] == "primary"
+    assert commands["neodev graph edge add"]["visibility"] == "advanced"
+    assert commands["neodev graph edge add"]["risk"] == "manual graph mutation"
+    assert commands["neodev git post-push-graph-update"]["visibility"] == "internal"
+    assert commands["neodev git post-push-graph-update"]["replacement"] == "neodev status"
+    assert commands["neodev product version analyze"]["visibility"] == "hidden"
+
+
+def test_command_metadata_covers_required_cli_layers():
+    from service.cli.command_metadata import CommandVisibility, get_command_metadata
+
+    metadata = get_command_metadata()
+    by_command = {"neodev " + " ".join(item.path): item for item in metadata}
+
+    assert by_command["neodev doctor"].visibility is CommandVisibility.PRIMARY
+    assert by_command["neodev docs sync"].visibility is CommandVisibility.PRIMARY
+    assert by_command["neodev graph edge add"].visibility is CommandVisibility.ADVANCED
+    assert by_command["neodev git post-push-graph-update"].visibility is CommandVisibility.INTERNAL
+    assert by_command["neodev product version analyze"].visibility is CommandVisibility.HIDDEN
+
+
+def test_all_registered_commands_have_metadata():
+    from service.cli.command_metadata import get_command_metadata
+    from service.cli.executor import build_parser
+
+    registered = {"neodev " + " ".join(path) for path in _registered_command_paths(build_parser())}
+    metadata = {item.command for item in get_command_metadata()}
+
+    assert registered - metadata == set()
+
+
+def _registered_command_paths(
+    parser: argparse.ArgumentParser,
+    prefix: tuple[str, ...] = (),
+) -> set[tuple[str, ...]]:
+    subparser_actions = [
+        action for action in parser._actions if isinstance(action, argparse._SubParsersAction)
+    ]
+    if not subparser_actions:
+        return {prefix}
+
+    paths: set[tuple[str, ...]] = set()
+    for action in subparser_actions:
+        for name, subparser in action.choices.items():
+            paths.update(_registered_command_paths(subparser, prefix + (name,)))
+    return paths
 
 
 def test_doc_change_commands_are_registered():

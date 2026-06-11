@@ -52,12 +52,11 @@
       "NeoDev controlled document validation"
     ],
     "defaultPrompt": [
-      "Use NeoSuperpower to plan and implement this change.",
+      "Use NeoSuperpower to plan and implement this change, checking document coverage before code edits.",
       "Use NeoSuperpower to debug this failure from evidence.",
       "Use NeoDev to inspect this product version and branch context.",
       "Use NeoDev to import the controlled docs for this version.",
       "Use NeoDev to register the DocChange and estimate implementation impact.",
-      "Use NeoDev to check document coverage before changing code.",
       "Use NeoDev to interpret the post-push atomic graph update result.",
       "Use browser acceptance testing to validate this page with screenshots, network evidence, and a report."
     ],
